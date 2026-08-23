@@ -165,6 +165,106 @@ CROSS JOIN (VALUES
 WHERE r.slug = 'spice-garden' AND c.uid = v.category_uid
 ON CONFLICT (uid) DO NOTHING;
 
+-- ---------------------------------------------------------------------------
+-- Second restaurant: Coastal Curry.
+--
+-- Exists to exercise the multi-tenant path that DECISIONS.md D3 built for. Two restaurants is the
+-- smallest number that proves tenant scoping actually works -- with one, every query returns the
+-- right rows by accident.
+--
+-- Deliberately different in the ways that matter: a service charge (Spice Garden has none), a
+-- different tax rate, its own UPI account, and a menu with no overlap. A second restaurant that
+-- was a copy of the first would not catch a query that ignores restaurant_id.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO restaurant (
+    uid, name, slug, description, address, phone, currency, timezone,
+    gst_number, tax_bps, service_charge_bps,
+    upi_vpa, upi_payee_name, payment_provider, status
+) VALUES (
+    'rst_democoastalcurry', 'Coastal Curry', 'coastal-curry',
+    'Mangalorean and Kerala seafood, cooked to order.',
+    '48 Beach Road, Kochi 682001', '+919812345678', 'INR', 'Asia/Kolkata',
+    '32FGHIJ5678K1Z9',
+    -- 5% GST plus a 10% service charge, so the cart breakdown renders a line Spice Garden never
+    -- shows and the totals arithmetic is exercised with both rates non-zero.
+    500, 1000,
+    'coastalcurry@okaxis', 'Coastal Curry',
+    'upi_static', 'active'
+)
+ON CONFLICT (uid) DO NOTHING;
+
+INSERT INTO staff_user (uid, restaurant_id, email, password_hash, name, role, status)
+SELECT v.uid, r.id, v.email,
+       '$2a$12$HN06UaxL9rImoi8Vd4.BveoYpYT3Hp9Gx5Ox9aN36lBtA7lRP1O/q',
+       v.name, v.role, 'active'
+FROM restaurant r
+CROSS JOIN (VALUES
+    ('stf_ccowner', 'owner@coastalcurry.test', 'Meera Menon', 'owner'),
+    ('stf_ccstaff', 'staff@coastalcurry.test', 'Joseph Dsouza', 'staff')
+) AS v(uid, email, name, role)
+WHERE r.slug = 'coastal-curry'
+ON CONFLICT (uid) DO NOTHING;
+
+-- !! LOCAL ONLY !! Fixed qr_tokens so a developer's scan URL survives a reseed. In any deployed
+-- environment these MUST come from utils.GenerateQRToken() -- a predictable token lets a stranger
+-- order onto someone else's table (DECISIONS.md D4).
+INSERT INTO restaurant_table (uid, restaurant_id, label, qr_token, seats, status)
+SELECT v.uid, r.id, v.label, v.qr_token, v.seats, 'active'
+FROM restaurant r
+CROSS JOIN (VALUES
+    ('tbl_cc01', '1',   'demolocalcoastaltabletoken000001', 2),
+    ('tbl_cc02', '2',   'demolocalcoastaltabletoken000002', 4),
+    ('tbl_cc03', '3',   'demolocalcoastaltabletoken000003', 4),
+    ('tbl_cc04', 'Sea 1', 'demolocalcoastaltabletoken000004', 6)
+) AS v(uid, label, qr_token, seats)
+WHERE r.slug = 'coastal-curry'
+ON CONFLICT (uid) DO NOTHING;
+
+INSERT INTO menu_category (uid, restaurant_id, name, description, sort_order, status)
+SELECT v.uid, r.id, v.name, v.description, v.sort_order, 'active'
+FROM restaurant r
+CROSS JOIN (VALUES
+    ('cat_ccstarters', 'Starters',  'Fried and tawa-grilled',      10),
+    ('cat_cccurries',  'Curries',   'Coconut, tamarind, kokum',    20),
+    ('cat_ccrice',     'Rice',      'Neer dosa, appam, rice',      30),
+    ('cat_ccdrinks',   'Drinks',    NULL,                          40)
+) AS v(uid, name, description, sort_order)
+WHERE r.slug = 'coastal-curry'
+ON CONFLICT (uid) DO NOTHING;
+
+INSERT INTO menu_item (
+    uid, restaurant_id, category_id, name, description,
+    price_minor, food_type, spice_level, is_available, is_bestseller,
+    prep_time_mins, sort_order, status
+)
+SELECT v.uid, r.id, c.id, v.name, v.description,
+       v.price_minor, v.food_type, v.spice_level, v.is_available, v.is_bestseller,
+       v.prep_time_mins, v.sort_order, 'active'
+FROM restaurant r
+JOIN menu_category c
+  ON c.restaurant_id = r.id
+ AND c.uid = ANY (ARRAY['cat_ccstarters','cat_cccurries','cat_ccrice','cat_ccdrinks'])
+CROSS JOIN (VALUES
+    ('itm_ccfishfry',    'cat_ccstarters','Anjal Fish Fry','Kingfish, rava crust, curry leaves',        48000,'non_veg','medium',TRUE, TRUE, 20,10),
+    ('itm_ccprawnkoliwada','cat_ccstarters','Prawn Koliwada','Batter-fried, chaat masala',              44000,'non_veg','hot',   TRUE, FALSE,18,20),
+    ('itm_ccrawabhindi', 'cat_ccstarters','Rawa Bhindi','Semolina-crusted okra',                        22000,'veg',    'mild',  TRUE, FALSE,14,30),
+    ('itm_ccfishcurry',  'cat_cccurries', 'Meen Curry','Kerala fish curry, kokum and coconut',          46000,'non_veg','hot',   TRUE, TRUE, 25,10),
+    ('itm_ccprawnghee',  'cat_cccurries', 'Ghee Roast Prawn','Mangalorean, dry and fiery',              52000,'non_veg','hot',   TRUE, TRUE, 25,20),
+    ('itm_ccchickenstew','cat_cccurries', 'Nadan Chicken Stew','Coconut milk, black pepper',            38000,'non_veg','mild',  TRUE, FALSE,28,30),
+    ('itm_ccolan',   'cat_cccurries', 'Olan','Ash gourd and cowpeas in coconut milk',               24000,'veg',    'mild',  TRUE, FALSE,20,40),
+    ('itm_cccrabmasala', 'cat_cccurries', 'Crab Masala','Whole crab, roasted spice',                    68000,'non_veg','hot',   FALSE,FALSE,35,50),
+    ('itm_ccneerdosa',   'cat_ccrice',    'Neer Dosa','Three pieces, rice batter',                       9000,'veg',    NULL,    TRUE, TRUE,  8,10),
+    ('itm_ccappam',      'cat_ccrice',    'Appam','Two pieces, coconut milk',                            9500,'veg',    NULL,    TRUE, FALSE, 8,20),
+    ('itm_ccmatta',      'cat_ccrice',    'Kerala Matta Rice',NULL,                                     14000,'veg',    NULL,    TRUE, FALSE,12,30),
+    ('itm_cctendercoco', 'cat_ccdrinks',  'Tender Coconut','Served in the shell',                        8000,'veg',    NULL,    TRUE, TRUE,  3,10),
+    ('itm_ccsolkadhi',   'cat_ccdrinks',  'Sol Kadhi','Kokum and coconut, chilled',                      7000,'veg',    NULL,    TRUE, FALSE, 4,20),
+    ('itm_ccfilterkaapi','cat_ccdrinks',  'Filter Coffee',NULL,                                          7000,'veg',    NULL,    TRUE, FALSE, 6,30)
+) AS v(uid, category_uid, name, description, price_minor, food_type, spice_level,
+       is_available, is_bestseller, prep_time_mins, sort_order)
+WHERE r.slug = 'coastal-curry' AND c.uid = v.category_uid
+ON CONFLICT (uid) DO NOTHING;
+
 COMMIT;
 
 -- A short confirmation, so `make seed` shows that it worked rather than staying silent.

@@ -90,6 +90,15 @@ const requestIDKey = "request_id"
 // Send is the single reply helper used by every controller. A non-nil appErr wins; a nil
 // appErr with nil data still sends a well-formed success envelope.
 func Send(ctx *gin.Context, data any, appErr *ApplicationError) {
+	// Checked first, before any status is chosen: if the caller has already disconnected there is
+	// nobody to send a body to, and whatever error the service produced on the way out describes
+	// the disconnect rather than a fault of ours. Doing this here rather than in every service is
+	// what makes it hold for every endpoint (see IsClientGone).
+	if clientGone(ctx) {
+		ctx.AbortWithStatus(StatusClientClosedRequest)
+		return
+	}
+
 	reqID, _ := ctx.Get(requestIDKey)
 	reqIDStr, _ := reqID.(string)
 
@@ -113,6 +122,11 @@ func Send(ctx *gin.Context, data any, appErr *ApplicationError) {
 
 // SendCreated replies 201 for a resource that was just created.
 func SendCreated(ctx *gin.Context, data any) {
+	if clientGone(ctx) {
+		ctx.AbortWithStatus(StatusClientClosedRequest)
+		return
+	}
+
 	reqID, _ := ctx.Get(requestIDKey)
 	reqIDStr, _ := reqID.(string)
 
@@ -131,4 +145,14 @@ func detailsData(e *ApplicationError) any {
 		return nil
 	}
 	return map[string]any{"details": e.Details}
+}
+
+// clientGone reports whether the request context has been cancelled.
+//
+// Guarded against a nil Request so a unit test constructing a bare gin context does not panic here.
+func clientGone(ctx *gin.Context) bool {
+	if ctx.Request == nil {
+		return false
+	}
+	return ctx.Request.Context().Err() != nil
 }

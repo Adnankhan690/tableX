@@ -46,6 +46,29 @@ type RequestUpdateRestaurant struct {
 	PaymentProvider  *string `json:"payment_provider,omitempty" binding:"omitempty,oneof=upi_static razorpay mock"`
 }
 
+// RestaurantQRView is a restaurant's own QR code, pointing at its table-picker landing page.
+//
+// Distinct from ResponseTableQR: a table QR embeds an opaque capability token and is therefore
+// staff-only, whereas this embeds only the public slug that already appears in the URL of the page
+// it opens. There is nothing here to keep secret, which is what makes it safe to serve
+// unauthenticated (DECISIONS.md D4, D13).
+type RestaurantQRView struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+	// QRURL is the encoded target: {diner_base_url}/r/{slug}.
+	QRURL string `json:"qr_url"`
+	// PNGBase64 is rendered server-side, so the diner app ships no QR library.
+	PNGBase64 string `json:"png_base64,omitempty"`
+}
+
+// ResponseRestaurantDirectory lists the restaurants taking orders on this deployment.
+//
+// Carries only what /r/{slug} already exposes to anyone who scans a code. It adds enumerability,
+// not a new class of information (DECISIONS.md D13).
+type ResponseRestaurantDirectory struct {
+	Restaurants []RestaurantSummary `json:"restaurants"`
+}
+
 // TableInfo is a table as the admin panel sees it.
 type TableInfo struct {
 	UID    string `json:"uid"`

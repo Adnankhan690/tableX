@@ -159,6 +159,13 @@ func (s *serviceSession) Authenticate(
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, response.ErrSessionInvalid
 		}
+		// The diner's browser gave up before we answered. Returning ErrInternal here is what
+		// turned every aborted fetch into a logged 500 -- and since this runs in middleware, it
+		// happened on whichever request the abort caught, not on anything actually broken.
+		if response.IsClientGone(err) {
+			log.Debugf("[Authenticate] client disconnected before the session was resolved")
+			return nil, response.ErrClientClosed
+		}
 		log.Errorf("[Authenticate] session lookup failed: %+v", err)
 		return nil, response.ErrInternal
 	}

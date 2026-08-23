@@ -39,11 +39,23 @@ the diner flow:
 http://localhost:3000/t/demolocaltablequrtoken0000000001
 ```
 
-Admin panel at **http://localhost:3001** — `owner@spicegarden.test` / `password123`.
+Or open **http://localhost:3000/qr** to see a scannable code per restaurant — point a phone at
+your screen and it opens that restaurant's table picker.
 
-The demo restaurant ships with 28 menu items across 7 categories, 8 tables, and three staff
-logins at the three roles. Two items are deliberately marked sold out, so the
-availability path is visible without configuring anything.
+Admin panel at **http://localhost:3001**:
+
+| Restaurant | Login | Password |
+| --- | --- | --- |
+| Spice Garden | `owner@spicegarden.test` | `password123` |
+| Coastal Curry | `owner@coastalcurry.test` | `password123` |
+
+The seed ships **two** restaurants, which is the smallest number that proves the tenant scoping
+works — with one, every query returns the right rows by accident:
+
+- **Spice Garden** — 28 items, 7 categories, 8 tables, 3 staff at the three roles, 5% GST. Two
+  items are deliberately sold out, so the availability path is visible without configuring anything.
+- **Coastal Curry** — 14 items, 4 categories, 4 tables, 2 staff, 5% GST **plus a 10% service
+  charge**, so the cart renders a line the first restaurant never shows.
 
 ---
 

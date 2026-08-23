@@ -3,11 +3,13 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"gorm.io/gorm"
 
 	"tablex/internal/models"
+	"tablex/internal/payments"
 	"tablex/internal/response"
 	"tablex/internal/types"
 )
@@ -162,5 +164,76 @@ func (s *serviceRestaurant) GetPublicBySlug(
 	return &types.ResponseRestaurantLanding{
 		Restaurant: toRestaurantSummary(restaurant),
 		Tables:     views,
+	}, nil
+}
+
+// ListPublic lists the restaurants a diner could order from (DECISIONS.md D13).
+//
+// Inactive restaurants are filtered out here rather than in the query: the repository's List is
+// also used by staff tooling that needs to see everything, and a public endpoint should not be the
+// thing that decides what "everything" means.
+func (s *serviceRestaurant) ListPublic(
+	ctx context.Context,
+) (*types.ResponseRestaurantDirectory, *response.ApplicationError) {
+	rows, err := s.Access.Repositories.Restaurant.List(ctx)
+	if err != nil {
+		s.Access.Logger.With(ctx).Errorf("[ListPublic] %+v", err)
+		return nil, response.ErrRestaurantFetchFailed
+	}
+
+	out := make([]types.RestaurantSummary, 0, len(rows))
+	for _, restaurant := range rows {
+		if restaurant.Status != models.EntityStatusActive {
+			continue
+		}
+		// toRestaurantSummary, not toRestaurantSettings: the summary type is what makes it
+		// structurally impossible to leak the UPI VPA or the tax configuration here.
+		out = append(out, toRestaurantSummary(restaurant))
+	}
+
+	return &types.ResponseRestaurantDirectory{Restaurants: out}, nil
+}
+
+// GetPublicQR renders the QR code for a restaurant's table-picker landing page.
+//
+// Unauthenticated, unlike the per-table QR endpoint, and the difference is the payload rather than
+// the audience: a table QR embeds an opaque token whose possession authorises ordering at that
+// table, while this embeds only the slug that is already visible in the URL of the page it opens.
+// There is nothing here to keep secret (DECISIONS.md D4).
+func (s *serviceRestaurant) GetPublicQR(
+	ctx context.Context,
+	slug string,
+	size int,
+) (*types.RestaurantQRView, *response.ApplicationError) {
+	log := s.Access.Logger.With(ctx)
+
+	restaurant, err := s.Access.Repositories.Restaurant.GetBySlug(ctx, strings.TrimSpace(slug))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, response.ErrRestaurantNotFound
+		}
+		log.Errorf("[GetPublicQR] %q: %+v", slug, err)
+		return nil, response.ErrRestaurantFetchFailed
+	}
+	if restaurant.Status != models.EntityStatusActive {
+		return nil, response.ErrRestaurantInactive
+	}
+
+	url := fmt.Sprintf("%s/r/%s",
+		strings.TrimRight(s.Access.Cfg.App.DinerBaseURL, "/"), restaurant.Slug)
+
+	png, err := payments.RenderQRPNG(url, size)
+	if err != nil {
+		// The image is the entire point of the request, so unlike a payment QR there is no
+		// degraded mode to fall back to.
+		log.Errorf("[GetPublicQR] render %q: %+v", url, err)
+		return nil, response.ErrQRRenderFailed
+	}
+
+	return &types.RestaurantQRView{
+		Name:      restaurant.Name,
+		Slug:      restaurant.Slug,
+		QRURL:     url,
+		PNGBase64: png,
 	}, nil
 }

@@ -7,7 +7,9 @@ import type {
   PaymentView,
   PlaceOrderRequest,
   PlaceOrderResponse,
+  RestaurantDirectoryResponse,
   RestaurantLandingResponse,
+  RestaurantQR,
   ScanTableResponse,
   SelectTableRequest,
 } from '@tablex/shared'
@@ -39,6 +41,24 @@ export class DinerApi {
    */
   scanTable(qrToken: string, signal?: AbortSignal): Promise<ScanTableResponse> {
     return this.http.request(`${PUBLIC}/t/${encodeURIComponent(qrToken)}`, {
+      signal,
+    })
+  }
+
+  /**
+   * The restaurants taking orders (docs/DECISIONS.md D13).
+   *
+   * Backs the /qr gallery, which runs before any session exists and therefore has no credentials
+   * to present.
+   */
+  listRestaurants(signal?: AbortSignal): Promise<RestaurantDirectoryResponse> {
+    return this.http.request(`${PUBLIC}/restaurants`, { signal })
+  }
+
+  /** Renders a restaurant's QR code, pointing at its table-picker landing page. */
+  restaurantQR(slug: string, size = 320, signal?: AbortSignal): Promise<RestaurantQR> {
+    return this.http.request(`${PUBLIC}/r/${encodeURIComponent(slug)}/qr`, {
+      query: { size },
       signal,
     })
   }

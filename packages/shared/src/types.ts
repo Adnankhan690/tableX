@@ -137,6 +137,27 @@ export interface UpdateRestaurantRequest {
   payment_provider?: string
 }
 
+/**
+ * A restaurant's own QR code, encoding its table-picker landing page.
+ *
+ * Distinct from `TableQR`: a table QR embeds an opaque capability token and is staff-only, whereas
+ * this embeds only the public slug that already appears in the URL it opens. That is why the
+ * endpoint behind it needs no credentials (docs/DECISIONS.md D4, D13).
+ */
+export interface RestaurantQR {
+  name: string
+  slug: string
+  /** The encoded target: `{diner_base_url}/r/{slug}`. */
+  qr_url: string
+  /** Base64 PNG, rendered server-side so this app ships no QR library. */
+  png_base64?: string
+}
+
+/** The restaurants taking orders on this deployment (docs/DECISIONS.md D13). */
+export interface RestaurantDirectoryResponse {
+  restaurants: RestaurantSummary[]
+}
+
 /** A table as the diner sees it: the label, never the QR token. */
 export interface TableView {
   uid: string
