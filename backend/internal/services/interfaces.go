@@ -59,6 +59,10 @@ type ServiceRestaurantMethods interface {
 	UpdateSettings(ctx context.Context, actor *StaffPrincipal, req *types.RequestUpdateRestaurant) (*types.RestaurantSettings, *response.ApplicationError)
 	// GetPublicBySlug backs the restaurant-level fallback QR (DECISIONS.md D4).
 	GetPublicBySlug(ctx context.Context, slug string) (*types.ResponseRestaurantLanding, *response.ApplicationError)
+	// ListPublic lists the restaurants currently taking orders (DECISIONS.md D13).
+	ListPublic(ctx context.Context) (*types.ResponseRestaurantDirectory, *response.ApplicationError)
+	// GetPublicQR renders a restaurant's own QR code, encoding its /r/{slug} landing page.
+	GetPublicQR(ctx context.Context, slug string, size int) (*types.RestaurantQRView, *response.ApplicationError)
 }
 
 // ServiceTableMethods handles tables and their QR codes.

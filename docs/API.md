@@ -87,6 +87,20 @@ For the single QR taped to the counter when a table sticker has gone missing
 
 `{ "table_uid": "tbl_…" }` → the same payload as a table scan.
 
+### `GET /restaurants` — directory
+
+Active restaurants, as `RestaurantSummary` only. Backs the `/qr` gallery, which runs before any
+session exists and so has no credentials to present ([D13](./DECISIONS.md)).
+
+### `GET /r/:slug/qr?size=320` — restaurant QR
+
+`{ name, slug, qr_url, png_base64 }`, encoding `{diner_base_url}/r/{slug}`.
+
+Public, unlike the per-table QR endpoint, and the difference is the payload rather than the
+audience: a table QR embeds an opaque token whose possession authorises ordering at that table,
+while this embeds only the slug already visible in the URL it opens ([D4](./DECISIONS.md),
+[D13](./DECISIONS.md)). A malformed `size` falls back rather than failing.
+
 ### `POST /webhooks/payments/:provider`
 
 Provider callbacks. The **raw request body** is what the HMAC is computed over, so it is never

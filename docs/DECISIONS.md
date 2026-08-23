@@ -255,3 +255,46 @@ PRD §7 makes not losing orders a core trust requirement. The failure that actua
 on a phone is the *opposite* — the diner taps "Place order" on a stalled connection, taps
 again, and the kitchen gets two. Both directions are covered: the write is committed in one
 transaction before the response, and the retry is deduplicated.
+
+---
+
+## D13 — A public restaurant directory, and a public restaurant QR
+
+**Context.** The `/qr` gallery in the diner app shows one scannable code per restaurant. It runs
+before any session exists, so it has no credentials of any kind — which means the two things it
+needs must be reachable unauthenticated, or the page cannot exist.
+
+**Decision.** Two public endpoints:
+
+| | |
+| --- | --- |
+| `GET /api/public/v1/restaurants` | Active restaurants: uid, name, slug, description, logo, address, phone, currency |
+| `GET /api/public/v1/r/:slug/qr` | That restaurant's QR, encoding `{diner_base_url}/r/{slug}` |
+
+**Why this is safe, precisely.** The distinction that matters is between a *name* and a
+*capability*.
+
+A **table** QR embeds `qr_token`, and possession of that token is what authorises ordering at that
+table ([D4](#d4--per-table-qr-with-a-restaurant-level-fallback)). It is a capability, so its
+endpoint is staff-only and the token never appears in a public response.
+
+A **restaurant** QR embeds only the slug — which is already visible in the address bar of the page
+it opens, and which the diner-facing `/r/:slug` route has always served to anonymous callers. There
+is nothing in it to keep secret.
+
+Both endpoints return `RestaurantSummary`, never `RestaurantSettings`. That is structural rather
+than careful: the summary type has no field for the UPI VPA, the GST number or the tax
+configuration, so those cannot leak here by someone adding a column to the model.
+
+**What this does change**, stated plainly rather than waved past: the directory makes the tenant
+list **enumerable**. Anyone can ask which restaurants are on the deployment. That is a new fact
+about the platform, even though it is not a new class of information about any one restaurant. For
+a platform whose whole premise is diners walking in and scanning a code, a directory is closer to a
+feature than a leak — but a white-label deployment, where tenants must not know about each other,
+would want this endpoint behind auth or removed. It is one route and one service method, so that is
+a small change.
+
+Both routes are rate limited. Rendering a QR is CPU work, and an unthrottled loop over it is a
+cheap way to spend the server's cycles.
+
+**Reversal cost.** Low, in both directions.

@@ -1,6 +1,10 @@
 package response
 
-import "net/http"
+import (
+	"context"
+	"errors"
+	"net/http"
+)
 
 // Cross-cutting failures, not owned by any one domain.
 //
@@ -15,6 +19,7 @@ const (
 	ErrCodeRateLimited    ErrorCode = "TX_COM_006"
 	ErrCodeConflict       ErrorCode = "TX_COM_007"
 	ErrCodeValidation     ErrorCode = "TX_COM_008"
+	ErrCodeClientClosed   ErrorCode = "TX_COM_009"
 )
 
 var (
@@ -65,4 +70,30 @@ var (
 		ErrorMessage: "some fields are invalid",
 		HttpCode:     http.StatusUnprocessableEntity,
 	}
+	// ErrClientClosed means the caller disconnected before we answered.
+	//
+	// 499 is nginx's non-standard "client closed request", used here for the same reason nginx
+	// invented it: this is not a server fault and must not be counted as one. Treating it as a
+	// 500 fills the error log with false alarms and makes any 5xx alert fire whenever someone
+	// navigates away mid-load -- which, on a phone, is constantly.
+	//
+	// Nobody reads the response, so the status exists purely for logs and metrics.
+	ErrClientClosed = &ApplicationError{
+		ErrorCode:    ErrCodeClientClosed,
+		ErrorMessage: "the client disconnected before the request completed",
+		HttpCode:     StatusClientClosedRequest,
+	}
 )
+
+// StatusClientClosedRequest is nginx's 499. Not in net/http, because it is not in the RFC.
+const StatusClientClosedRequest = 499
+
+// IsClientGone reports whether err is the caller having disconnected or timed out, rather than
+// anything being wrong on our side.
+//
+// Both cases arrive as a cancelled context: a browser aborting a fetch (React re-running an effect,
+// a navigation, a closed tab) surfaces as context.Canceled, and our own request deadline surfaces
+// as context.DeadlineExceeded. Neither is worth an ERROR line or a 5xx.
+func IsClientGone(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}

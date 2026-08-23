@@ -43,6 +43,11 @@ func (a *App) addPublicRoutes(engine *gin.Engine) {
 		limited.GET("/t/:qr_token", a.controllers.Scan.ScanTable)
 		limited.GET("/r/:slug", a.controllers.Scan.RestaurantLanding)
 		limited.POST("/r/:slug/select-table", a.controllers.Scan.SelectTable)
+
+		// The QR gallery. Read-only and cacheable, but still rate limited: rendering a QR is
+		// CPU work, and an unthrottled loop over it is a cheap way to spend the server's cycles.
+		limited.GET("/restaurants", a.controllers.Scan.RestaurantDirectory)
+		limited.GET("/r/:slug/qr", a.controllers.Scan.RestaurantQR)
 	}
 
 	// Webhooks are NOT rate limited. A gateway retrying a burst of settlements must not be

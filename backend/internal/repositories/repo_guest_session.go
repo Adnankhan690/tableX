@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"tablex/internal/models"
+	"tablex/internal/response"
 )
 
 // Guest sessions: the anonymous diner identity created on first QR scan (DECISIONS.md D5).
@@ -68,7 +69,14 @@ func (a *repositoryGuestSession) GetByToken(ctx context.Context, token string) (
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			// The token itself is never logged: it is the whole of the diner's identity, so
 			// a log line carrying it is a credential in a log file (DECISIONS.md D5).
-			a.Logger.With(ctx).Errorf("[GetByToken] guest session lookup: %v", err)
+			// A cancelled context is the diner's browser having aborted the request, not a
+			// database problem. Logged at Debug so it stays available when chasing something
+			// specific, without filling the error log every time a phone navigates away.
+			if response.IsClientGone(err) {
+				a.Logger.With(ctx).Debugf("[GetByToken] client disconnected mid-lookup")
+			} else {
+				a.Logger.With(ctx).Errorf("[GetByToken] guest session lookup: %v", err)
+			}
 		}
 		return nil, fmt.Errorf("get guest session by token: %w", err)
 	}

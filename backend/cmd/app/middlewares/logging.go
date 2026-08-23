@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"tablex/internal/response"
 )
 
 // Logging records one line per request.
@@ -26,6 +28,13 @@ func (m *Middlewares) Logging() gin.HandlerFunc {
 		// The query string is deliberately excluded: guest tokens travel there on the WebSocket
 		// routes, and a token in an access log is a credential in a log.
 		switch {
+		// 499 is the caller having disconnected (response.StatusClientClosedRequest). It is not a
+		// fault, and logging it at Error would defeat the point of distinguishing it in the first
+		// place -- but it is worth a line, because a burst of them is a real signal about the
+		// network between us and the diner.
+		case status == response.StatusClientClosedRequest:
+			log.Infof("[HTTP] %s %s -> client disconnected after %s",
+				ctx.Request.Method, ctx.Request.URL.Path, latency)
 		case status >= 500:
 			log.Errorf("[HTTP] %s %s -> %d in %s", ctx.Request.Method, ctx.Request.URL.Path, status, latency)
 		case status >= 400:

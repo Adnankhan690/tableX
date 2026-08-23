@@ -153,6 +153,10 @@ func (s *serviceAuth) Refresh(
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, response.ErrTokenInvalid
 		}
+		if response.IsClientGone(err) {
+			log.Debugf("[Refresh] client disconnected mid-refresh")
+			return nil, response.ErrClientClosed
+		}
 		log.Errorf("[Refresh] staff lookup failed: %+v", err)
 		return nil, response.ErrInternal
 	}
