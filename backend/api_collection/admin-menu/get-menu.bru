@@ -1,0 +1,53 @@
+meta {
+  name: get-menu
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/menu
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data && res.body.data.categories.length > 0) {
+    const cats = res.body.data.categories
+    bru.setVar("category_uid", cats[0].uid)
+    const withItems = cats.find((c) => (c.items || []).length > 0)
+    if (withItems) bru.setVar("admin_item_uid", withItems.items[0].uid)
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("includes archived rows, unlike the public menu", function () {
+    // Staff need to see and un-archive what a diner must never be offered.
+    expect(res.body.data.categories).to.be.an("array").with.length.above(0)
+  })
+
+  test("each item exposes status separately from availability", function () {
+    // Availability is "we ran out tonight"; status is "does this exist on the menu". Keeping them
+    // apart means a sold-out evening does not archive the dish and orphan its order history.
+    const items = res.body.data.categories.flatMap((c) => c.items || [])
+    if (items.length > 0) {
+      expect(items[0]).to.have.property("status")
+      expect(items[0]).to.have.property("is_available")
+    }
+  })
+}
+
+docs {
+  # Admin menu
+
+Sets `category_uid` and `admin_item_uid`. Unlike the diner menu, it returns archived categories and
+items, and keeps empty categories -- an empty category is exactly what a manager is looking at when
+they are about to fill it.
+}

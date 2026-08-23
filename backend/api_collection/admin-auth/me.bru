@@ -1,0 +1,35 @@
+meta {
+  name: me
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/auth/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("envelope reports success", function () {
+    // Asserting on `code`, not `message`: codes are stable, messages are human copy that will be
+    // translated (PRD section 7).
+    expect(res.body.code).to.equal("00000")
+  })
+}
+
+docs {
+  # The signed-in staff member
+
+Cheap, and useful as a token liveness check. An expired token answers `TX_AUT_004`, which is a
+*distinct* code from invalid (`TX_AUT_003`) so the panel can refresh silently instead of bouncing
+someone to the login screen mid-service.
+}

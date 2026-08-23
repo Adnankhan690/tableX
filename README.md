@@ -10,6 +10,8 @@ restaurant lighting, and desktop is not a v1 target.
 - **Why it is built this way:** [docs/DECISIONS.md](docs/DECISIONS.md) — D1–D12, including
   answers to every open question the PRD left
 - **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Low-level design:** [docs/LLD.md](docs/LLD.md) — schema, table relationships, the session
+  lifecycle for a static printed QR, and a verified done/not-done inventory
 - **API reference:** [docs/API.md](docs/API.md)
 - **Working on it:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
@@ -147,6 +149,7 @@ make -C backend test-race   # the hub and order locking only misbehave under -ra
 
 make smoke                 # 68 API assertions against a running server
 make concurrency           # the three races that happen in a real restaurant
+make api-collection        # 125 assertions, the Bruno collection end to end
 
 cd apps/diner && node e2e/diner-journey.mjs   # 37 assertions, real mobile browser
 cd apps/admin && node e2e/admin-journey.mjs   # 53 assertions, real browser
@@ -170,6 +173,7 @@ Everything below runs against a real Postgres and a real browser — no mocks, n
 | Concurrency | 8 simultaneous accepts resolve to exactly one winner; 20 simultaneous checkouts get 20 distinct order numbers; 10 duplicate submits produce one order |
 | Diner journey | 37 assertions in a real iPhone viewport: scan → menu → cart → checkout → live tracking |
 | Admin journey | 53 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions |
+| Bruno collection | 53 requests over 11 folders, all 46 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
 | Migrations | CI applies every down migration in reverse, asserts zero tables remain, then re-applies forwards |
 
 Three real bugs were found this way, which is why the suites are shaped as they are:

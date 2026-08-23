@@ -1,0 +1,16 @@
+meta {
+  name: admin-orders
+  seq: 6
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  The order queue and the lifecycle. Needs `access_token`, and the transition
+  requests need `order_uid` from `guest / place-order`.
+
+  Transitions are validated against the state machine under a row lock, so a 409 means another
+  device got there first. Refetch; do not retry.
+}

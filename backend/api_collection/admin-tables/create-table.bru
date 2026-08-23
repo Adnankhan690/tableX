@@ -1,0 +1,39 @@
+meta {
+  name: create-table
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/tables
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "label": "Patio 9",
+    "seats": 4
+  }
+}
+
+tests {
+  test("responds 201, or 409 if the label is taken", function () {
+    expect([201, 409]).to.include(res.status)
+  })
+}
+
+docs {
+  # Add a table
+
+The QR token is generated server-side with 160 bits of entropy. It is not a database key but a
+capability, so it is sized to be unguessable rather than merely unique (docs/DECISIONS.md D4).
+}

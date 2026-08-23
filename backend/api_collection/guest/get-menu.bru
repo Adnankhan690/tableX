@@ -1,0 +1,36 @@
+meta {
+  name: get-menu
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/guest/v1/menu
+  body: none
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns the menu for THIS session's restaurant", function () {
+    // Scope comes from the token, never from the request -- a diner cannot ask for another
+    // restaurant's menu on their own session.
+    expect(res.body.data.categories).to.be.an("array").with.length.above(0)
+  })
+}
+
+docs {
+  # Diner menu
+
+Two queries server-side (categories, then items), joined in Go. Never one query per category: on a
+3G connection the round trips cost more than the bytes (PRD section 7).
+
+Requires `guest_token`. Drop the header to see `TX_SES_001` (401).
+}

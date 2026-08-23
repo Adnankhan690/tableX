@@ -1,0 +1,15 @@
+meta {
+  name: guest
+  seq: 4
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Requires `X-Guest-Token`, which `public / scan-table` sets.
+
+  Every order read verifies the session owns the order; a mismatch answers 404 rather than 403, so
+  an order's existence cannot be probed by uid.
+}

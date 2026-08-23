@@ -1,0 +1,57 @@
+meta {
+  name: confirm-payment
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/orders/{{order_uid}}/payment/confirm
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "reference": "UTR123456789",
+    "note": "cash at counter"
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("the payment is now paid", function () {
+    expect(res.body.data.status).to.equal("paid")
+  })
+
+  test("and a served order closed itself", function () {
+    // Settling an order that is already `served` advances it to `completed` through the state
+    // machine, so the audit log is identical to a staff member tapping it. Verify with get-order.
+    expect(res.body.data.paid_at).to.be.a("string")
+  })
+}
+
+docs {
+  # Confirm payment (staff)
+
+The settlement path for cash and for static UPI, which cannot confirm itself. **This records that a
+human saw the money** -- the same trust model as cash -- and the acting staff member is recorded on
+the payment (docs/DECISIONS.md D2).
+
+Two behaviours to note:
+
+- **Send it twice.** The second call answers `TX_PAY_002` (409). Double settlement is an explicit
+  refusal, never a silent second write.
+- **A served order closes itself.** Settling an order that is already `served` advances it to
+  `completed` through the state machine, so the audit log looks the same as if staff had tapped it.
+}

@@ -1,0 +1,77 @@
+meta {
+  name: scan-table
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/public/v1/t/{{qr_token}}
+  body: none
+  auth: none
+}
+
+script:post-response {
+  // RUN THIS FIRST. It is what mints the guest token every other diner request needs, and it
+  // caches two menu item uids so the order requests do not have to be edited by hand.
+  if (res.status === 200 && res.body.data) {
+    const d = res.body.data
+    bru.setVar("guest_token", d.session.token)
+    bru.setVar("table_uid", d.table.uid)
+
+    const items = (d.menu.categories || []).flatMap((c) => c.items || [])
+    const orderable = items.filter((i) => i.is_available)
+    if (orderable[0]) bru.setVar("menu_item_uid", orderable[0].uid)
+    if (orderable[1]) bru.setVar("menu_item_uid_2", orderable[1].uid)
+
+    // A fresh key per cart, reused across retries of that same order (docs/DECISIONS.md D12).
+    bru.setVar("idempotency_key", "bruno-" + Date.now())
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns a session token", function () {
+    // Returned exactly once, here. Every later diner request presents it.
+    expect(res.body.data.session.token).to.be.a("string").and.not.empty
+  })
+
+  test("returns the table label", function () {
+    // The most important string in the response: it is how a diner confirms their food is going to
+    // the table they are sitting at.
+    expect(res.body.data.table.label).to.be.a("string").and.not.empty
+  })
+
+  test("returns the whole menu in the same response", function () {
+    // One round trip, not three. On a 3G connection round trips cost more than bytes (PRD 7).
+    expect(res.body.data.menu.categories).to.be.an("array").with.length.above(0)
+  })
+
+  test("returns the tax rates for the cart preview", function () {
+    expect(res.body.data.menu.tax_bps).to.be.a("number")
+  })
+
+  test("sold-out items are returned, not hidden", function () {
+    // Returned with is_available false so the menu greys them out in place. A dish that silently
+    // vanishes reads as a broken page.
+    const items = res.body.data.menu.categories.flatMap((c) => c.items)
+    expect(items.every((i) => typeof i.is_available === "boolean")).to.be.true
+  })
+}
+
+docs {
+  # Scan a table QR
+
+**Run this before anything in `guest`.** It creates the session and sets `guest_token`,
+`table_uid`, `menu_item_uid` and `menu_item_uid_2`.
+
+Returns the session, the table and the entire menu in one response, because this single request is
+everything between a diner scanning and seeing food (PRD 3, PRD 7).
+
+A new session is created on every scan. That means two diners at one table get separate sessions
+today -- see `docs/LLD.md` section 5 for the table-sitting design that would let them share a bill.
+
+Failure modes worth trying: change `qr_token` to nonsense for `TX_TBL_004` (404).
+}

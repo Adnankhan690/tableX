@@ -1,0 +1,35 @@
+meta {
+  name: rotate-table-qr
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/tables/{{admin_table_uid}}/qr/rotate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200 and returns a NEW url", function () {
+    expect(res.status).to.equal(200)
+    expect(res.body.data.qr_url).to.include("/t/")
+  })
+}
+
+docs {
+  # Rotate a table's QR token
+
+**Destructive to a physical object.** The printed sticker on that table stops working immediately
+and must be reprinted -- a diner scanning the old one gets a dead end.
+
+This is the recovery path for a code that leaked: photographed and posted online, or on a card that
+walked off. It is why the token is rotatable at all (docs/DECISIONS.md D4).
+
+Careful with the seeded tables: rotating table 1 invalidates the `qr_token` in your environment, and
+`public / scan-table` will start answering `TX_TBL_004` until you update it.
+}

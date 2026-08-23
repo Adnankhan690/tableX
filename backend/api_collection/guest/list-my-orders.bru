@@ -1,0 +1,32 @@
+meta {
+  name: list-my-orders
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/guest/v1/orders
+  body: none
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns this session's orders", function () {
+    expect(res.body.data.orders).to.be.an("array").with.length.above(0)
+  })
+}
+
+docs {
+  # My orders
+
+"Your orders at this table, this sitting" (docs/DECISIONS.md D5). Scoped to the session, not to a
+person -- there is no account, so a diner returning next week sees nothing.
+}

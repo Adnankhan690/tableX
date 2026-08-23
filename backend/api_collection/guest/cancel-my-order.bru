@@ -1,0 +1,47 @@
+meta {
+  name: cancel-my-order
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/api/guest/v1/orders/{{upi_order_uid}}/cancel
+  body: none
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+}
+
+tests {
+  test("cancels a placed order", function () {
+    // Strict 200, not "200 or 409". This targets the UPI order, which nothing else in the
+    // collection touches, so it is always still `placed` when this runs. Accepting a 409 here
+    // would let a real regression pass.
+    expect(res.status).to.equal(200)
+  })
+
+  test("the order is now cancelled", function () {
+    expect(res.body.data.status).to.equal("cancelled")
+  })
+
+  test("and the cancel button is gone", function () {
+    expect(res.body.data.can_guest_cancel).to.equal(false)
+  })
+}
+
+docs {
+  # Cancel (diner)
+
+Allowed **only while the order is `placed`** (docs/DECISIONS.md D6). Once staff accepts, the kitchen
+may have started, and this answers `TX_ORD_010` (409).
+
+That 409 is a race with a definite outcome, not an error: the correct client behaviour is to refetch
+and let the button disappear, not to alarm the diner.
+
+This targets the **UPI order** from `place-order-upi`, deliberately not `order_uid` -- that one is
+left alone so `admin-orders` can drive it through the full lifecycle.
+
+To see the 409 instead, point it at `{{order_uid}}` and run it after `admin-orders / accept-order`.
+}

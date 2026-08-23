@@ -1,0 +1,52 @@
+meta {
+  name: accept-order
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/orders/{{order_uid}}/transition
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "status": "accepted"
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    // Strict, because `order_uid` is reserved for this lifecycle -- nothing else in the collection
+    // cancels or settles it, so the transition is always legal when this runs in sequence.
+    expect(res.status).to.equal(200)
+  })
+
+  test("the order is now accepted", function () {
+    expect(res.body.data.status).to.equal("accepted")
+  })
+
+  test("and the next legal transitions come with it", function () {
+    expect(res.body.data.next_statuses).to.be.an("array")
+  })
+}
+
+docs {
+  # Accept
+
+Run these four in order -- the state machine refuses to skip states, so `mark-served` before
+`accept-order` answers `TX_ORD_006` (409).
+
+Validated under a row lock, which is what makes two staff phones tapping this in the same second
+resolve to exactly one winner. The loser gets a 409 and the correct client response is always to
+refetch (docs/DECISIONS.md D1).
+}

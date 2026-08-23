@@ -1,0 +1,42 @@
+meta {
+  name: select-table
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/public/v1/r/{{restaurant_slug}}/select-table
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "table_uid": "{{table_uid}}"
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns the same shape as a table scan", function () {
+    expect(res.body.data.session.token).to.be.a("string").and.not.empty
+    expect(res.body.data.menu.categories).to.be.an("array")
+  })
+}
+
+docs {
+  # Select a table from the landing page
+
+The fallback path when a diner arrives via the restaurant-level QR. Produces an identical session to
+a direct table scan.
+
+Deliberately does not overwrite `guest_token`, so running the whole collection does not swap the
+session mid-flight.
+}

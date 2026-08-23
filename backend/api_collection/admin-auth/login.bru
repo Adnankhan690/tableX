@@ -1,0 +1,72 @@
+meta {
+  name: login
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{staff_email}}",
+    "password": "{{staff_password}}"
+  }
+}
+
+script:post-response {
+  // RUN THIS BEFORE ANY OTHER ADMIN FOLDER. Everything else needs access_token.
+  if (res.status === 200 && res.body.data) {
+    const d = res.body.data
+    bru.setVar("access_token", d.access_token)
+    bru.setVar("refresh_token", d.refresh_token)
+    bru.setVar("staff_uid", d.staff.uid)
+    bru.setVar("restaurant_uid", d.restaurant.uid)
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("issues an access token and a refresh token", function () {
+    // Split on purpose: the access token is short-lived so a stolen one expires on its own, and the
+    // refresh token spans a shift so a tablet is not re-authenticating during dinner service.
+    expect(res.body.data.access_token).to.be.a("string").and.not.empty
+    expect(res.body.data.refresh_token).to.be.a("string").and.not.empty
+  })
+
+  test("returns the staff member and their restaurant", function () {
+    expect(res.body.data.staff.role).to.be.oneOf(["owner", "manager", "staff"])
+    expect(res.body.data.restaurant.slug).to.be.a("string").and.not.empty
+  })
+
+  test("never returns a password hash", function () {
+    // The DTO has no field for it, so this cannot regress by someone adding a model column.
+    expect(JSON.stringify(res.body)).to.not.include("password_hash")
+  })
+}
+
+docs {
+  # Staff login
+
+Sets `access_token`, `refresh_token`, `staff_uid`, `restaurant_uid`.
+
+Two behaviours worth verifying by hand:
+
+**A wrong password and an unknown email return the identical message.** Distinguishing them would
+tell an attacker which staff emails exist at a restaurant, which is the first half of a
+credential-stuffing run. Change the password to nonsense, then the email, and compare -- both give
+`TX_AUT_001`.
+
+**Timing does not distinguish them either.** A missing account still performs a bcrypt comparison
+against a dummy hash before answering, so response time does not leak existence.
+}

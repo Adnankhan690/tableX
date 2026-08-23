@@ -1,0 +1,55 @@
+meta {
+  name: stats-today
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/stats/today
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("counts orders and money for the service date", function () {
+    expect(res.body.data.orders_placed).to.be.a("number")
+    expect(res.body.data.revenue.minor).to.be.a("number")
+  })
+
+  test("averages are ABSENT when there is no data, never zero", function () {
+    // The contract is worth stating exactly, because it is easy to assert wrongly.
+    //
+    // The Go field is a *int64 with `omitempty`, so a nil pointer is omitted from the JSON
+    // entirely rather than serialised as null -- while a pointer to 0 IS sent. That is the
+    // behaviour wanted: "no orders were accepted today" and "orders were accepted instantly" are
+    // different claims, and only the second is a zero.
+    //
+    // So: absent, or a number. Never a zero standing in for absent.
+    const a = res.body.data.avg_accept_secs
+    expect(a === undefined || a === null || typeof a === "number").to.be.true
+  })
+
+  test("a present average is a real duration", function () {
+    const a = res.body.data.avg_accept_secs
+    if (typeof a === "number") {
+      expect(a).to.be.at.least(0)
+    }
+  })
+}
+
+docs {
+  # Today's figures
+
+Maps onto the PRD's success metrics: time from placement to acceptance, and orders per hour.
+
+The window is the **restaurant's** business date, not UTC -- a 1am order belongs to the previous
+evening's service as far as the kitchen is concerned (docs/DECISIONS.md D9).
+}

@@ -1,0 +1,51 @@
+meta {
+  name: bulk-create-tables
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/tables/bulk
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "prefix": "B-",
+    "from": 1,
+    "to": 6,
+    "seats": 2
+  }
+}
+
+tests {
+  test("responds 201, or 409 if any label already exists", function () {
+    expect([201, 409]).to.include(res.status)
+  })
+
+  test("on a clash NOTHING is created", function () {
+    // Every label is validated before any insert. A partial floor -- tables 1-3 created, 4 onward
+    // rejected -- would leave the operator guessing what to retry.
+    if (res.status === 409) {
+      expect(res.body.code).to.equal("TX_TBL_003")
+    }
+  })
+}
+
+docs {
+  # Bulk-add a numbered range
+
+Onboarding a thirty-table restaurant should be one form, not thirty clicks. Capped at 200 per call.
+
+The all-or-nothing behaviour is the point: on a label clash the error names the offending label and
+no rows are inserted.
+}

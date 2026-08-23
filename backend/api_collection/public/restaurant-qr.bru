@@ -1,0 +1,47 @@
+meta {
+  name: restaurant-qr
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/public/v1/r/{{restaurant_slug}}/qr?size=320
+  body: none
+  auth: none
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("encodes the diner app's landing URL for this restaurant", function () {
+    // Compared against the slug in the response, not a variable: self-consistent, so it cannot be
+    // broken by another request changing configuration underneath it.
+    expect(res.body.data.qr_url).to.include("/r/" + res.body.data.slug)
+  })
+
+  test("points at the diner app, not the API", function () {
+    // Built from the server's configured DinerBaseURL rather than the request's host, so a code
+    // scanned off a laptop still opens somewhere a phone can reach.
+    expect(res.body.data.qr_url).to.not.include("8080")
+  })
+
+  test("renders a PNG server-side", function () {
+    // Rendered here so the diner app ships no QR library -- payload is a product requirement
+    // (PRD section 7).
+    expect(res.body.data.png_base64).to.be.a("string").and.not.empty
+  })
+}
+
+docs {
+  # Restaurant QR
+
+Encodes `{diner_base_url}/r/{slug}`, which opens that restaurant's table picker.
+
+Public, unlike the per-table QR endpoint, and the difference is the payload rather than the
+audience: a **table** QR embeds an opaque token whose possession authorises ordering at that table,
+while this embeds only the slug already visible in the URL it opens.
+
+`size` is a rendering hint -- a malformed value falls back rather than failing the request.
+}

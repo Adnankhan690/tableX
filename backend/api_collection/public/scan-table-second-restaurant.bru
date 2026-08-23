@@ -1,0 +1,38 @@
+meta {
+  name: scan-table-second-restaurant
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/public/v1/t/{{qr_token_coastal}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns the OTHER restaurant", function () {
+    // Tenant scoping: the same endpoint, a different token, and none of the first restaurant's
+    // data (docs/DECISIONS.md D3).
+    expect(res.body.data.menu.restaurant.slug).to.equal("coastal-curry")
+  })
+
+  test("its own rates apply", function () {
+    // Coastal Curry charges a 10% service charge; Spice Garden charges none.
+    expect(res.body.data.menu.service_charge_bps).to.equal(1000)
+  })
+}
+
+docs {
+  # Scan the second restaurant
+
+Same endpoint, different token. Proves the multi-tenant path: a different menu, and a service charge
+the first restaurant does not have.
+
+Deliberately does **not** overwrite `guest_token` -- the rest of the collection runs against
+Spice Garden.
+}

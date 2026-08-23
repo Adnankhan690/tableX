@@ -1,0 +1,41 @@
+meta {
+  name: restaurant-landing
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/public/v1/r/{{restaurant_slug}}
+  body: none
+  auth: none
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data && res.body.data.tables.length > 0) {
+    bru.setVar("table_uid", res.body.data.tables[0].uid)
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("lists the tables a diner can pick", function () {
+    expect(res.body.data.tables).to.be.an("array").with.length.above(0)
+  })
+
+  test("never leaks a table's qr_token", function () {
+    // The token is a capability: possession authorises ordering at that table. A public listing
+    // must carry the label and uid only (docs/DECISIONS.md D4).
+    expect(JSON.stringify(res.body)).to.not.include("qr_token")
+  })
+}
+
+docs {
+  # Restaurant landing (fallback QR)
+
+The table picker. Exists because table stickers get peeled off, spilled on and swapped between
+tables -- one code taped to the counter keeps the restaurant taking orders on a bad night
+(docs/DECISIONS.md D4).
+}

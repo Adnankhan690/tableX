@@ -1,0 +1,54 @@
+meta {
+  name: order-stream-handshake
+  type: http
+  seq: 9
+  tags: [
+    manual
+  ]
+}
+
+get {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/stream?token={{guest_token}}
+  body: none
+  auth: none
+}
+
+headers {
+  Upgrade: websocket
+  Connection: keep-alive, Upgrade
+  Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+  Sec-WebSocket-Version: 13
+  Origin: http://localhost:3000
+}
+
+tests {
+  test("the upgrade is accepted for an order this session owns", function () {
+    expect(res.status).to.equal(101)
+  })
+}
+
+docs {
+  > **Tagged `manual`. Excluded from automated runs.**
+  >
+  > A successful upgrade answers `101 Switching Protocols` and leaves the connection upgraded, which
+  > silently halts Bruno's HTTP runner -- every request after it is skipped, with no error and a
+  > zero exit code. So CI runs `--exclude-tags manual`, and this request is for driving by hand.
+
+  # Diner order stream (handshake only)
+
+Ownership is verified **before** the upgrade: a guest can only subscribe to an order their own
+session placed. Without that check, anyone could watch any order by uid, which is exactly the
+enumeration the per-order topic scheme exists to prevent.
+
+Try it with another session's token to see the refusal.
+
+## What comes over the socket
+
+Thin events -- an order uid and a status, never a whole order:
+
+    { "type": "order.status_changed", "topic": "order:ord_...", "status": "accepted", "at": "..." }
+
+The client treats each as a **hint to refetch** over HTTP, which is what makes a dropped frame
+harmless and why the 5-second polling fallback is a complete substitute rather than a degraded mode
+(docs/DECISIONS.md D10).
+}

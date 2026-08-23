@@ -1,0 +1,18 @@
+meta {
+  name: webhooks
+  seq: 12
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Provider callbacks. Unauthenticated by URL and authenticated by signature.
+
+  Not rate limited: throttling a gateway into giving up loses payment confirmations, which is worse
+  than serving the requests.
+
+  The `mock` provider needs no signature and exists for exactly this -- exercising the settle path
+  without a real gateway. It is only registered outside production.
+}

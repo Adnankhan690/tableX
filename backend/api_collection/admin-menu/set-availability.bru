@@ -1,0 +1,51 @@
+meta {
+  name: set-availability
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{base_url}}/api/admin/v1/menu/items/{{admin_item_uid}}/availability
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "is_available": false
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("flips availability without touching anything else", function () {
+    expect(res.body.data.is_available).to.equal(false)
+  })
+}
+
+docs {
+  # Mark sold out
+
+**The only menu route open to every staff role.** Marking a dish sold out is a floor action taken
+mid-service; routing it through a manager means diners keep ordering something the kitchen ran out
+of. Repricing stays owner/manager.
+
+Separate from `update-item` so that flipping availability cannot accidentally submit a stale price
+from an edit form a manager left open in another tab.
+
+Also publishes a realtime event, so a diner with the menu open learns before checkout rather than
+being rejected at it.
+
+Set `true` to restore.
+}

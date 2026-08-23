@@ -1,0 +1,86 @@
+meta {
+  name: tablex
+  seq: 1
+}
+
+auth {
+  mode: none
+}
+
+docs {
+  # tableX API collection
+
+  Mirrors the routes registered in `backend/cmd/app/routes.go`. Reference documentation lives in
+  `docs/API.md`; this collection is the executable version of it.
+
+  ## It is meant to be run in order
+
+  Folders are sequenced so a top-to-bottom run works from an empty state. Requests chain state
+  through collection variables in their post-response scripts, so nothing has to be copied by hand:
+
+  | Request | Sets |
+  |---|---|
+  | `public / scan-table` | `guest_token`, `table_uid`, `menu_item_uid`, `menu_item_uid_2` |
+  | `guest / place-order` | `order_uid`, `order_number` |
+  | `admin-auth / login` | `access_token`, `refresh_token`, `staff_uid`, `restaurant_uid` |
+  | `admin-menu / get-menu` | `category_uid`, `admin_item_uid` |
+  | `admin-tables / list-tables` | `admin_table_uid` |
+
+  Run `public / scan-table` and `admin-auth / login` first if you are cherry-picking; almost
+  everything else depends on one of those two.
+
+  ## Running it from the command line
+
+      make api-collection
+
+  That wrapper exists because two things about `bru run` are surprising:
+
+  - **The exit code cannot be trusted alone.** Bruno exits 1 whenever any response is non-2xx, even
+    with every assertion passing. This collection deliberately asserts three refusals -- rejecting a
+    served order, cancelling a nonexistent line, failing an already-paid payment -- so it can never
+    exit 0. The wrapper judges on the JSON report's test results instead.
+  - **A fresh database is required.** Several requests assert exact statuses ("this order is now
+    accepted"), which only holds from a known starting state. The wrapper reseeds first. Loosening
+    those to "200 or 409" would let real regressions pass, which is how a collection becomes
+    decoration.
+
+  Two requests are tagged `manual` and excluded from automated runs: the WebSocket handshakes. A 101
+  response leaves the connection upgraded, which silently halts Bruno's HTTP runner -- every request
+  after it is skipped with no error and a zero exit code.
+
+  ## Three trust levels
+
+  The prefix a route sits under is the whole statement of who may call it:
+
+  - `/api/public/v1` — no credentials, rate limited
+  - `/api/guest/v1` — `X-Guest-Token`, from a QR scan
+  - `/api/admin/v1` — `Authorization: Bearer`, staff JWT scoped to one restaurant
+
+  ## Prerequisites
+
+      make up && make migrate && make seed && make backend
+
+  The seed's QR tokens are fixed so `qr_token` in the environment stays valid across reseeds. That
+  is a local-only convenience — in any deployed environment tokens are random (docs/DECISIONS.md D4).
+
+  ## Environments
+
+  `local` targets the API on **:8080** — not the diner app on :3000. Pages and data are served by
+  different processes, which is the most common source of a confusing 404.
+
+  The seed's QR tokens are fixed, so `qr_token` stays valid across reseeds. That is a local-only
+  convenience: in any deployed environment tokens are random, so `staging` leaves them blank and
+  they must be read from the admin panel (Tables → QR).
+
+  Never commit a real token or a staff password to `staging.bru`. A table QR token is a
+  **capability** — possession of it authorises ordering at that table (docs/DECISIONS.md D4).
+
+  The credential-shaped variables start empty and are filled in by post-response scripts. Do not
+  paste tokens in by hand; run `public / scan-table` and `admin-auth / login` instead.
+
+  ## The envelope
+
+  Every response, success or failure, is `{ code, message, data?, request_id }`. `code` is `00000`
+  on success and a stable `TX_<AREA>_<NNN>` otherwise. Tests here assert on `code`, never on
+  `message` — messages are human copy and will be translated (PRD §7).
+}

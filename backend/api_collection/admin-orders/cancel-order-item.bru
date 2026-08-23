@@ -1,0 +1,46 @@
+meta {
+  name: cancel-order-item
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/orders/{{order_uid}}/items/REPLACE_ITEM_UID/cancel
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "reason": "kitchen ran out"
+  }
+}
+
+tests {
+  test("rejects the placeholder item uid", function () {
+    // 404 is expected as written: REPLACE_ITEM_UID is not a real uid. Replace it with an
+    // items[].uid from get-order to exercise the real path.
+    expect(res.status).to.equal(404)
+  })
+}
+
+docs {
+  # Cancel one line
+
+Replace `REPLACE_ITEM_UID` with an `items[].uid` from `get-order` -- it is left literal on purpose,
+because which line to void is a human decision rather than something to chain automatically.
+
+The order is **re-priced** from the remaining active lines in the same transaction. The line is
+struck through rather than deleted, so the kitchen ticket history stays intact.
+
+Cancelling the *last* remaining line is refused: an order with no items and a non-zero total is
+incoherent, and "cancel the order" is the action actually wanted.
+}

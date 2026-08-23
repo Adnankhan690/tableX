@@ -1,0 +1,45 @@
+meta {
+  name: update-item
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/api/admin/v1/menu/items/{{admin_item_uid}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "price_minor": 19000,
+    "is_bestseller": true
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("the new price does not touch orders already placed", function () {
+    // order_item snapshots name and unit price at order time (docs/DECISIONS.md D8). Verify by
+    // re-running admin-orders / get-order afterwards: its totals are unchanged.
+    expect(res.body.data.price.minor).to.equal(19000)
+  })
+}
+
+docs {
+  # Update a menu item
+
+Raising a price here is the case `order_item`'s snapshotting exists for. Run
+`admin-orders / get-order` afterwards and confirm the earlier order's total has not moved.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: admin-auth
+  seq: 5
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Staff authentication. `login` and `refresh` are the only two admin routes without
+  auth -- everything else is mounted under the authenticated group, so adding a route there cannot
+  accidentally leave it open.
+
+  Run `login` before any other admin folder.
+}

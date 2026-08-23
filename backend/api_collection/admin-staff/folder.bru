@@ -1,0 +1,13 @@
+meta {
+  name: admin-staff
+  seq: 9
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Staff management. Owner-only for create and update. The server refuses to demote or
+  deactivate the last active owner, which would lock everyone out of staff management.
+}

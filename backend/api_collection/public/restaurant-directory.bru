@@ -1,0 +1,51 @@
+meta {
+  name: restaurant-directory
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/public/v1/restaurants
+  body: none
+  auth: none
+}
+
+script:post-response {
+  // Deliberately sets nothing.
+  //
+  // Overwriting `restaurant_slug` from the first row here would silently retarget every later
+  // request at whichever restaurant sorted first -- and the environment already names the one this
+  // collection is written against. A response should not quietly redefine configuration.
+  //
+  // The slug list is asserted below instead.
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("lists at least one restaurant", function () {
+    expect(res.body.data.restaurants).to.be.an("array").with.length.above(0)
+  })
+
+  test("carries no staff-only fields", function () {
+    // Structural, not incidental: the endpoint returns RestaurantSummary, which has no field for
+    // any of these. A new column on the model cannot leak here by accident.
+    const raw = JSON.stringify(res.body)
+    expect(raw).to.not.include("upi_vpa")
+    expect(raw).to.not.include("gst_number")
+    expect(raw).to.not.include("tax_bps")
+    expect(raw).to.not.include("qr_token")
+  })
+}
+
+docs {
+  # Restaurant directory
+
+Active restaurants, as `RestaurantSummary` only.
+
+Public because the `/qr` gallery has no credentials of any kind. It adds enumerability of the tenant
+list, not a new class of information -- everything here is already visible to anyone who scans a
+code. A white-label deployment would want this behind auth (docs/DECISIONS.md D13).
+}

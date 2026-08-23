@@ -1,0 +1,32 @@
+meta {
+  name: stats-range
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/stats/range?from=2026-08-01&to=2026-08-31
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+}
+
+docs {
+  # A date range
+
+`YYYY-MM-DD`, parsed in the restaurant's timezone, `to` inclusive.
+
+Capped at 366 days: an unbounded range is a cheap way to make the database scan the whole orders
+table. An inverted range or a malformed date answers 400 rather than being silently ignored --
+dropping a date filter would return the entire history where one day was asked for, which looks like
+data corruption rather than a bad parameter.
+}

@@ -1,0 +1,38 @@
+meta {
+  name: live
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/public/v1/health/live
+  body: none
+  auth: none
+}
+
+vars:pre-request {
+  base_url: '''
+    
+    http://localhost:8080
+  '''
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+  
+  test("reports ok", function () {
+    expect(res.body.status).to.equal("ok")
+  })
+}
+
+docs {
+  # Liveness
+  
+  Returns 200 whenever the process is running. Checks no dependency, on purpose -- a liveness probe
+  that fails on a database blip gets every pod restarted, and the replacements cannot connect either.
+  
+  Note it does NOT use the standard envelope: probes are consumed by orchestrators, not by the
+  frontend, so a bare `{ "status": "ok" }` is the more useful shape.
+}

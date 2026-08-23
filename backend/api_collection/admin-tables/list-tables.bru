@@ -1,0 +1,46 @@
+meta {
+  name: list-tables
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/tables
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data && res.body.data.tables.length > 0) {
+    bru.setVar("admin_table_uid", res.body.data.tables[0].uid)
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("includes each table's live order count", function () {
+    // One grouped query, not one per table -- this screen renders the whole floor at once.
+    expect(res.body.data.tables[0]).to.have.property("live_order_count")
+  })
+
+  test("staff DO get the qr_url here", function () {
+    // The inverse of the public landing endpoint: staff need the URL to print it.
+    expect(res.body.data.tables[0].qr_url).to.include("/t/")
+  })
+}
+
+docs {
+  # List tables
+
+Sets `admin_table_uid`. Includes `qr_url` and a live order count per table.
+
+Contrast with `public / restaurant-landing`, which returns label and uid only -- possession of the
+QR URL authorises ordering at that table, so it is staff-only.
+}

@@ -8,7 +8,16 @@
   "$schema": "https://biomejs.dev/schemas/2.2.0/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/.next", "!**/dist", "!**/bun.lock"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/.next",
+      "!**/dist",
+      "!**/bun.lock",
+      // The Bruno collection is tool-owned: Bruno rewrites bruno.json itself, so formatting it here
+      // is churn that gets undone on the next edit in the app. The .bru files are not JS either.
+      "!backend/api_collection"
+    ]
   },
   "formatter": {
     "enabled": true,

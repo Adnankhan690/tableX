@@ -1,0 +1,33 @@
+meta {
+  name: get-payment-status
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/payment
+  body: none
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns payment AND order status together", function () {
+    // One poll answers both questions the diner has on that screen, which halves the traffic.
+    expect(res.body.data.payment).to.be.an("object")
+    expect(res.body.data.order_status).to.be.a("string")
+  })
+}
+
+docs {
+  # Payment status
+
+What the diner app polls while awaiting confirmation. Returns both statuses in one response.
+}
