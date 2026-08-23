@@ -1,0 +1,64 @@
+meta {
+  name: create-item
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/menu/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "category_uid": "{{category_uid}}",
+    "name": "Tomato Shorba",
+    "description": "Roasted tomato, black pepper",
+    "price_minor": 18000,
+    "food_type": "veg",
+    "spice_level": "mild",
+    "prep_time_mins": 12,
+    "sort_order": 10
+  }
+}
+
+script:post-response {
+  if (res.status === 201 && res.body.data) {
+    bru.setVar("admin_item_uid", res.body.data.uid)
+  }
+}
+
+tests {
+  test("responds 201, or 409 if the name is taken", function () {
+    expect([201, 409]).to.include(res.status)
+  })
+
+  test("price is echoed as integer paise plus a display string", function () {
+    if (res.status === 201) {
+      expect(res.body.data.price.minor).to.equal(18000)
+      expect(res.body.data.price.display).to.equal("₹180.00")
+    }
+  })
+}
+
+docs {
+  # Create a menu item
+
+`price_minor` is **paise**, as an integer: 18000 is ₹180.00. No float reaches the server
+(docs/DECISIONS.md D7). The admin UI parses what a manager types and rejects more than two decimal
+places rather than rounding -- a mistyped `180.555` must be a visible error, not a silently altered
+price.
+
+**`food_type` is required and has no default.** Guessing "veg" would mislabel meat; guessing
+"non_veg" would hide vegetarian dishes from diners filtering for them. Omit it to see
+`TX_MNU_015` (422).
+}

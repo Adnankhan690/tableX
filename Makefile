@@ -5,6 +5,7 @@
 
 .PHONY: help setup up down reset db-shell migrate migrate-down migrate-status seed \
         backend frontend dev build test test-backend test-frontend smoke concurrency \
+        api-collection \
         lint fmt typecheck check clean tidy
 
 SHELL := /bin/bash
@@ -101,6 +102,9 @@ smoke: ## End-to-end API smoke test (needs a freshly seeded db and a running ser
 
 concurrency: ## Race tests for order accept, number allocation and idempotency
 	./scripts/concurrency.sh
+
+api-collection: ## Run the Bruno API collection (reseeds first; needs a running server)
+	./scripts/api-collection.sh
 
 typecheck: ## TypeScript across the workspace
 	./node_modules/.bin/tsc --noEmit -p packages/shared/tsconfig.json

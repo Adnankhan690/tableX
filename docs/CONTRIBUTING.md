@@ -81,6 +81,9 @@ Bottom-up, so each step compiles:
 6. Service method — same order. Own the transaction here.
 7. Controller, then the route in `cmd/app/routes.go`.
 8. An assertion in `scripts/smoke.sh`.
+9. **A request in `backend/api_collection/`.** Not optional -- `go test ./cmd/app` fails if a route
+   has no request, and fails again if a request points at a route that no longer exists. Put it in
+   the folder matching its route group and give it a `seq` that keeps a sequential run working.
 
 ## Testing
 
@@ -89,9 +92,15 @@ make test                    # Go tests + frontend unit tests
 make -C backend test-race    # the hub and order locking only misbehave under -race
 make smoke                   # 68 API assertions against a running server
 make concurrency             # the three races that happen in a real restaurant
+make api-collection          # 125 assertions, the Bruno collection end to end
 cd apps/diner && node e2e/diner-journey.mjs    # 37 assertions, real browser
 cd apps/admin && node e2e/admin-journey.mjs    # 53 assertions, real browser
 ```
+
+`make api-collection` reseeds before running, and judges on assertion results rather than Bruno's
+exit code -- Bruno exits 1 for any non-2xx response, and the collection deliberately asserts three
+refusals. Verifying a refusal is worth more than a green exit code, so the wrapper reads the JSON
+report instead.
 
 The smoke and E2E suites need a **freshly seeded** database (`make reset`): several assertions
 check exact order numbers and totals.

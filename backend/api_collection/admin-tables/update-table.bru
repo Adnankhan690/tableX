@@ -1,0 +1,45 @@
+meta {
+  name: update-table
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/api/admin/v1/tables/{{admin_table_uid}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "seats": 6
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("envelope reports success", function () {
+    // Asserting on `code`, not `message`: codes are stable, messages are human copy that will be
+    // translated (PRD section 7).
+    expect(res.body.code).to.equal("00000")
+  })
+}
+
+docs {
+  # Update a table
+
+Archiving a table that has live orders is refused (`TX_TBL_008`): it would orphan an order the
+kitchen is still cooking and leave the diner watching a tracking screen nobody is acting on.
+Try `{"status": "archived"}` while an order is open on that table.
+}

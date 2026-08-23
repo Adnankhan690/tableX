@@ -1,0 +1,34 @@
+meta {
+  name: ready
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/public/v1/health/ready
+  body: none
+  auth: none
+}
+
+tests {
+  test("responds 200 when the database is reachable", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("reports on the database", function () {
+    expect(res.body.database).to.equal("ok")
+  })
+
+  test("reports realtime hub stats", function () {
+    // Present only when realtime is enabled in config. `dropped` climbing is the signal that
+    // clients are too slow or the send buffer is too small.
+    expect(res.body.realtime).to.be.an("object")
+  })
+}
+
+docs {
+  # Readiness
+
+Pings the database and answers **503** when it cannot serve, which takes the instance out of the
+load balancer without killing it. Also reports realtime hub counters -- watch `dropped`.
+}

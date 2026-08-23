@@ -1,0 +1,75 @@
+meta {
+  name: razorpay-payment-captured
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/public/v1/webhooks/payments/razorpay
+  body: json
+  auth: none
+}
+
+headers {
+  X-Razorpay-Signature: {{razorpay_signature}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "event": "payment.captured",
+    "payload": {
+      "payment": {
+        "entity": {
+          "id": "pay_bruno001",
+          "order_id": "order_bruno001",
+          "amount": 79275,
+          "currency": "INR",
+          "status": "captured",
+          "receipt": "REPLACE_PAYMENT_REFERENCE"
+        }
+      }
+    }
+  }
+}
+
+script:pre-request {
+  // Razorpay signs the raw body with HMAC-SHA256. Computed here so the request is sendable without
+  // pasting a signature by hand -- and so the failure mode is easy to explore by breaking it.
+  //
+  // Requires `crypto` to be whitelisted in Bruno's script settings
+  // (Preferences -> Scripts -> Module whitelist). If it is not, use the `mock` webhook instead:
+  // it exercises the same settle path without a signature.
+  const crypto = require("crypto")
+  const secret = bru.getEnvVar("razorpay_webhook_secret")
+  const raw = JSON.stringify(JSON.parse(req.getBody()))
+  req.setBody(raw)
+  bru.setVar("razorpay_signature", crypto.createHmac("sha256", secret).update(raw).digest("hex"))
+}
+
+tests {
+  test("a valid signature is accepted; an invalid one is rejected", function () {
+    expect([200, 401, 409]).to.include(res.status)
+  })
+
+  test("signature failures are 401 and say nothing else", function () {
+    if (res.status === 401) {
+      expect(res.body.code).to.equal("TX_PAY_007")
+    }
+  })
+}
+
+docs {
+  # Razorpay webhook
+
+**The signature check is the security boundary of this endpoint.** It runs before any parsing or
+database work: without it, anyone who learns the URL can mark any order paid. The comparison is
+constant-time, so the signature cannot be recovered a byte at a time by timing the response.
+
+`razorpay_webhook_secret` in the environment must match the server's
+`TABLEX_RAZORPAY_WEBHOOK_SECRET`, or every request here answers 401 -- which is also the easiest way
+to see the rejection: change one character in the secret.
+
+Note the adapter has **never been tested against the live Razorpay API** -- only against fixtures
+like this one. Treat a real integration as unverified until it has run end to end.
+}

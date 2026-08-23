@@ -1,0 +1,76 @@
+meta {
+  name: place-order-upi
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/guest/v1/orders
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "items": [
+      { "menu_item_uid": "{{menu_item_uid}}", "quantity": 1 }
+    ],
+    "payment_method": "online_upi"
+  }
+}
+
+script:post-response {
+  // Recorded under a DIFFERENT variable from the counter order.
+  //
+  // The cancel request below voids this one, so that `order_uid` survives untouched for
+  // admin-orders to drive through accept -> preparing -> ready -> served -> paid. Without two
+  // orders, a full collection run cancels the only order first and every transition afterwards is
+  // a legitimate 409 -- which the tests would tolerate, quietly never exercising the happy path.
+  if (res.status === 201 && res.body.data) {
+    bru.setVar("upi_order_uid", res.body.data.order.uid)
+  }
+}
+
+tests {
+  test("responds 201", function () {
+    expect(res.status).to.equal(201)
+  })
+
+  test("attaches a UPI intent", function () {
+    expect(res.body.data.payment.upi_intent_url).to.match(/^upi:\/\/pay\?/)
+  })
+
+  test("intent carries the exact amount and the payee VPA", function () {
+    const url = res.body.data.payment.upi_intent_url
+    const total = res.body.data.order.totals.total.minor
+    const rupees = Math.floor(total / 100) + "." + String(total % 100).padStart(2, "0")
+    expect(url).to.include("am=" + rupees)
+    expect(url).to.include("pa=")
+  })
+
+  test("admits that static UPI cannot self-confirm", function () {
+    // A bank transfer is invisible to this server, so the diner app must show "awaiting
+    // confirmation" rather than a spinner that never resolves (docs/DECISIONS.md D2).
+    expect(res.body.data.payment.requires_manual_confirmation).to.be.true
+  })
+
+  test("renders a scannable QR for paying from another device", function () {
+    expect(res.body.data.payment.qr_png_base64).to.be.a("string").and.not.empty
+  })
+}
+
+docs {
+  # Place an order, paying by UPI
+
+Deliberately sends no `Idempotency-Key`, so it creates a distinct order rather than replaying the
+one above.
+
+The interesting assertion is `requires_manual_confirmation`. Static UPI pays into the restaurant's
+own bank account, which this server cannot observe -- so a staff member confirms it
+(`admin-orders / confirm-payment`). That is the same trust model as cash.
+}

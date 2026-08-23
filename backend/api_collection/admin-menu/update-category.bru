@@ -1,0 +1,47 @@
+meta {
+  name: update-category
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/api/admin/v1/menu/categories/{{category_uid}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "description": "Clear, thick and seasonal"
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("envelope reports success", function () {
+    // Asserting on `code`, not `message`: codes are stable, messages are human copy that will be
+    // translated (PRD section 7).
+    expect(res.body.code).to.equal("00000")
+  })
+}
+
+docs {
+  # Update a category
+
+PATCH semantics: omitted fields are left alone, and a field sent as `""` clears it. That distinction
+is why the request DTO uses pointers.
+
+Archiving a category that still holds dishes is refused (`TX_MNU_003`) rather than cascading --
+cascading would delete menu items that order history references.
+}

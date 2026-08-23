@@ -1,0 +1,16 @@
+meta {
+  name: admin-stats
+  seq: 11
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Dashboard figures, windowed in the restaurant's own timezone -- a 1am order belongs
+  to the previous evening's service (docs/DECISIONS.md D9).
+
+  `avg_accept_secs` and `avg_fulfil_secs` are null when there is no data. That is deliberate: zero
+  would claim orders are accepted instantly.
+}

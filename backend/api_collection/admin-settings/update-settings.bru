@@ -1,0 +1,51 @@
+meta {
+  name: update-settings
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{base_url}}/api/admin/v1/settings
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "tax_bps": 500,
+    "service_charge_bps": 0,
+    "upi_payee_name": "Spice Garden"
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+}
+
+docs {
+  # Update settings
+
+Owner/manager only -- floor staff move orders through the kitchen, they do not reprice the menu.
+
+Things worth provoking:
+
+- `"tax_bps": 20000` -> 422. Bounded 0..10000, so a typo'd `5000` cannot charge every diner 50%.
+- `"timezone": "Mars/Olympus"` -> 422. Validated on write rather than falling back at read time,
+  because an unknown zone would silently roll the daily order counter over at the wrong hour and
+  nobody would know why.
+- `"payment_provider": "stripe"` -> `TX_PAY_005`. Refused because accepting a provider this
+  deployment cannot serve would leave the payment screen quietly falling back on every order while
+  the owner believes their gateway is live.
+
+Rate changes apply to **new** orders only; orders already placed keep the rate they were priced at.
+}

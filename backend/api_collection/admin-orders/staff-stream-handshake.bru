@@ -1,0 +1,64 @@
+meta {
+  name: staff-stream-handshake
+  type: http
+  seq: 11
+  tags: [
+    manual
+  ]
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/stream?token={{access_token}}
+  body: none
+  auth: none
+}
+
+headers {
+  Upgrade: websocket
+  Connection: keep-alive, Upgrade
+  Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+  Sec-WebSocket-Version: 13
+  Origin: http://localhost:3001
+}
+
+tests {
+  test("the upgrade is accepted", function () {
+    // 101 Switching Protocols. Bruno cannot speak the WebSocket protocol after this point, but the
+    // handshake is the part worth testing -- it is where authentication and origin checking happen.
+    expect(res.status).to.equal(101)
+  })
+}
+
+docs {
+  > **Tagged `manual`. Excluded from automated runs.**
+  >
+  > A successful upgrade answers `101 Switching Protocols` and leaves the connection upgraded, which
+  > silently halts Bruno's HTTP runner -- every request after it is skipped, with no error and a
+  > zero exit code. So CI runs `--exclude-tags manual`, and this request is for driving by hand.
+
+  # Staff realtime stream (handshake only)
+
+Bruno is an HTTP client, so it cannot hold a WebSocket open. The **handshake** is still worth
+exercising, because that is where authentication and the origin check happen -- and a bug here is
+invisible from the UI, which silently falls back to polling.
+
+## Why the token is in the query string
+
+A browser `WebSocket` cannot set request headers -- there is no API for it. So the token travels as
+`?token=`, which is worse than a header (URLs reach proxy logs and history more readily). The server
+therefore accepts a query token **only on a genuine upgrade request**, and it is why the request
+logger omits query strings entirely.
+
+## Three things to try
+
+| Change | Expect |
+|---|---|
+| as written | **101** Switching Protocols |
+| remove `?token=` | **401** -- the query fallback is not a way in without credentials |
+| remove the `Upgrade` and `Connection` headers, keep `?token=` | **401** -- the weak path is gated on the request actually being an upgrade, so it cannot be used to authenticate an ordinary call |
+| change `Origin` to `https://evil.example` | **403** -- checked against the same CORS allowlist, so a valid token from a foreign origin is still refused |
+
+That third row is the one that matters. This exact bug shipped once: the middleware read only the
+`Authorization` header, so the admin board could never connect and fell back to polling without
+saying so.
+}

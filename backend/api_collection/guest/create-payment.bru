@@ -1,0 +1,44 @@
+meta {
+  name: create-payment
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/payment
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "method": "online_upi"
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("envelope reports success", function () {
+    // Asserting on `code`, not `message`: codes are stable, messages are human copy that will be
+    // translated (PRD section 7).
+    expect(res.body.code).to.equal("00000")
+  })
+}
+
+docs {
+  # Start or restart a payment
+
+For a diner who chose "pay at counter" and changed their mind, or whose first attempt was abandoned.
+Updates the order's recorded method so the admin panel shows what they actually chose.
+
+At a restaurant with no `upi_vpa` configured this answers `TX_RST_007` (409), and the correct client
+response is to offer the counter rather than a dead end.
+}

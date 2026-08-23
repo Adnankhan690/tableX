@@ -1,0 +1,19 @@
+meta {
+  name: health
+  seq: 2
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Liveness and readiness.
+
+  `live` checks nothing but the process, deliberately: a liveness probe that fails on a database
+  blip gets every pod killed and restarted, turning a recoverable outage into a total one.
+  `ready` pings the database and answers 503 when it cannot serve, which removes the instance
+  from the load balancer without killing it.
+
+  Mounted before the rate limiter, so a probe firing every few seconds cannot throttle itself.
+}

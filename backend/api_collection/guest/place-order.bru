@@ -1,0 +1,107 @@
+meta {
+  name: place-order
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/guest/v1/orders
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Idempotency-Key: {{idempotency_key}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "items": [
+      { "menu_item_uid": "{{menu_item_uid}}", "quantity": 2 },
+      { "menu_item_uid": "{{menu_item_uid_2}}", "quantity": 1, "note": "less spicy" }
+    ],
+    "payment_method": "counter",
+    "customer_name": "Anita",
+    "customer_phone": "9876543210",
+    "note": "one plate to share"
+  }
+}
+
+script:post-response {
+  if (res.status === 201 && res.body.data) {
+    bru.setVar("order_uid", res.body.data.order.uid)
+    bru.setVar("order_number", res.body.data.order.order_number)
+  }
+}
+
+tests {
+  test("responds 201", function () {
+    expect(res.status).to.equal(201)
+  })
+
+  test("prices the order server-side", function () {
+    // The request body carries no amount at all. A client-supplied total would let a diner order a
+    // thali for one rupee (docs/DECISIONS.md D7).
+    expect(res.body.data.order.totals.total.minor).to.be.a("number").and.above(0)
+  })
+
+  test("totals are integer paise plus a formatted string", function () {
+    const t = res.body.data.order.totals
+    expect(Number.isInteger(t.total.minor)).to.be.true
+    expect(t.total.display).to.match(/^₹/)
+  })
+
+  test("subtotal + tax + service = total", function () {
+    const t = res.body.data.order.totals
+    expect(t.subtotal.minor + t.tax.minor + t.service_charge.minor - t.discount.minor)
+      .to.equal(t.total.minor)
+  })
+
+  test("allocates a human order number", function () {
+    // Staff shout this across a kitchen; the uid is unusable out loud (docs/DECISIONS.md D9).
+    expect(res.body.data.order.order_number).to.match(/^[A-Z]-\d{3}$/)
+  })
+
+  test("starts at placed, and the guest may cancel", function () {
+    expect(res.body.data.order.status).to.equal("placed")
+    expect(res.body.data.order.can_guest_cancel).to.be.true
+  })
+
+  test("next_statuses is scoped to the ACTOR asking", function () {
+    // A guest sees only `cancelled` -- `accepted` is a staff transition, and this response is being
+    // returned to a diner. The same order fetched with a staff token offers accepted/rejected/
+    // cancelled instead (see admin-orders / get-order).
+    //
+    // That is the whole point of computing it server-side: the client renders what it is given
+    // rather than reimplementing who-may-do-what (docs/DECISIONS.md D1).
+    expect(res.body.data.order.next_statuses).to.deep.equal(["cancelled"])
+  })
+
+  test("line items are snapshotted, not joined live", function () {
+    // name and unit_price are copied at order time so a later price change cannot rewrite this
+    // bill (docs/DECISIONS.md D8).
+    const item = res.body.data.order.items[0]
+    expect(item.name).to.be.a("string").and.not.empty
+    expect(item.unit_price.minor).to.be.a("number")
+  })
+}
+
+docs {
+  # Place an order
+
+Sets `order_uid` and `order_number`.
+
+**Note what the body does not contain: any amount.** The server prices the cart from the live menu.
+
+`Idempotency-Key` is set by `public / scan-table` and must be reused across retries of the *same*
+order -- a fresh key per attempt defeats the mechanism entirely. **Send this request twice without
+changing the key**: the second call returns the same `order.uid` and does not create a second
+ticket (docs/DECISIONS.md D12).
+
+Other things worth provoking:
+- an unavailable item uid -> `TX_MNU_018` (409)
+- `"payment_method": "online_upi"` -> the response gains a `payment` object with a `upi://` intent
+- quantity 0 or 100 -> `TX_ORD_013` (422)
+}

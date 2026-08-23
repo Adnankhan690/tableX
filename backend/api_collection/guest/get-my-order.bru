@@ -1,0 +1,39 @@
+meta {
+  name: get-my-order
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("includes the status timeline", function () {
+    expect(res.body.data.timeline).to.be.an("array").with.length.above(0)
+  })
+
+  test("matches the order we placed", function () {
+    expect(res.body.data.order_number).to.equal(bru.getVar("order_number"))
+  })
+}
+
+docs {
+  # Track one order
+
+Backs the diner's progress screen.
+
+**Ownership is verified, and a mismatch answers 404 rather than 403** -- confirming that an order
+exists would let someone enumerate other tables' orders by uid. Try it: scan a different table,
+then request this order with that session's token.
+}

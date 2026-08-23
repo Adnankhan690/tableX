@@ -1,0 +1,58 @@
+meta {
+  name: mock-payment-captured
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/public/v1/webhooks/payments/mock
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "event_id": "evt_bruno_001",
+    "event_type": "payment.captured",
+    "reference": "REPLACE_PAYMENT_REFERENCE",
+    "provider_payment_id": "mockpay_001",
+    "amount_minor": 0,
+    "paid": true
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    // 200 whether it settled, was a duplicate, or named an unknown reference -- see docs.
+    expect(res.status).to.be.oneOf([200, 409])
+  })
+}
+
+docs {
+  # Mock provider webhook
+
+The way to exercise the settle path without a real gateway. The `mock` provider needs no signature
+and is **never registered in production** -- it is gated on the environment rather than a config
+flag, because a provider that settles anything it is handed must not be one typo away from live.
+
+## To use it
+
+1. Place a UPI order (`guest / place-order-upi`).
+2. Read its `payment.reference` and `order.totals.total.minor` from the response.
+3. Put them in `reference` and `amount_minor` here.
+
+## What each field proves
+
+- **Change `amount_minor` to a wrong value** -> `TX_PAY_006` (409) and the payment is **not**
+  settled. An underpayment silently marked paid is money the restaurant loses without finding out.
+- **Send the same `event_id` twice** -> 200, and nothing happens the second time. Gateways retry as
+  a matter of course, so a redelivery is the normal path. The unique `(provider, event_id)` index is
+  what does the deduplication -- the insert *failing* is the check, because a SELECT-then-INSERT
+  would be racy (docs/DECISIONS.md D2).
+- **An unknown `reference`** -> 200, recorded and ignored. A webhook for a payment we never created
+  is the provider's problem, and a 500 would make them retry it forever.
+}

@@ -1,0 +1,50 @@
+meta {
+  name: refresh
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{refresh_token}}"
+  }
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data) {
+    bru.setVar("access_token", res.body.data.access_token)
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("envelope reports success", function () {
+    // Asserting on `code`, not `message`: codes are stable, messages are human copy that will be
+    // translated (PRD section 7).
+    expect(res.body.code).to.equal("00000")
+  })
+}
+
+docs {
+  # Refresh the access token
+
+Deliberately not authenticated by the access token -- the whole point is that it works once that has
+expired.
+
+Unlike `Authenticate`, this **does** hit the database. It is rare, and it is the only opportunity to
+notice that an account was deactivated since the long-lived refresh token was issued -- otherwise a
+sacked staff member keeps working access for the full refresh lifetime.
+}

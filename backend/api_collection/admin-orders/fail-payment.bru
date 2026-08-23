@@ -1,0 +1,47 @@
+meta {
+  name: fail-payment
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/orders/{{order_uid}}/payment/fail
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "reason": "diner left without paying"
+  }
+}
+
+tests {
+  test("refuses to fail a payment that is already settled", function () {
+    // confirm-payment ran immediately before this and settled the order, so 409 is correct.
+    // Reversing a settlement is a refund -- a different operation with different accounting.
+    expect(res.status).to.equal(409)
+  })
+
+  test("and says which conflict it is", function () {
+    expect(res.body.code).to.equal("TX_PAY_002")
+  })
+}
+
+docs {
+  > In a sequential run this **asserts the 409**, because `confirm-payment` settled the order just
+> before it. Run it against an unpaid order to see the 200.
+
+  # Mark payment failed
+
+Refused on an already-paid order (`TX_PAY_002`). Reversing a settlement is a refund -- a different
+operation with different accounting -- not a correction to be made here.
+}

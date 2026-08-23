@@ -1,0 +1,31 @@
+meta {
+  name: list-staff
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/staff
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("never returns a password hash", function () {
+    expect(JSON.stringify(res.body)).to.not.include("password_hash")
+  })
+}
+
+docs {
+  # List staff
+
+Readable by any role; only owners can change anything.
+}

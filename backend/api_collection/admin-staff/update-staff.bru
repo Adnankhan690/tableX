@@ -1,0 +1,42 @@
+meta {
+  name: update-staff
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/api/admin/v1/staff/{{new_staff_uid}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "role": "manager"
+  }
+}
+
+tests {
+  test("responds 200, or explains the refusal", function () {
+    expect([200, 403, 404]).to.include(res.status)
+  })
+}
+
+docs {
+  # Update a staff member
+
+Owner only. Role and status are the two patchable fields.
+
+**Try it against `{{staff_uid}}`** -- your own account, the only owner -- with
+`{"role": "staff"}`. It is refused: demoting the last active owner would leave nobody able to manage
+staff, which is unrecoverable without direct database access. The same guard applies to
+`{"status": "inactive"}`.
+}

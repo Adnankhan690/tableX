@@ -1,0 +1,34 @@
+meta {
+  name: get-order
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/orders/{{order_uid}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("includes the full audit timeline with actors", function () {
+    // "Who cancelled table 7's order" has to be answerable.
+    const t = res.body.data.timeline
+    expect(t).to.be.an("array").with.length.above(0)
+    expect(t[0].actor_type).to.be.oneOf(["guest", "staff", "system"])
+  })
+}
+
+docs {
+  # One order, in full
+
+Scoped to the caller's restaurant, so an order uid from another tenant answers 404.
+}

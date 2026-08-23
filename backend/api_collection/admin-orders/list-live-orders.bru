@@ -1,0 +1,41 @@
+meta {
+  name: list-live-orders
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/orders?live=true
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns a page of orders with metadata", function () {
+    expect(res.body.data.orders).to.be.an("array")
+    expect(res.body.data.meta.total).to.be.a("number")
+  })
+
+  test("each order carries its legal next transitions", function () {
+    if (res.body.data.orders.length > 0) {
+      expect(res.body.data.orders[0].next_statuses).to.be.an("array")
+    }
+  })
+}
+
+docs {
+  # The order queue
+
+`live=true` is shorthand for every non-terminal status -- the kitchen board's only real question.
+
+Other filters: `status` (repeatable), `table_uid`, `payment_status`, `search` (order number or
+customer name), `from`/`to` as `YYYY-MM-DD` with `to` inclusive, `page`, `per_page` (max 100).
+}

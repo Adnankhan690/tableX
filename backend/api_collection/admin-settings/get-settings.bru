@@ -1,0 +1,40 @@
+meta {
+  name: get-settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/settings
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("staff DO see the operational fields", function () {
+    // The inverse of every public endpoint: this returns RestaurantSettings, which has them.
+    expect(res.body.data).to.have.property("tax_bps")
+    expect(res.body.data).to.have.property("payment_provider")
+  })
+
+  test("rates are integer basis points", function () {
+    expect(Number.isInteger(res.body.data.tax_bps)).to.be.true
+  })
+}
+
+docs {
+  # Restaurant settings
+
+Returns `RestaurantSettings` -- the staff-only view, including `upi_vpa`, `gst_number` and the rate
+configuration that no public endpoint carries.
+
+`tax_bps` is basis points: 500 is 5.00%. The admin UI converts to and from percent at the edge.
+}

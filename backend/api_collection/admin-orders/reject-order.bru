@@ -1,0 +1,52 @@
+meta {
+  name: reject-order
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/orders/{{order_uid}}/transition
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "status": "rejected",
+    "reason": "We have run out of paneer this evening"
+  }
+}
+
+tests {
+  test("refuses to reject an order that is already served", function () {
+    // 409 is the CORRECT answer at this point in a sequential run: the four transitions above have
+    // driven this order to `served`, and the state machine has no edge from there to `rejected`.
+    // Asserting the refusal rather than tolerating it is what makes this a test.
+    expect(res.status).to.equal(409)
+  })
+
+  test("and names the reason it refused", function () {
+    expect(res.body.code).to.equal("TX_ORD_006")
+  })
+}
+
+docs {
+  > In a sequential run this **asserts the 409**, because the order has already been served by the
+> requests above. To see it succeed, place a fresh order and point `order_uid` at that.
+
+  # Reject an order
+
+**Remove `reason` and this answers `TX_ORD_015` (422).** Reject and staff-cancel are the two
+transitions a diner experiences as their order disappearing, so they must carry an explanation the
+diner can be shown.
+
+Only legal from `placed`. Run it against a fresh order, not one already accepted.
+}

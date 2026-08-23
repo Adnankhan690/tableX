@@ -1,0 +1,49 @@
+meta {
+  name: create-category
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/menu/categories
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "name": "Soups",
+    "description": "Clear and thick",
+    "sort_order": 15
+  }
+}
+
+script:post-response {
+  if (res.status === 201 && res.body.data) {
+    bru.setVar("category_uid", res.body.data.uid)
+  }
+}
+
+tests {
+  test("responds 201, or 409 if it already exists", function () {
+    // Re-running the collection hits the unique (restaurant_id, name) constraint, which is correct.
+    expect([201, 409]).to.include(res.status)
+  })
+}
+
+docs {
+  # Create a category
+
+Owner/manager only -- a `staff` token answers 403.
+
+`sort_order` is restaurant-controlled because a menu runs Starters before Desserts, which is neither
+alphabetical nor insertion order.
+}

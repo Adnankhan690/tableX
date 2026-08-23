@@ -1,0 +1,33 @@
+meta {
+  name: get-table-qr
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/tables/{{admin_table_uid}}/qr?size=512
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns a printable PNG and the encoded URL", function () {
+    expect(res.body.data.png_base64).to.be.a("string").and.not.empty
+    expect(res.body.data.qr_url).to.include("/t/")
+  })
+}
+
+docs {
+  # Table QR, for printing
+
+512px suits a printed table card. Rendered server-side so the admin panel's print sheet is one
+request per table rather than a client-side QR library.
+}
