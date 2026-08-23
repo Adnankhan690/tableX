@@ -1,0 +1,123 @@
+# Working on tableX
+
+## Setup
+
+```bash
+cp .env.example .env
+echo "TABLEX_JWT_SECRET=$(openssl rand -hex 32)" >> .env
+make setup     # deps, Postgres, migrations, demo data
+make dev       # API :8080, diner :3000, admin :3001
+```
+
+`make help` lists everything. `make check` is the full gate, and it is what CI runs.
+
+## The one rule that is not optional
+
+**`packages/shared/src/types.ts` is a hand-mirror of `backend/internal/types`. When a DTO changes
+on one side, it changes on the other in the same commit.**
+
+There is no codegen. That is a deliberate trade for one backend and two frontends — adding protoc
+or an OpenAPI pipeline costs more than it saves at this size — but the trade only works if the
+obligation is honoured. Nothing fails at compile time if you forget; it fails at runtime, in front
+of a diner, as a missing field.
+
+The safety net is `apps/*/e2e/*.mjs`: they run against a real backend with nothing stubbed, so a
+drift shows up there. Run them before merging a DTO change.
+
+## Layers
+
+Each layer talks only to the one below, and each returns a different kind of error. That asymmetry
+is the design: it puts every decision in exactly one place.
+
+| Layer | Does | Returns | Never |
+| --- | --- | --- | --- |
+| `controllers` | bind, resolve principal, call **one** service, reply | whatever the service gave it | contains an `if` about domain state |
+| `services` | business rules, owns transactions | `*response.ApplicationError` | imports `gin` |
+| `repositories` | GORM queries | wrapped plain errors | validates, or picks an HTTP status |
+
+The rule that earns the most: **only a service knows whether a missing row is an error.**
+`gorm.ErrRecordNotFound` for "no session with this token" is a 401; the same error for "no
+restaurant with this slug" is a 404. A repository would have to guess; a controller would
+duplicate it per endpoint.
+
+`internal/repositories/interfaces.go` and `internal/services/interfaces.go` declare every
+signature separately from the implementations — 70 and 44 methods. Two consequences worth the
+indirection: every tenant-scoped read takes `restaurantID` **as a parameter**, so a query that
+forgets to scope itself does not compile; and transaction-aware methods take a `*gorm.DB`, with
+`nil` meaning "use the pool", so one signature serves both cases.
+
+## Things that will be sent back in review
+
+- **A float in a money path.** Amounts are `int64` paise, named `*_minor`, in Go and TypeScript
+  alike ([D7](./DECISIONS.md)). Rates are integer basis points.
+- **A status comparison written inline.** Go goes through `services.CheckTransition`; TypeScript
+  renders `order.next_statuses`. The state machine has one definition ([D1](./DECISIONS.md)) and
+  the client is not allowed a second one.
+- **A realtime publish inside a transaction.** It would announce a state a rollback then
+  discards. Publish after commit, always.
+- **A tenant-scoped query that ignores its `restaurantID`.** A data-isolation bug, not a style note.
+- **A repository returning an `ApplicationError`,** or a service importing `gin`.
+- **Branching on a payment provider's name.** Branch on `Capabilities()`. Naming providers in
+  business logic is how the same string comparison ends up in six files that all have to be found
+  when a seventh provider arrives ([D2](./DECISIONS.md)).
+- **A read inside a transaction using a method that takes no `tx`.** It goes to the pool and cannot
+  see the transaction's own uncommitted writes. This shipped once and returned a stale order status
+  to the client; the E2E suite caught it.
+- **A partial unique index whose predicate does not match what the ORM writes.** `IS NOT NULL` does
+  not exclude `''`, and a Go `string` field writes `''` rather than NULL. This shipped once too and
+  silently left counter orders with no payment row.
+
+## Adding a backend endpoint
+
+Bottom-up, so each step compiles:
+
+1. Migration pair in `backend/migrations/postgres/` (`make -C backend migrate-new`). Hand-written
+   SQL — a generated migration is one nobody has read.
+2. Model in `internal/models/`, mirroring the migration exactly.
+3. DTOs in `internal/types/`, and the TypeScript mirror in `packages/shared`.
+4. Errors in `internal/response/errors_*.go`. Every code unique; check with
+   `grep -rhoE 'TX_[A-Z]+_[0-9]+' backend/internal/response | sort | uniq -d`.
+5. Repository method — signature in `interfaces.go` first, then the implementation.
+6. Service method — same order. Own the transaction here.
+7. Controller, then the route in `cmd/app/routes.go`.
+8. An assertion in `scripts/smoke.sh`.
+
+## Testing
+
+```bash
+make test                    # Go tests + frontend unit tests
+make -C backend test-race    # the hub and order locking only misbehave under -race
+make smoke                   # 68 API assertions against a running server
+make concurrency             # the three races that happen in a real restaurant
+cd apps/diner && node e2e/diner-journey.mjs    # 37 assertions, real browser
+cd apps/admin && node e2e/admin-journey.mjs    # 53 assertions, real browser
+```
+
+The smoke and E2E suites need a **freshly seeded** database (`make reset`): several assertions
+check exact order numbers and totals.
+
+Unit tests use SQLite for speed. Anything about locking must be verified against Postgres — SQLite
+has no `SELECT … FOR UPDATE`, which is exactly the mechanism under test.
+
+## Frontend
+
+- `packages/shared` — types, money, status labels. No React.
+- `packages/api-client` — typed clients, error mapping, timeouts.
+- `packages/ui` — only what is **pixel-identical** in both apps. Anything needing a variant prop to
+  satisfy both is two components, one per app.
+- `apps/diner` — public, anonymous, mobile-first. Ships no icon, animation, charting or
+  state-management library; PRD §7 makes payload a product requirement, and the enforcement is
+  omission. Icons are inline SVG.
+- `apps/admin` — authenticated, dense, cool palette deliberately unlike the diner app so nobody
+  confuses the two on one tablet ([D11](./DECISIONS.md)).
+
+Both apps run TypeScript strict with `noUncheckedIndexedAccess`. Handle the `undefined`; do not
+reach for `!`.
+
+## Migrations
+
+Numbered `.up.sql`/`.down.sql` pairs. The down migration must actually work — CI applies the whole
+stack in reverse, asserts zero tables remain, then applies it forwards again.
+
+For a live deploy use expand/contract: add the column, ship code that writes both, backfill, ship
+code that reads the new one, then drop the old. Never rename in one step.

@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Cool neutral palette, chosen to be unmistakably not the diner app. Prefixed --ad-* rather
+ * than --tx-* for the same reason: if the two ever share a stylesheet by accident, the
+ * variables must not silently merge.
+ */
+:root {
+  color-scheme: light;
+
+  --ad-bg: #f6f7f9;
+  --ad-surface: #ffffff;
+  --ad-surface-sunken: #eef1f5;
+  --ad-ink: #111827;
+  --ad-muted: #64748b;
+  --ad-line: #e2e6ec;
+
+  --ad-accent: #1d4ed8;
+  --ad-accent-ink: #ffffff;
+  --ad-accent-soft: #e8eeff;
+
+  --ad-danger: #b42318;
+  --ad-danger-soft: #fdecea;
+  --ad-success: #157347;
+
+  /* Age escalation tints for the order board. Deliberately pale: they sit behind text that
+     still has to be readable, and a saturated fill would make a late order harder to read
+     rather than easier to notice. */
+  --ad-age-warn: #fff6e5;
+  --ad-age-late: #fdecea;
+
+  --ad-font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Bridge to @tablex/ui, which reads its own token names. Mapped rather than duplicated so
+     each colour has one definition. */
+  --tx-fg: var(--ad-ink);
+  --tx-muted-fg: var(--ad-muted);
+  --tx-error-fg: var(--ad-danger);
+
+  --tx-food-veg: #0a8f3c;
+  --tx-food-nonveg: #9b1c1c;
+  --tx-food-egg: #b45309;
+
+  /* Status tones. These carry the same meaning as on the diner side but are tuned for a dense
+     board read at arm's length rather than a phone held close. */
+  --tx-tone-new-bg: #fff2d9;
+  --tx-tone-new-fg: #92400e;
+  --tx-tone-progress-bg: #e3ecfd;
+  --tx-tone-progress-fg: #1e40af;
+  --tx-tone-ready-bg: #dcf5e4;
+  --tx-tone-ready-fg: #106b36;
+  --tx-tone-done-bg: var(--ad-surface-sunken);
+  --tx-tone-done-fg: var(--ad-muted);
+  --tx-tone-failed-bg: var(--ad-danger-soft);
+  --tx-tone-failed-fg: var(--ad-danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --ad-bg: #0d1117;
+    --ad-surface: #161b22;
+    --ad-surface-sunken: #11161d;
+    --ad-ink: #e6edf3;
+    --ad-muted: #8b949e;
+    --ad-line: #262c36;
+
+    --ad-accent: #6f9bf5;
+    --ad-accent-ink: #08122a;
+    --ad-accent-soft: #17243d;
+
+    --ad-danger: #f28b82;
+    --ad-danger-soft: #2b1614;
+    --ad-success: #57cc7f;
+
+    --ad-age-warn: #2a2214;
+    --ad-age-late: #2e1917;
+
+    --tx-food-veg: #3fbd66;
+    --tx-food-nonveg: #f0625f;
+    --tx-food-egg: #e0a03a;
+
+    --tx-tone-new-bg: #2f2410;
+    --tx-tone-new-fg: #f0c674;
+    --tx-tone-progress-bg: #16233a;
+    --tx-tone-progress-fg: #9dc0ee;
+    --tx-tone-ready-bg: #14281b;
+    --tx-tone-ready-fg: #6ed48c;
+  }
+}
+
+@layer base {
+  body {
+    background-color: var(--ad-bg);
+    color: var(--ad-ink);
+    font-family: var(--ad-font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* This panel is driven at speed during service, often by keyboard on a laptop behind the
+     counter, so focus has to stay obvious. */
+  :focus-visible {
+    outline: 2px solid var(--ad-accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /**
+   * Wide content -- the order table, the QR sheet -- scrolls inside its own container. The page
+   * body must never scroll sideways: on a tablet in portrait that turns every vertical swipe
+   * into a fight with the horizontal axis.
+   */
+  .scroll-x-contain {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+}
+
+/* The print sheet for table QR codes: everything but the sheet is hidden. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+}

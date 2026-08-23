@@ -1,0 +1,52 @@
+# Local development stack for tableX.
+#
+# Port 5434 for Postgres rather than the default 5432: developers here routinely have other
+# stacks bound to 5432 and 5433, and a port collision at `docker compose up` is a confusing
+# first-run failure. Bound to 127.0.0.1 only, so a laptop on cafe wifi is not serving its
+# development database to the network.
+
+name: tablex
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: tablex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tablex
+      # Speeds up initdb and makes collation deterministic across developer machines.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - tablex-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The application waits on this, so it must test a real query rather than just the
+      # port being open -- Postgres accepts connections briefly before it can serve them.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tablex"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # Optional. The application does not require Redis; it is here for the rate limiter to
+  # graduate onto once there is more than one backend replica, since the in-process limiter
+  # counts per-instance. Start it with: docker compose up -d redis
+  redis:
+    image: redis:7-alpine
+    container_name: tablex-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    profiles: ["optional"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  tablex-postgres-data:
+    name: tablex-postgres-data

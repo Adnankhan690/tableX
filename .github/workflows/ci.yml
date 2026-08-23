@@ -1,0 +1,230 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch cancels the previous run: on a busy branch the older result is
+# never the one anyone acts on.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Local-only value. Config validation refuses to start without a secret, and the tests need a
+  # server, so CI supplies one that has never protected anything.
+  TABLEX_JWT_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tablex
+        # The port the app expects locally, so no config override is needed here.
+        ports: ['5434:5432']
+        # Without this the first migration races Postgres finishing its startup.
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tablex"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: backend/go.sum
+
+      - name: Formatting
+        working-directory: backend
+        # gofmt -l lists misformatted files and exits 0, so the check has to be on its output.
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        working-directory: backend
+        run: go vet ./...
+
+      - name: Tests
+        working-directory: backend
+        # -race because the realtime hub and the order-placement locking are the two places a
+        # data race would actually bite, and neither shows up without it.
+        run: go test ./... -count=1 -race
+
+      - name: Build
+        working-directory: backend
+        run: go build -o bin/tablex ./cmd/server
+
+      - name: Migrate and seed
+        run: |
+          export PGPASSWORD=postgres
+          for f in backend/migrations/postgres/*.up.sql; do
+            echo "applying $(basename "$f")"
+            psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q \
+            -f backend/seeds/local_seed.sql
+
+      - name: Migration rollback is real
+        # A down migration nobody runs is a down migration that does not work. Applying the whole
+        # stack in reverse and then forwards again is the only way to know.
+        run: |
+          export PGPASSWORD=postgres
+          for f in $(ls -r backend/migrations/postgres/*.down.sql); do
+            psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          remaining="$(psql -h localhost -p 5434 -U postgres -d tablex -tAc \
+            "select count(*) from information_schema.tables where table_schema='public'")"
+          if [ "$remaining" != "0" ]; then
+            echo "rollback left $remaining tables behind"; exit 1
+          fi
+          for f in backend/migrations/postgres/*.up.sql; do
+            psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q \
+            -f backend/seeds/local_seed.sql
+
+      - name: API smoke and concurrency
+        run: |
+          ./backend/bin/tablex --config backend/config/local.yml &
+          for i in $(seq 1 40); do
+            if curl -sf -o /dev/null http://localhost:8080/api/public/v1/health/live; then break; fi
+            sleep 1
+          done
+          ./scripts/smoke.sh
+          ./scripts/concurrency.sh
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - run: bun install --frozen-lockfile
+
+      - name: Lint and format
+        run: ./node_modules/.bin/biome ci .
+
+      - name: Typecheck
+        # Every package and both apps. The apps' types depend on the packages', so a contract
+        # drift between the hand-mirrored TS types and the Go DTOs surfaces here.
+        run: |
+          ./node_modules/.bin/tsc --noEmit -p packages/shared/tsconfig.json
+          ./node_modules/.bin/tsc --noEmit -p packages/api-client/tsconfig.json
+          ./node_modules/.bin/tsc --noEmit -p packages/ui/tsconfig.json
+          (cd apps/diner && ../../node_modules/.bin/tsc --noEmit)
+          (cd apps/admin && ../../node_modules/.bin/tsc --noEmit)
+
+      - name: Unit tests
+        run: bun test
+
+      - name: Build both apps
+        run: |
+          bun run --cwd apps/diner build
+          bun run --cwd apps/admin build
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tablex
+        ports: ['5434:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tablex"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: backend/go.sum
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Migrate and seed
+        run: |
+          export PGPASSWORD=postgres
+          for f in backend/migrations/postgres/*.up.sql; do
+            psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q \
+            -f backend/seeds/local_seed.sql
+
+      - name: Start the stack
+        run: |
+          (cd backend && go build -o bin/tablex ./cmd/server && ./bin/tablex --config config/local.yml &)
+          bun run --cwd apps/diner build
+          bun run --cwd apps/admin build
+          (bun run --cwd apps/diner start &)
+          (bun run --cwd apps/admin start &)
+          for url in \
+            http://localhost:8080/api/public/v1/health/live \
+            http://localhost:3000/ \
+            http://localhost:3001/login; do
+            for i in $(seq 1 60); do
+              if curl -sf -o /dev/null "$url"; then break; fi
+              sleep 1
+            done
+          done
+
+      - name: Diner journey
+        working-directory: apps/diner
+        run: node e2e/diner-journey.mjs
+
+      - name: Admin journey
+        # Reseeded first: the diner run leaves orders behind, and the admin assertions expect a
+        # clean board.
+        working-directory: apps/admin
+        run: |
+          export PGPASSWORD=postgres
+          psql -h localhost -p 5434 -U postgres -d tablex -q -c "
+            TRUNCATE payment_webhook_event, payment, order_status_event, order_item, orders,
+                     order_counter, guest_session, menu_item, menu_category, restaurant_table,
+                     staff_user, restaurant RESTART IDENTITY CASCADE;"
+          psql -h localhost -p 5434 -U postgres -d tablex -v ON_ERROR_STOP=1 -q \
+            -f ../../backend/seeds/local_seed.sql
+          node e2e/admin-journey.mjs
+
+      - name: Upload screenshots
+        # Always: the screenshots are most useful on the run that failed.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: /tmp/tx-shots
+          if-no-files-found: ignore

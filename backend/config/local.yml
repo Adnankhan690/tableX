@@ -1,0 +1,83 @@
+# tableX -- local development configuration.
+#
+# Precedence is defaults -> this file -> environment. Anything secret belongs in the
+# environment; this file is checked in.
+
+app:
+  name: tablex
+  env: local
+  # Encoded into every table QR code. Validated at startup, because getting it wrong prints
+  # a floor's worth of stickers pointing at the wrong host.
+  diner_base_url: http://localhost:3000
+  admin_base_url: http://localhost:3001
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  allowed_origins:
+    - http://localhost:3000
+    - http://localhost:3001
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 20s
+  # Empty is correct locally: Gin then reads the direct peer address instead of trusting a
+  # forwarded header. Production requires this to be set -- config.Validate enforces it.
+  trusted_proxies: []
+  rate_limit_per_minute: 300
+
+database:
+  driver: postgres
+  host: 127.0.0.1
+  # 5434, not 5432 -- that port and 5433 are commonly taken by other local stacks.
+  port: 5434
+  user: postgres
+  password: postgres
+  name: tablex
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 1h
+  # Logs every statement WITH ITS PARAMETERS. Local debugging only.
+  log_queries: false
+
+auth:
+  # Local-only value. There is deliberately no default in code: the server refuses to start
+  # without a secret rather than falling back to something that could ship to production and
+  # forge any staff token. Override with TABLEX_JWT_SECRET everywhere else.
+  jwt_secret: local-development-only-secret-do-not-deploy-abc123
+  access_token_ttl: 2h
+  refresh_token_ttl: 12h
+  bcrypt_cost: 12
+
+guest:
+  # Must outlast a meal: expiring mid-sitting takes away the order tracking screen the diner
+  # was promised (DECISIONS.md D5).
+  session_ttl: 12h
+  max_items_per_order: 50
+  max_quantity_per_item: 99
+
+payments:
+  # Static UPI needs no gateway account and cannot confirm that money arrived -- staff marks
+  # payment received (DECISIONS.md D2).
+  default_provider: upi_static
+  upi_static_note: "Order {{order}} ref {{ref}}"
+  razorpay:
+    # Absent credentials leave the gateway disabled and the registry falls back to static
+    # UPI, rather than failing the payment screen.
+    key_id: ""
+    key_secret: ""
+    webhook_secret: ""
+    base_url: https://api.razorpay.com/v1
+
+realtime:
+  enabled: true
+  ping_interval: 30s
+  pong_wait: 60s
+  write_wait: 10s
+  # Each connection's outbound queue. Once full the subscriber is dropped, so one stalled
+  # phone on restaurant wifi cannot stop the kitchen board updating (DECISIONS.md D10).
+  send_buffer_size: 64
+
+log:
+  level: info
+  format: text

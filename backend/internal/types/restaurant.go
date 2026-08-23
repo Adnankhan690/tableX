@@ -1,0 +1,98 @@
+package types
+
+// RestaurantSummary is the public restaurant header the diner app renders above the menu.
+//
+// Deliberately narrow: it omits the UPI VPA, the GST number, and every other operational
+// detail, because this object is served to anonymous callers.
+type RestaurantSummary struct {
+	UID         string `json:"uid"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	LogoURL     string `json:"logo_url,omitempty"`
+	Address     string `json:"address,omitempty"`
+	Phone       string `json:"phone,omitempty"`
+	Currency    string `json:"currency"`
+}
+
+// RestaurantSettings is the full, staff-only view.
+type RestaurantSettings struct {
+	RestaurantSummary
+	Timezone         string `json:"timezone"`
+	GSTNumber        string `json:"gst_number,omitempty"`
+	TaxBps           int    `json:"tax_bps"`
+	ServiceChargeBps int    `json:"service_charge_bps"`
+	UPIVPA           string `json:"upi_vpa,omitempty"`
+	UPIPayeeName     string `json:"upi_payee_name,omitempty"`
+	PaymentProvider  string `json:"payment_provider"`
+	Status           string `json:"status"`
+}
+
+// RequestUpdateRestaurant patches restaurant settings.
+type RequestUpdateRestaurant struct {
+	Name        *string `json:"name,omitempty" binding:"omitempty,min=1,max=128"`
+	Description *string `json:"description,omitempty"`
+	LogoURL     *string `json:"logo_url,omitempty"`
+	Address     *string `json:"address,omitempty"`
+	Phone       *string `json:"phone,omitempty" binding:"omitempty,max=20"`
+	Timezone    *string `json:"timezone,omitempty"`
+	GSTNumber   *string `json:"gst_number,omitempty" binding:"omitempty,max=20"`
+	// Basis points, 0-10000. Rejecting out-of-range here stops a typo'd "5000" from
+	// charging every diner 50% tax.
+	TaxBps           *int    `json:"tax_bps,omitempty" binding:"omitempty,min=0,max=10000"`
+	ServiceChargeBps *int    `json:"service_charge_bps,omitempty" binding:"omitempty,min=0,max=10000"`
+	UPIVPA           *string `json:"upi_vpa,omitempty" binding:"omitempty,max=128"`
+	UPIPayeeName     *string `json:"upi_payee_name,omitempty" binding:"omitempty,max=128"`
+	PaymentProvider  *string `json:"payment_provider,omitempty" binding:"omitempty,oneof=upi_static razorpay mock"`
+}
+
+// TableInfo is a table as the admin panel sees it.
+type TableInfo struct {
+	UID    string `json:"uid"`
+	Label  string `json:"label"`
+	Seats  *int   `json:"seats,omitempty"`
+	Status string `json:"status"`
+	// QRURL is the full URL encoded in this table's QR code. Staff-only: possession of it
+	// authorises ordering at the table (DECISIONS.md D4).
+	QRURL string `json:"qr_url,omitempty"`
+	// LiveOrderCount powers the admin floor view.
+	LiveOrderCount int64 `json:"live_order_count"`
+}
+
+// RequestCreateTable adds a table.
+type RequestCreateTable struct {
+	Label string `json:"label" binding:"required,min=1,max=32"`
+	Seats *int   `json:"seats,omitempty" binding:"omitempty,min=1,max=100"`
+}
+
+// RequestUpdateTable patches a table.
+type RequestUpdateTable struct {
+	Label  *string `json:"label,omitempty" binding:"omitempty,min=1,max=32"`
+	Seats  *int    `json:"seats,omitempty" binding:"omitempty,min=1,max=100"`
+	Status *string `json:"status,omitempty" binding:"omitempty,oneof=active inactive archived"`
+}
+
+// RequestBulkCreateTables creates a numbered range in one call, because a restaurant
+// onboarding thirty tables should not click thirty times.
+type RequestBulkCreateTables struct {
+	// Prefix is prepended to each generated label, e.g. "T-" gives T-1 .. T-30.
+	Prefix string `json:"prefix" binding:"omitempty,max=16"`
+	From   int    `json:"from" binding:"required,min=1,max=999"`
+	To     int    `json:"to" binding:"required,min=1,max=999"`
+	Seats  *int   `json:"seats,omitempty" binding:"omitempty,min=1,max=100"`
+}
+
+// ResponseTableList is the admin table list.
+type ResponseTableList struct {
+	Tables []TableInfo `json:"tables"`
+}
+
+// ResponseTableQR carries a table's QR payload for printing.
+type ResponseTableQR struct {
+	TableUID string `json:"table_uid"`
+	Label    string `json:"label"`
+	QRURL    string `json:"qr_url"`
+	// PNGBase64 is a data-URI-ready rendering, so the print sheet needs no second request
+	// per table.
+	PNGBase64 string `json:"png_base64,omitempty"`
+}

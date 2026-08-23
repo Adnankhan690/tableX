@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "plugins": [{ "name": "next" }],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@tablex/shared": ["../../packages/shared/src/index.ts"],
+      "@tablex/shared/*": ["../../packages/shared/src/*"],
+      "@tablex/api-client": ["../../packages/api-client/src/index.ts"],
+      "@tablex/api-client/*": ["../../packages/api-client/src/*"],
+      "@tablex/ui": ["../../packages/ui/src/index.ts"],
+      "@tablex/ui/*": ["../../packages/ui/src/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,51 @@
+// Biome configuration.
+//
+// Named .jsonc rather than .json deliberately: biome.json is parsed as strict JSON and rejects
+// comments, and a parse failure there is silent-ish -- Biome falls back to its defaults and starts
+// linting node_modules and .next, which reads as "the linter went mad" rather than "the config is
+// broken". The rationale below is worth keeping next to the rules it explains.
+{
+  "$schema": "https://biomejs.dev/schemas/2.2.0/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": ["**", "!**/node_modules", "!**/.next", "!**/dist", "!**/bun.lock"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "error",
+        // Tailwind 3 requires @tailwind base/components/utilities. Biome only knows standard
+        // CSS at-rules, so this fires on the one syntax the framework mandates.
+        "noUnknownAtRules": "off"
+      },
+      "correctness": {
+        "noUnusedVariables": "error",
+        "useExhaustiveDependencies": "warn"
+      },
+      "complexity": {
+        // !important appears in exactly two places, and both are cases where it is the correct
+        // tool: the prefers-reduced-motion override has to beat utility and inline styles, and
+        // .no-print has to win when the QR sheet is sent to a printer. Neither has a
+        // specificity-based alternative that is not worse.
+        "noImportantStyles": "off"
+      },
+      "a11y": {
+        // Fires on role="alert" / "status" / "progressbar". HTML has no element equivalent for a
+        // live region -- there is no <alert> -- and <output> carries different semantics from an
+        // assertive alert. The roles here are the correct, and only, way to express this.
+        "useSemanticElements": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "semicolons": "asNeeded", "trailingCommas": "all" }
+  }
+}

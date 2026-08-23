@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+.next/
+out/
+backend/bin/
+*.tsbuildinfo
+
+# Go
+backend/coverage.out
+backend/coverage.html
+*.test
+vendor/
+
+# Environment -- never commit real secrets. .env.example is the checked-in template.
+.env
+.env.local
+.env.*.local
+!.env.example
+backend/config/*.local.yml
+backend/config/production.yml
+backend/config/staging.yml
+
+# Test artifacts
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local database volumes
+.postgres-data/
