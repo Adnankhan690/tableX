@@ -37,12 +37,12 @@ func NewServiceTable(access *ServiceAccess) ServiceTableMethods {
 
 // qrURL builds the URL encoded in a table's QR code.
 //
-// The base comes from configuration and is validated at startup, because getting it wrong
-// prints a floor's worth of stickers pointing at the wrong host -- a mistake that is only
-// discovered by a diner who cannot order.
+// Delegates to the shared helper so this and the onboarding response cannot disagree about
+// what a table's URL is. The base comes from configuration and is validated at startup,
+// because getting it wrong prints a floor's worth of stickers pointing at the wrong host -- a
+// mistake that is only discovered by a diner who cannot order.
 func (s *serviceTable) qrURL(qrToken string) string {
-	base := strings.TrimRight(s.Access.Cfg.App.DinerBaseURL, "/")
-	return fmt.Sprintf("%s/t/%s", base, qrToken)
+	return tableQRURL(s.Access.Cfg.App.DinerBaseURL, qrToken)
 }
 
 func (s *serviceTable) List(

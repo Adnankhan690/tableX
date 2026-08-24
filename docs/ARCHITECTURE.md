@@ -171,7 +171,7 @@ tests.
 
 ## Request paths
 
-Three route groups, three trust levels.
+Four route groups, four trust levels.
 
 **`/api/public/v1`** — anonymous, rate limited. QR scan, restaurant landing, health,
 payment webhooks. The webhook handler reads the **raw** body before anything parses it,
@@ -183,6 +183,13 @@ order's existence cannot be probed.
 
 **`/api/admin/v1`** — staff JWT, restaurant scope enforced in middleware. `login` and
 `refresh` are the only two routes in this group without auth.
+
+**`/api/platform/v1`** — the deployment's platform token, scoped to no restaurant because it
+is what creates them ([D14](./DECISIONS.md)). **Not mounted at all** unless a token is
+configured, so onboarding answers 404 rather than 401 on a deployment that does not do it. Not a
+role on a staff token: a staff JWT carries exactly one `restaurant_id` by design, so no role on
+it can mean "every restaurant". The secret belongs to no account, which is what makes it safe
+here.
 
 A claim-carrying JWT means `Authenticate` does no database work on the happy path. Access
 tokens are short-lived; expiry is a *distinct* error code from invalid, so the admin panel

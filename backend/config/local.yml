@@ -49,6 +49,15 @@ auth:
   refresh_token_ttl: 12h
   bcrypt_cost: 12
 
+platform:
+  # Authorises restaurant onboarding -- /api/platform/v1 (DECISIONS.md D14). Local-only value.
+  #
+  # Absent, the whole group is never mounted and onboarding answers 404 rather than 401: a
+  # deployment that does not create tenants over HTTP should not have an endpoint that does.
+  # Override with TABLEX_PLATFORM_TOKEN everywhere else, and never reuse the JWT secret --
+  # this one is pasted into curl commands and CI variables, which is a different exposure.
+  admin_token: local-development-only-platform-token-xyz789
+
 guest:
   # Must outlast a meal: expiring mid-sitting takes away the order tracking screen the diner
   # was promised (DECISIONS.md D5).

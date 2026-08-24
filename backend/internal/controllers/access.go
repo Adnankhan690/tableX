@@ -114,6 +114,9 @@ type Controllers struct {
 	Settings *ControllerSettings
 	Stats    *ControllerStats
 	Realtime *ControllerRealtime
+	// Platform is the operator surface. Only reachable through the /api/platform/v1 group,
+	// which cmd/app mounts only when a platform token is configured (DECISIONS.md D14).
+	Platform *ControllerPlatform
 }
 
 // NewControllers wires every controller against one shared Access.
@@ -137,5 +140,6 @@ func NewControllers(
 		Settings: NewControllerSettings(access),
 		Stats:    NewControllerStats(access),
 		Realtime: NewControllerRealtime(access),
+		Platform: NewControllerPlatform(access),
 	}
 }

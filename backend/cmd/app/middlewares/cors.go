@@ -22,12 +22,19 @@ func (m *Middlewares) CORS() gin.HandlerFunc {
 		}
 	}
 
+	// Every custom header the API reads has to be listed. A browser preflight names the headers
+	// the real request will send, and any it is not granted makes the browser block the request
+	// before the server ever sees it -- which surfaces as a CORS error with no server-side log
+	// line, and which curl cannot reproduce because curl does not preflight. Adding a header to
+	// the request path and forgetting it here is therefore a silent, browser-only break; the
+	// test in cors_test.go enforces that this list covers them all.
 	allowHeaders := strings.Join([]string{
 		"Content-Type",
 		"Authorization",
 		HeaderGuestToken,
 		HeaderIdempotencyKey,
 		HeaderRequestID,
+		HeaderPlatformToken,
 	}, ", ")
 
 	return func(ctx *gin.Context) {

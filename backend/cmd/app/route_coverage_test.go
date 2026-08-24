@@ -30,11 +30,12 @@ var brunoMethodURL = regexp.MustCompile(`(?m)^(get|post|patch|put|delete) \{\n  
 // simply not collected, so nothing is asserted about them), which is why the count assertion at the
 // bottom exists.
 var groupPrefix = map[string]string{
-	"public":  PublicAPIV1,
-	"limited": PublicAPIV1,
-	"guest":   GuestAPIV1,
-	"admin":   AdminAPIV1,
-	"open":    AdminAPIV1,
+	"public":   PublicAPIV1,
+	"limited":  PublicAPIV1,
+	"guest":    GuestAPIV1,
+	"admin":    AdminAPIV1,
+	"open":     AdminAPIV1,
+	"platform": PlatformAPIV1,
 }
 
 type route struct {

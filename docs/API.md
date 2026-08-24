@@ -2,14 +2,19 @@
 
 Base URL in development: `http://localhost:8080`.
 
-Three route groups, three trust levels. The prefix a route sits under *is* the statement of who
+Four route groups, four trust levels. The prefix a route sits under *is* the statement of who
 may call it, so nothing is mounted outside one of them.
 
-| Group | Prefix | Credential |
-| --- | --- | --- |
-| Public | `/api/public/v1` | none, rate limited |
-| Guest | `/api/guest/v1` | `X-Guest-Token: <token>` |
-| Admin | `/api/admin/v1` | `Authorization: Bearer <jwt>` |
+| Group | Prefix | Credential | Scope |
+| --- | --- | --- | --- |
+| Public | `/api/public/v1` | none, rate limited | — |
+| Guest | `/api/guest/v1` | `X-Guest-Token: <token>` | one table, one sitting |
+| Admin | `/api/admin/v1` | `Authorization: Bearer <jwt>` | one restaurant |
+| Platform | `/api/platform/v1` | `X-Platform-Token: <secret>` | the deployment |
+
+**Platform is not mounted unless the server has a platform token.** Its routes answer **404**, not
+401, on a deployment started without `TABLEX_PLATFORM_TOKEN` — a deployment that does not create
+tenants over HTTP has no tenant-creating endpoint at all ([D14](./DECISIONS.md)).
 
 ## The envelope
 
@@ -49,6 +54,7 @@ The ones a client must actually handle:
 | `TX_PAY_002` | 409 | Already paid. Refetch; never retry a settlement. |
 | `TX_PAY_006` | 409 | Webhook amount ≠ order total. **Never settled.** Needs a human. |
 | `TX_AUT_004` | 401 | Access token expired — refresh, distinct from `TX_AUT_003` invalid. |
+| `TX_AUT_009` | 401 | Platform token missing or wrong. One code for both; see [D14](./DECISIONS.md). |
 
 ## Money
 
@@ -258,6 +264,102 @@ service ([D9](./DECISIONS.md)). Range is capped at 366 days.
 
 `avg_accept_secs` and `avg_fulfil_secs` are **null when there is no data** — render `--`, never
 `0`. Zero would claim orders are accepted instantly, which is a different and false statement.
+
+---
+
+## Platform
+
+Creating restaurants ([D14](./DECISIONS.md)). Authorised by `X-Platform-Token`, a shared secret
+from the deployment's environment — **not** by a staff JWT, however senior. A staff token carries
+exactly one `restaurant_id` ([D3](./DECISIONS.md)), so no role on it can describe an operator
+acting across every restaurant, and inventing one would put tenant creation a wrongly-set flag
+away from every restaurant owner.
+
+A bearer header is accepted as a fallback for clients that only speak `Authorization`. A
+`?token=` query parameter is **not** — the fallback that exists for staff and guest tokens is
+there because a browser WebSocket cannot set headers, and nothing here is a WebSocket.
+
+| | Role |
+| --- | --- |
+| `POST /restaurants` | platform token |
+| `GET /restaurants` | platform token |
+
+### `POST /restaurants` — onboard a restaurant
+
+Creates the restaurant, its **first owner login**, and optionally its floor of tables, in one
+transaction. One call rather than three because the three are useless apart: a restaurant with no
+owner cannot be signed into, and a half-onboarded tenant is not a state a retry fixes.
+
+```jsonc
+{
+  "name": "Tandoor Junction",           // required
+  "owner": {                            // required
+    "name": "Meera Nair",
+    "email": "owner@tandoorjunction.test",
+    "password": "at least 8 characters"
+  },
+  "slug": "tandoor-junction",           // optional — derived from name when omitted
+  "timezone": "Asia/Kolkata",           // optional — IANA name, defaults to IST
+  "tax_bps": 500,                       // optional — omitted inherits 5%; 0 means tax-free
+  "service_charge_bps": 0,
+  "currency": "INR",
+  "address": "…", "phone": "…", "gst_number": "…", "logo_url": "…", "description": "…",
+  "upi_vpa": "tandoorjunction@okhdfcbank",
+  "upi_payee_name": "Tandoor Junction",
+  "payment_provider": "upi_static",
+  "tables": { "prefix": "T-", "from": 1, "to": 12, "seats": 4 }   // optional, both ends inclusive
+}
+```
+
+**201** with `{ restaurant, owner, tables[], diner_url, admin_url }`. The response carries every
+table's `qr_url`, because those are the deliverable — onboarding that returned an id and left
+someone to go and find the codes would not have finished the job. It carries **no password**: the
+caller already has it, and echoing it writes it into every proxy log on the way home.
+
+Notes on the fields that have a wrong-looking right answer:
+
+- **`slug`** is normalised either way, so `"Spice Garden!"` and `"spice-garden"` arrive at the
+  same value. It becomes `/r/{slug}` ([D4](./DECISIONS.md)) and goes onto printed signage, so it
+  is refused rather than truncated when it exceeds 64 characters, and refused rather than
+  auto-generated when the name normalises to nothing.
+- **`tax_bps` omitted is not `tax_bps: 0`.** Omitted inherits the schema's 5% GST; `0` means the
+  restaurant charges no tax. A form that sends `0` for an untouched field onboards every
+  restaurant tax-free.
+- **`timezone`** must be an IANA name. `"IST"` is rejected — it would fall back to
+  `Asia/Kolkata` at read time, which is the right answer for the wrong reason and would let a
+  genuine typo roll the daily order counter over at the wrong hour ([D9](./DECISIONS.md)).
+- **`payment_provider`** is refused if this deployment cannot serve it. Accepting `razorpay`
+  without credentials would leave the payment screen silently falling back on every order while
+  the owner believed their gateway was live ([D2](./DECISIONS.md)).
+
+Errors: `TX_RST_003` 409 slug taken · `TX_AUT_007` 409 the owner email already signs in to
+another restaurant · `TX_COM_008` 422 validation · `TX_PAY_005` 409 provider unavailable ·
+`TX_AUT_009` 401 bad token · 404 onboarding not enabled on this server.
+
+**`TX_AUT_007` is a correctness refusal, not a convenience.** `staff_user` is unique on
+`(restaurant_id, email)`, so the database would accept the address at a second restaurant — but
+login refuses an email matching more than one staff row rather than guessing which restaurant was
+meant. Creating the account would produce one that can never sign in anywhere.
+
+**Not retryable on 409.** Both conflicts need a different value, not another attempt at the same
+one.
+
+**What this does not do: create a menu.** A freshly onboarded restaurant renders an empty diner
+page until its owner adds categories and items. Expected, not a fault — but it does mean
+onboarding alone does not make a restaurant able to take orders.
+
+### `GET /restaurants`
+
+Every restaurant on the deployment, **inactive ones included**, as `RestaurantSettings`.
+
+Deliberately wider than the public directory, which returns only active restaurants as
+`RestaurantSummary` ([D13](./DECISIONS.md)): an operator's first question about a restaurant that
+is not taking orders is whether it exists and what its status is, and a list that hides inactive
+rows answers neither. Still never returns a table's `qr_token` — that is a capability, and no
+endpoint at any trust level hands one out ([D4](./DECISIONS.md)).
+
+Not paginated. A deployment with enough restaurants for that to matter has outgrown a shared
+secret as its access model, and the fix is the auth model rather than a `page` parameter.
 
 ---
 

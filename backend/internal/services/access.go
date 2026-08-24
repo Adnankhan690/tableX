@@ -73,6 +73,10 @@ type Services struct {
 	Order      ServiceOrderMethods
 	Payment    ServicePaymentMethods
 	Stats      ServiceStatsMethods
+	// Platform is the operator surface. Constructed unconditionally, but only reachable
+	// through the /api/platform/v1 group, which cmd/app mounts only when a platform token is
+	// configured (DECISIONS.md D14).
+	Platform ServicePlatformMethods
 }
 
 // NewServices wires every service against one shared Access.
@@ -106,5 +110,6 @@ func NewServices(
 		Order:      orderSvc,
 		Payment:    NewServicePayment(access, orderSvc),
 		Stats:      NewServiceStats(access),
+		Platform:   NewServicePlatform(access),
 	}
 }

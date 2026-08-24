@@ -29,6 +29,9 @@ cp .env.example .env
 # Required. The server refuses to start without it rather than falling back to a
 # hard-coded value that would ship to production and forge any staff token.
 echo "TABLEX_JWT_SECRET=$(openssl rand -hex 32)" >> .env
+# Optional. Enables restaurant onboarding -- see "Onboarding a restaurant" below. Without it
+# the /api/platform/v1 group is never mounted and those routes answer 404.
+echo "TABLEX_PLATFORM_TOKEN=$(openssl rand -hex 32)" >> .env
 
 make setup    # installs deps, starts Postgres, migrates, seeds a demo restaurant
 make dev      # API on :8080, diner on :3000, admin on :3001
@@ -111,6 +114,55 @@ close → confirm payment for cash and static-UPI orders.
 
 ---
 
+## Onboarding a restaurant
+
+The two seeded restaurants are demo data. A real one is created through the **platform API**, a
+fourth trust level scoped to the deployment rather than to any restaurant
+([D14](docs/DECISIONS.md)).
+
+It needs `TABLEX_PLATFORM_TOKEN` to be set. Without it the route group is not mounted at all and
+these calls answer **404** — a deployment that does not create tenants over HTTP should not have
+an endpoint that does.
+
+**From the browser:** <http://localhost:3001/onboard>. Paste the platform token, fill in the
+restaurant and its first owner, and it hands back the sign-in details, the diner URL, and one scan
+URL per table. Deliberately not linked from the admin navigation — the operator who holds the
+token is not one of the people who sign in there to run a floor.
+
+**From a terminal:**
+
+```bash
+curl -sX POST http://localhost:8080/api/platform/v1/restaurants \
+  -H "X-Platform-Token: $TABLEX_PLATFORM_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "name": "Tandoor Junction",
+        "owner": { "name": "Meera Nair",
+                   "email": "owner@tandoorjunction.test",
+                   "password": "password123" },
+        "tables": { "prefix": "T-", "from": 1, "to": 12, "seats": 4 }
+      }'
+```
+
+That is one transaction: the restaurant, its owner login, and twelve tables each with their own
+QR token. `name` and `owner` are the only required fields — the slug is derived from the name, the
+timezone defaults to `Asia/Kolkata`, and GST defaults to 5%.
+
+Two things worth knowing before you run it:
+
+- **The owner email must not already sign in to another restaurant here.** Login refuses an
+  address that matches two staff rows rather than guessing which restaurant was meant, so
+  onboarding refuses it up front — otherwise it would create an account that can never sign in
+  anywhere.
+- **Onboarding does not create a menu.** The new restaurant's diner page renders an empty menu
+  until its owner adds categories and items from the admin panel. That is the restaurant's
+  content, not the platform's — but it does mean onboarding alone is not enough to take an order.
+
+`GET /api/platform/v1/restaurants` lists every restaurant including inactive ones, which is what
+the public directory withholds. Full reference in [docs/API.md](docs/API.md#platform).
+
+---
+
 ## Decisions worth knowing before you read the code
 
 These are the ones that shape everything else. Full reasoning in
@@ -125,6 +177,7 @@ These are the ones that shape everything else. Full reasoning in
 | **D8** | Order lines snapshot name, price and food type, so an 8pm price rise cannot rewrite a 7:45pm bill. |
 | **D10** | Realtime messages are *hints to refetch*, never state. Polling alone satisfies the requirement, so the WebSocket is an optimisation on a working baseline rather than a dependency. |
 | **D12** | Order placement is idempotent, because the failure that actually happens is a diner double-tapping on a stalled connection and the kitchen getting two tickets. |
+| **D14** | Creating a restaurant is an operator action behind its own shared secret, not a role on a staff token — a staff JWT carries one `restaurant_id` by design, so no role on it can mean "all of them". Public self-serve signup was rejected: an anonymous endpoint that mints tenants can squat every good URL and fill the public directory with junk. |
 
 ---
 
@@ -147,9 +200,9 @@ make lint / fmt
 
 make -C backend test-race   # the hub and order locking only misbehave under -race
 
-make smoke                 # 68 API assertions against a running server
+make smoke                 # 93 API assertions against a running server
 make concurrency           # the three races that happen in a real restaurant
-make api-collection        # 125 assertions, the Bruno collection end to end
+make api-collection        # 139 assertions, the Bruno collection end to end
 
 cd apps/diner && node e2e/diner-journey.mjs   # 37 assertions, real mobile browser
 cd apps/admin && node e2e/admin-journey.mjs   # 53 assertions, real browser
@@ -169,11 +222,11 @@ Everything below runs against a real Postgres and a real browser — no mocks, n
 | | |
 | --- | --- |
 | Go unit tests | State machine matrix (every from-state x to-state x actor), UPI link construction, Razorpay HMAC, provider registry |
-| API smoke | 68 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, webhook signature rejection |
+| API smoke | 93 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection |
 | Concurrency | 8 simultaneous accepts resolve to exactly one winner; 20 simultaneous checkouts get 20 distinct order numbers; 10 duplicate submits produce one order |
 | Diner journey | 37 assertions in a real iPhone viewport: scan → menu → cart → checkout → live tracking |
 | Admin journey | 53 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions |
-| Bruno collection | 53 requests over 11 folders, all 46 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
+| Bruno collection | 55 requests over 12 folders, all 48 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
 | Migrations | CI applies every down migration in reverse, asserts zero tables remain, then re-applies forwards |
 
 Three real bugs were found this way, which is why the suites are shaped as they are:
@@ -234,3 +287,8 @@ Stated plainly, because each is a deliberate trade rather than an oversight:
   if that stops being true.
 - **English only.** Hindi is a stated future consideration (PRD §7). Error *codes* are
   stable and separate from messages precisely so translating copy cannot change behaviour.
+- **Onboarding is operator-only, and there is no way to suspend a restaurant.** A restaurant
+  cannot sign itself up; someone with the platform token creates it ([D14](docs/DECISIONS.md)).
+  `EntityStatus` already has `inactive` and every read path already refuses an inactive
+  restaurant, but no endpoint sets it — suspension is a policy question (what happens to live
+  orders? to printed QR codes?) that has not been decided yet.

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -21,6 +22,7 @@ var (
 	_ ServiceOrderMethods      = (*ServiceOrder)(nil)
 	_ ServicePaymentMethods    = (*servicePayment)(nil)
 	_ ServiceStatsMethods      = (*serviceStats)(nil)
+	_ ServicePlatformMethods   = (*servicePlatform)(nil)
 )
 
 // money builds the wire representation of an amount.
@@ -37,6 +39,24 @@ func money(minor int64, currency string) types.Money {
 		Currency: currency,
 		Display:  utils.FormatINR(minor),
 	}
+}
+
+// --- Public URLs ---
+//
+// Both are built from app.diner_base_url, which config.Validate checks at startup because
+// getting it wrong prints a floor's worth of QR stickers pointing at the wrong host. They live
+// here, once, so the onboarding response and the QR endpoints cannot disagree about what a
+// restaurant's own URL is.
+
+// tableQRURL is the URL encoded in one table's QR code (DECISIONS.md D4).
+func tableQRURL(dinerBaseURL, qrToken string) string {
+	return fmt.Sprintf("%s/t/%s", strings.TrimRight(dinerBaseURL, "/"), qrToken)
+}
+
+// restaurantLandingURL is the restaurant-level fallback: the table picker a diner reaches from
+// the one QR taped to the counter.
+func restaurantLandingURL(dinerBaseURL, slug string) string {
+	return fmt.Sprintf("%s/r/%s", strings.TrimRight(dinerBaseURL, "/"), slug)
 }
 
 // --- Restaurant ---

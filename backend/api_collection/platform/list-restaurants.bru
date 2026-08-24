@@ -1,0 +1,58 @@
+meta {
+  name: list-restaurants
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/platform/v1/restaurants
+  body: none
+  auth: none
+}
+
+headers {
+  X-Platform-Token: {{platform_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("includes the restaurant onboarded above", function () {
+    const slugs = res.body.data.restaurants.map((r) => r.slug)
+    expect(slugs).to.include("tandoor-junction")
+  })
+
+  test("carries the operational fields the public directory withholds", function () {
+    // This is the difference between the two list endpoints, and it is the reason both exist.
+    // The public one returns RestaurantSummary, which has no field for any of this; an operator
+    // asking why a restaurant is not taking orders needs exactly these.
+    const onboarded = res.body.data.restaurants.find((r) => r.slug === "tandoor-junction")
+    expect(onboarded).to.have.property("status")
+    expect(onboarded).to.have.property("tax_bps")
+    expect(onboarded).to.have.property("timezone")
+  })
+
+  test("still never carries a table's QR token", function () {
+    // Wider than the public view, but not unbounded. A qr_token is a capability -- possession of
+    // it authorises ordering at that table -- and no list endpoint at any trust level returns
+    // one (docs/DECISIONS.md D4).
+    expect(JSON.stringify(res.body)).to.not.include("qr_token")
+  })
+}
+
+docs {
+  # List every restaurant
+
+  Every tenant on the deployment, **including inactive ones**, as `RestaurantSettings`.
+
+  That is deliberately wider than `GET /api/public/v1/restaurants`, which returns only active
+  restaurants as `RestaurantSummary` (docs/DECISIONS.md D13). The first question an operator has
+  about a restaurant that is not taking orders is whether it exists and what its status is, and
+  a list that hides inactive rows cannot answer either.
+
+  No pagination. A deployment with enough restaurants for that to matter has outgrown a shared
+  platform token as its access model, and the fix is the auth model rather than a `page` query
+  parameter.
+}

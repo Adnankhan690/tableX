@@ -3,7 +3,9 @@
 #
 # Exercises the whole product against a running server and a seeded database: the QR scan,
 # server-side pricing, idempotent placement, the full order lifecycle, payment settlement,
-# role enforcement, tenant isolation, and webhook signature rejection. 68 assertions.
+# role enforcement, tenant isolation, restaurant onboarding, and webhook signature rejection.
+# 93 assertions, of which the 28 in section 13 skip themselves when the server was started
+# without a platform token and therefore never mounted the onboarding routes.
 #
 # It asserts on real HTTP responses rather than mocks, which is the only way to catch the
 # class of bug that unit tests cannot -- a read inside a transaction that misses its own
@@ -321,6 +323,104 @@ UNSIGNED=$(curl -s -o /dev/null -w "%{http_code}" -X POST $PUB/webhooks/payments
 ck "unsigned razorpay webhook rejected"  "409" "$UNSIGNED"
 BOGUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST $PUB/webhooks/payments/nosuchprovider -d '{}')
 ck "unknown provider rejected"           "409" "$BOGUS"
+
+echo
+echo "=============== 13. ONBOARDING A RESTAURANT (D14) ==============="
+# The operator surface. Gated on a platform token, so the section skips itself rather than
+# failing when this deployment has none -- a server started without TABLEX_PLATFORM_TOKEN does
+# not mount the group at all, and reporting that as a broken feature would be wrong.
+PLAT=$API/api/platform/v1
+PTOKEN=${TABLEX_PLATFORM_TOKEN:-local-development-only-platform-token-xyz789}
+
+MOUNTED=$(curl -s -o /dev/null -w "%{http_code}" $PLAT/restaurants -H "X-Platform-Token: $PTOKEN")
+if [ "$MOUNTED" = "404" ]; then
+  echo "  SKIP  onboarding not enabled on this server (no platform token configured)"
+else
+  echo "--- the token is the whole guard ---"
+  NOTOKEN=$(curl -s -o /dev/null -w "%{http_code}" -X POST $PLAT/restaurants \
+    -H 'Content-Type: application/json' -d '{"name":"Nope","owner":{"name":"N","email":"n@n.test","password":"password123"}}')
+  ck "onboarding without a token -> 401"   "401" "$NOTOKEN"
+  BADTOKEN=$(curl -s $PLAT/restaurants -H "X-Platform-Token: wrong" | j code)
+  ck "a wrong token -> TX_AUT_009"         "TX_AUT_009" "$BADTOKEN"
+  QSTOKEN=$(curl -s -o /dev/null -w "%{http_code}" "$PLAT/restaurants?token=$PTOKEN")
+  ck "a token in the query string is ignored" "401" "$QSTOKEN"
+
+  echo "--- a staff JWT cannot reach it, however senior (D3) ---"
+  # The owner of Spice Garden is the most privileged principal in the tenant model, and it is
+  # still not an operator. If this ever returns 2xx, a restaurant owner can create restaurants.
+  OWNERTRY=$(curl -s -o /dev/null -w "%{http_code}" $PLAT/restaurants -H "Authorization: Bearer $JWT")
+  ck "a staff owner JWT -> 401"            "401" "$OWNERTRY"
+
+  echo "--- onboard one, with a floor ---"
+  # Slug and email are derived from the run so repeated smoke runs against the same database do
+  # not collide with each other. A fixed value would make the second run report a false failure.
+  STAMP=$$
+  ONB=$(curl -s -X POST $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Smoke Diner $STAMP\",\"owner\":{\"name\":\"Smoke Owner\",\"email\":\"owner+$STAMP@smoke.test\",\"password\":\"password123\"},\"tables\":{\"prefix\":\"S-\",\"from\":1,\"to\":3,\"seats\":2}}")
+  echo "$ONB" > /tmp/tx_onboard.json
+  ONB_SLUG=$(echo "$ONB" | j data.restaurant.slug)
+  ck "slug derived from the name"          "smoke-diner-$STAMP" "$ONB_SLUG"
+  ck "the first login is an owner"         "owner" "$(echo "$ONB" | j data.owner.role)"
+  ck "tax defaults to 5% when omitted"     "500" "$(echo "$ONB" | j data.restaurant.tax_bps)"
+  ck "timezone defaults to IST"            "Asia/Kolkata" "$(echo "$ONB" | j data.restaurant.timezone)"
+  ck "the requested floor was created"     "3" "$(python3 -c "import json;print(len(json.load(open('/tmp/tx_onboard.json'))['data']['tables']))")"
+  ck "first table labelled S-1"            "S-1" "$(echo "$ONB" | j data.tables.0.label)"
+  ck "each table carries a scannable URL"  "yes" "$(echo "$ONB" | j data.tables.0.qr_url | grep -q "localhost:3000/t/" && echo yes || echo no)"
+  ck "landing URL points at the slug"      "yes" "$(echo "$ONB" | j data.diner_url | grep -q "/r/smoke-diner-$STAMP" && echo yes || echo no)"
+  ck "no password echoed back"             "none" "$(python3 -c "
+raw=open('/tmp/tx_onboard.json').read()
+print('leaked' if 'password' in raw else 'none')")"
+
+  echo "--- the owner can actually sign in, which is the only proof that matters ---"
+  # Onboarding that produces credentials nobody can use has not onboarded anything. This is the
+  # assertion that would have caught an owner row written with the wrong restaurant_id.
+  ONBJWT=$(curl -s -X POST $ADM/auth/login -H 'Content-Type: application/json' \
+    -d "{\"email\":\"owner+$STAMP@smoke.test\",\"password\":\"password123\"}" | j data.access_token)
+  ck "the new owner can sign in"           "yes" "$([ -n "$ONBJWT" ] && echo yes || echo no)"
+  ck "and lands in their own restaurant"   "smoke-diner-$STAMP" "$(curl -s $ADM/settings -H "Authorization: Bearer $ONBJWT" | j data.slug)"
+  ck "and sees only their own tables"      "3" "$(curl -s $ADM/tables -H "Authorization: Bearer $ONBJWT" | python3 -c "import sys,json;print(len(json.load(sys.stdin)['data']['tables']))")"
+
+  echo "--- an explicit 0% tax is not the same as an omitted one ---"
+  # Regression. The model had DEFAULT 500 in its GORM tag, and GORM omits a zero-valued field
+  # from an INSERT when the tag names a default -- so the column default filled the gap and a
+  # deliberately tax-free restaurant silently came out at 5%. Invisible to a unit test, because
+  # the service built the struct correctly; only a real insert shows it. The fix was to drop the
+  # default from the tag (the SQL default remains, for inserts that omit the column).
+  TAXFREE=$(curl -s -X POST $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Taxfree Diner $STAMP\",\"tax_bps\":0,\"owner\":{\"name\":\"Z\",\"email\":\"z+$STAMP@smoke.test\",\"password\":\"password123\"}}")
+  ck "tax_bps 0 stays 0"                   "0" "$(echo "$TAXFREE" | j data.restaurant.tax_bps)"
+  ck "omitting tax_bps inherits 5%"        "500" "$(echo "$ONB" | j data.restaurant.tax_bps)"
+
+  echo "--- a fresh restaurant has no menu, and says so with an empty list not an error ---"
+  ck "empty menu is a 200"                 "200" "$(curl -s -o /dev/null -w "%{http_code}" $PUB/r/$ONB_SLUG)"
+
+  echo "--- the same slug and the same owner email are both refused ---"
+  DUPSLUG=$(curl -s -X POST $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Smoke Diner $STAMP\",\"owner\":{\"name\":\"Other\",\"email\":\"other+$STAMP@smoke.test\",\"password\":\"password123\"}}" | j code)
+  ck "a taken slug -> TX_RST_003"          "TX_RST_003" "$DUPSLUG"
+  DUPMAIL=$(curl -s -X POST $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Another Diner $STAMP\",\"owner\":{\"name\":\"Dup\",\"email\":\"owner+$STAMP@smoke.test\",\"password\":\"password123\"}}" | j code)
+  # Not a nicety: login refuses an email that matches two restaurants rather than guessing, so
+  # allowing this would create an account that can never sign in anywhere.
+  ck "a reused owner email -> TX_AUT_007"  "TX_AUT_007" "$DUPMAIL"
+
+  echo "--- validation refusals ---"
+  BADTZ=$(curl -s -X POST $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"TZ Test $STAMP\",\"timezone\":\"IST\",\"owner\":{\"name\":\"T\",\"email\":\"tz+$STAMP@smoke.test\",\"password\":\"password123\"}}" | j code)
+  ck "a non-IANA timezone -> TX_COM_008"   "TX_COM_008" "$BADTZ"
+  UNNAMEABLE=$(curl -s -X POST $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"!!!\",\"owner\":{\"name\":\"P\",\"email\":\"p+$STAMP@smoke.test\",\"password\":\"password123\"}}" | j code)
+  ck "a name with no usable slug refused"  "TX_COM_008" "$UNNAMEABLE"
+  WIDE=$(curl -s -X POST $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Wide Floor $STAMP\",\"owner\":{\"name\":\"W\",\"email\":\"w+$STAMP@smoke.test\",\"password\":\"password123\"},\"tables\":{\"from\":1,\"to\":999}}" | j code)
+  ck "a 999-table range refused"           "TX_COM_008" "$WIDE"
+
+  echo "--- the operator list sees it; the public directory sees it too, since it is active ---"
+  ck "operator list includes it"           "yes" "$(curl -s $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" | grep -q "smoke-diner-$STAMP" && echo yes || echo no)"
+  ck "operator list carries status"        "yes" "$(curl -s $PLAT/restaurants -H "X-Platform-Token: $PTOKEN" | grep -q '"status"' && echo yes || echo no)"
+  ck "public directory includes it"        "yes" "$(curl -s $PUB/restaurants | grep -q "smoke-diner-$STAMP" && echo yes || echo no)"
+  ck "public directory still hides tax"    "yes" "$(curl -s $PUB/restaurants | grep -q 'tax_bps' && echo no || echo yes)"
+fi
 
 echo
 echo "==================================================="

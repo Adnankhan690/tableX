@@ -547,6 +547,96 @@ export interface StaffListResponse {
   staff: StaffMember[]
 }
 
+// --- Platform (operator) ---
+//
+// The fourth trust level, and the only one scoped to no restaurant -- it is what creates them
+// (docs/DECISIONS.md D14). Authorised by the deployment's platform token, not by a staff JWT: a
+// staff token carries exactly one `restaurant_id` (D3), so no staff role can describe an
+// operator acting across all of them.
+
+/**
+ * Creates a restaurant, its first owner login, and optionally its floor of tables.
+ *
+ * `name` and `owner` are the only required fields. `slug` is derived from the name when
+ * omitted, and normalised either way -- it becomes the restaurant's permanent public URL
+ * segment, `/r/{slug}` (docs/DECISIONS.md D4).
+ */
+export interface OnboardRestaurantRequest {
+  name: string
+  slug?: string
+  description?: string
+  logo_url?: string
+  address?: string
+  phone?: string
+  /** IANA name. Decides when the daily order-number counter rolls over (docs/DECISIONS.md D9). */
+  timezone?: string
+  currency?: string
+  gst_number?: string
+  /**
+   * Basis points: 500 = 5.00%.
+   *
+   * Omit to inherit the 5% GST default. Sending `0` is different and means tax-free -- the
+   * server distinguishes the two, so a form that sends 0 for an empty input onboards a
+   * restaurant that charges no tax.
+   */
+  tax_bps?: number
+  service_charge_bps?: number
+  upi_vpa?: string
+  upi_payee_name?: string
+  payment_provider?: string
+  owner: OnboardOwnerRequest
+  /** Omit for a restaurant with no tables yet; the restaurant-level fallback QR still works. */
+  tables?: OnboardTablesRequest
+}
+
+/**
+ * The first staff login. Always created with the `owner` role -- there is no role field,
+ * because the first account has to be able to create the others.
+ */
+export interface OnboardOwnerRequest {
+  name: string
+  email: string
+  password: string
+}
+
+/** A numbered range of tables to create with the restaurant. Both ends inclusive. */
+export interface OnboardTablesRequest {
+  /** Prepended to each label: `"T-"` with 1..12 gives `T-1` .. `T-12`. */
+  prefix?: string
+  from: number
+  to: number
+  seats?: number
+}
+
+/**
+ * Everything needed to hand the restaurant over.
+ *
+ * Carries the table QR URLs because those are the deliverable. No password of any kind comes
+ * back: whoever made the call already has it, and echoing it would write it into every proxy
+ * log on the way home.
+ */
+export interface OnboardRestaurantResponse {
+  restaurant: RestaurantSettings
+  owner: StaffMember
+  /** Empty when no tables were requested, never null. */
+  tables: TableInfo[]
+  /** The restaurant-level landing page: the one QR that works before any sticker is printed. */
+  diner_url: string
+  /** Where the owner signs in. Empty when the server has no admin base URL configured. */
+  admin_url?: string
+}
+
+/**
+ * Every tenant on the deployment, inactive ones included.
+ *
+ * `RestaurantSettings`, not `RestaurantSummary`: an operator's first question about a
+ * restaurant that is not taking orders is what its status and configuration are, which is
+ * exactly what the public directory withholds (docs/DECISIONS.md D13).
+ */
+export interface PlatformRestaurantListResponse {
+  restaurants: RestaurantSettings[]
+}
+
 // --- Stats ---
 
 export interface OrderStatsView {
