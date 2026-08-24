@@ -448,6 +448,22 @@ Verified against the running system, not from memory.
 - Staff confirmation for cash and static UPI, attributed to the signed-in user; a served order that
   gets paid closes itself.
 
+**Onboarding a restaurant** ([D14](./DECISIONS.md))
+
+- A fourth route group, `/api/platform/v1`, authorised by a shared secret and scoped to no
+  restaurant because it is what creates them. **Not mounted unless a token is configured**, so a
+  deployment that does not onboard over HTTP has no tenant-creating endpoint at all.
+- `POST /restaurants` writes the restaurant, its first owner login (always `owner` role) and an
+  optional numbered floor of tables in **one transaction**, and returns every table's scan URL.
+  Everything is validated before the transaction opens.
+- An owner email that already signs in elsewhere on the platform is refused: login refuses an
+  ambiguous address, so the account would otherwise be unusable from the moment it existed.
+- Constant-time token comparison; no query-string fallback, unlike staff and guest auth.
+- `GET /restaurants` lists every tenant including inactive ones, which the public directory
+  withholds ([D13](./DECISIONS.md)). Never returns a `qr_token`.
+- Admin panel screen at `/onboard`, outside the tenant chrome and unlinked from the navigation;
+  the platform token is held in page state and never persisted.
+
 **Realtime, auth, ops**
 
 - WebSocket hub with per-restaurant and per-order topics; 5-second polling fallback; slow clients
@@ -456,16 +472,16 @@ Verified against the running system, not from memory.
 - Client disconnects answered with 499 and logged at Info, not 500 at Error.
 - Dashboard stats windowed in the restaurant's timezone; null averages render `--`, never `0`.
 - Both frontends complete: 9 diner routes, 8 admin routes.
-- **Bruno API collection**: 53 requests over 11 folders, covering all 46 routes. Chains state
+- **Bruno API collection**: 55 requests over 12 folders, covering all 48 routes. Chains state
   through post-response scripts, so a top-to-bottom run works from an empty database. `go test
   ./cmd/app` fails if a route has no request, or if a request points at a route that no longer
   exists.
 - CI: format, vet, race tests, migration round-trip, smoke, concurrency, the Bruno collection, and
   both browser journeys.
 
-**Verification** — 68 API assertions · 3 concurrency scenarios · 37 diner browser assertions ·
-53 admin browser assertions · 14 QR/multi-tenant assertions · 31 Go unit subtests · 6 price-parser
-tests. All against real Postgres and a real browser, nothing stubbed.
+**Verification** — 93 API assertions · 139 Bruno assertions · 3 concurrency scenarios · 37 diner
+browser assertions · 53 admin browser assertions · 14 QR/multi-tenant assertions · 53 Go unit
+tests · 14 frontend unit tests. All against real Postgres and a real browser, nothing stubbed.
 
 ### 6.2 Not done
 
@@ -485,6 +501,8 @@ tests. All against real Postgres and a real browser, nothing stubbed.
 | **Table sittings** (§5.3) | Collaborative ordering and a single table bill. The main outstanding design. |
 | **Refunds** | `PaymentStatus` has `refunded` and `Capabilities.SupportsRefund` exists; no endpoint or flow. |
 | **Image upload** | `menu_item.image_url` takes a URL. No storage, no upload, no resizing — a restaurant must host its own photos. |
+| **Suspending a restaurant** | `EntityStatus` has `inactive` and every read path already refuses an inactive restaurant, so the schema and the guards exist — no endpoint sets it. Deliberate rather than forgotten: suspension is a policy question (what happens to live orders? to printed QR codes?) that has not been decided ([D14](./DECISIONS.md)). |
+| **Starter menu on onboarding** | Onboarding creates the restaurant, its owner and its tables, but no menu — so a new restaurant's diner page is empty until the owner fills it in. The right division of ownership, but it does mean onboarding alone is not enough to take an order. |
 
 **Deliberately out of scope for v1** — each is a recorded decision, not an omission:
 
@@ -493,6 +511,7 @@ tests. All against real Postgres and a real browser, nothing stubbed.
 | Order editing after placement | [D6](./DECISIONS.md) — cancel before accept; otherwise place another order. |
 | Cross-visit order history | [D5](./DECISIONS.md) — needs an identity, which needs a login. |
 | Franchise / multi-restaurant admin | [D3](./DECISIONS.md) — schema is ready, auth is single-tenant. |
+| Public self-serve restaurant signup | [D14](./DECISIONS.md) — onboarding is an operator action. An anonymous endpoint that mints tenants is an unbounded writer, a way to squat every good `/r/{slug}`, and a way to fill the public directory with junk real diners see. |
 | Hindi / i18n | PRD §7 future. Error **codes** are already stable and separate from messages, so translating copy cannot change behaviour. |
 | Table reservations, loyalty, native apps, waiter-assisted ordering | PRD §8. |
 

@@ -25,6 +25,7 @@ docs {
   | `admin-auth / login` | `access_token`, `refresh_token`, `staff_uid`, `restaurant_uid` |
   | `admin-menu / get-menu` | `category_uid`, `admin_item_uid` |
   | `admin-tables / list-tables` | `admin_table_uid` |
+  | `platform / onboard-restaurant` | `onboarded_restaurant_uid`, `onboarded_restaurant_slug`, `onboarded_owner_uid` |
 
   Run `public / scan-table` and `admin-auth / login` first if you are cherry-picking; almost
   everything else depends on one of those two.
@@ -48,13 +49,19 @@ docs {
   response leaves the connection upgraded, which silently halts Bruno's HTTP runner -- every request
   after it is skipped with no error and a zero exit code.
 
-  ## Three trust levels
+  ## Four trust levels
 
   The prefix a route sits under is the whole statement of who may call it:
 
   - `/api/public/v1` — no credentials, rate limited
   - `/api/guest/v1` — `X-Guest-Token`, from a QR scan
   - `/api/admin/v1` — `Authorization: Bearer`, staff JWT scoped to one restaurant
+  - `/api/platform/v1` — `X-Platform-Token`, the deployment's own secret, scoped to no
+    restaurant because it is what creates them (docs/DECISIONS.md D14)
+
+  The platform folder answers **404** rather than 401 unless the server was started with
+  `TABLEX_PLATFORM_TOKEN`. Locally that value lives in `backend/config/local.yml` and is
+  mirrored into `platform_token` in the environment.
 
   ## Prerequisites
 

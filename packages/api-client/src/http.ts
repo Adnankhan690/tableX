@@ -9,6 +9,13 @@ export type AuthMode =
   | { kind: 'guest'; token: string }
   /** A staff JWT, sent as a bearer token. */
   | { kind: 'staff'; token: string }
+  /**
+   * The deployment's platform token, sent as X-Platform-Token (docs/DECISIONS.md D14).
+   *
+   * Its own header rather than Authorization so that a client or proxy configured to forward
+   * staff bearer tokens cannot accidentally present one on the tenant-creating surface.
+   */
+  | { kind: 'platform'; token: string }
 
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
@@ -149,6 +156,8 @@ export class HttpClient {
       headers['X-Guest-Token'] = auth.token
     } else if (auth.kind === 'staff') {
       headers.Authorization = `Bearer ${auth.token}`
+    } else if (auth.kind === 'platform') {
+      headers['X-Platform-Token'] = auth.token
     }
 
     return headers

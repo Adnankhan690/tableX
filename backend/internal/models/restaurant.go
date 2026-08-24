@@ -19,7 +19,18 @@ type Restaurant struct {
 
 	// Basis points, not a percentage float: 500 = 5.00%. Keeps every money computation in
 	// integer arithmetic (DECISIONS.md D7).
-	TaxBps           int `gorm:"column:tax_bps;not null;default:500" json:"tax_bps"`
+	//
+	// The column still carries DEFAULT 500 in migration 001, but that default is deliberately
+	// NOT declared in the GORM tag. GORM omits a field from an INSERT when it holds the zero
+	// value AND the tag names a default -- so with `default:500` here, onboarding a genuinely
+	// tax-free restaurant with tax_bps: 0 silently produced 5% instead, because the column
+	// default filled the gap GORM left. The tag is the ORM's instruction, not documentation of
+	// the schema; leaving it off means Go always writes the value the service decided, and the
+	// SQL default is left to serve inserts that omit the column entirely (seeds, manual SQL).
+	//
+	// ServiceChargeBps keeps its default because there the zero value and the default agree,
+	// so the same omission is unobservable.
+	TaxBps           int `gorm:"column:tax_bps;not null" json:"tax_bps"`
 	ServiceChargeBps int `gorm:"column:service_charge_bps;not null;default:0" json:"service_charge_bps"`
 
 	// Static-UPI payee details. Empty when the restaurant uses a gateway instead.

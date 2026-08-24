@@ -5,6 +5,9 @@
 ```bash
 cp .env.example .env
 echo "TABLEX_JWT_SECRET=$(openssl rand -hex 32)" >> .env
+# Optional: enables /api/platform/v1, which is how a real restaurant gets onto the platform
+# ([D14](./DECISIONS.md)). Without it that group is never mounted and its routes answer 404.
+echo "TABLEX_PLATFORM_TOKEN=$(openssl rand -hex 32)" >> .env
 make setup     # deps, Postgres, migrations, demo data
 make dev       # API :8080, diner :3000, admin :3001
 ```
@@ -90,9 +93,9 @@ Bottom-up, so each step compiles:
 ```bash
 make test                    # Go tests + frontend unit tests
 make -C backend test-race    # the hub and order locking only misbehave under -race
-make smoke                   # 68 API assertions against a running server
+make smoke                   # 93 API assertions against a running server
 make concurrency             # the three races that happen in a real restaurant
-make api-collection          # 125 assertions, the Bruno collection end to end
+make api-collection          # 139 assertions, the Bruno collection end to end
 cd apps/diner && node e2e/diner-journey.mjs    # 37 assertions, real browser
 cd apps/admin && node e2e/admin-journey.mjs    # 53 assertions, real browser
 ```

@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"gorm.io/gorm"
@@ -219,8 +218,7 @@ func (s *serviceRestaurant) GetPublicQR(
 		return nil, response.ErrRestaurantInactive
 	}
 
-	url := fmt.Sprintf("%s/r/%s",
-		strings.TrimRight(s.Access.Cfg.App.DinerBaseURL, "/"), restaurant.Slug)
+	url := restaurantLandingURL(s.Access.Cfg.App.DinerBaseURL, restaurant.Slug)
 
 	png, err := payments.RenderQRPNG(url, size)
 	if err != nil {

@@ -22,6 +22,7 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	Auth     AuthConfig     `yaml:"auth"`
+	Platform PlatformConfig `yaml:"platform"`
 	Guest    GuestConfig    `yaml:"guest"`
 	Payments PaymentsConfig `yaml:"payments"`
 	Realtime RealtimeConfig `yaml:"realtime"`
@@ -90,6 +91,23 @@ type AuthConfig struct {
 	// BcryptCost is the password hashing work factor.
 	BcryptCost int `yaml:"bcrypt_cost"`
 }
+
+// PlatformConfig gates the operator surface that creates tenants (DECISIONS.md D14).
+//
+// There is no default and no way to derive one. A restaurant is the root of a tenant, and an
+// endpoint that mints one is not something to leave reachable because a config file was
+// incomplete -- so an absent token means the whole /api/platform/v1 group is never mounted,
+// the same way absent Razorpay credentials leave that gateway unregistered.
+type PlatformConfig struct {
+	// AdminToken authorises onboarding. It is a shared secret held by whoever runs the
+	// deployment, not a per-user credential: there are no platform accounts, because a
+	// staff login belongs to exactly one restaurant and therefore cannot describe an
+	// operator acting across all of them (DECISIONS.md D3).
+	AdminToken string `yaml:"admin_token"`
+}
+
+// OnboardingEnabled reports whether tenant creation is reachable over HTTP.
+func (c *PlatformConfig) OnboardingEnabled() bool { return c.AdminToken != "" }
 
 // GuestConfig holds anonymous diner session settings (DECISIONS.md D5).
 type GuestConfig struct {
@@ -251,6 +269,8 @@ func (c *Config) applyEnv() {
 	envDuration("TABLEX_REFRESH_TOKEN_TTL", &c.Auth.RefreshTokenTTL)
 	envInt("TABLEX_BCRYPT_COST", &c.Auth.BcryptCost)
 
+	envStr("TABLEX_PLATFORM_TOKEN", &c.Platform.AdminToken)
+
 	envDuration("TABLEX_GUEST_SESSION_TTL", &c.Guest.SessionTTL)
 
 	envStr("TABLEX_PAYMENT_PROVIDER", &c.Payments.DefaultProvider)
@@ -281,6 +301,15 @@ func (c *Config) Validate() error {
 		problems = append(problems, "app.diner_base_url is required (it is encoded into every table QR code)")
 	} else if !strings.HasPrefix(c.App.DinerBaseURL, "http://") && !strings.HasPrefix(c.App.DinerBaseURL, "https://") {
 		problems = append(problems, "app.diner_base_url must include a scheme, e.g. https://order.example.com")
+	}
+
+	// Only length is checked, and only when a token is present. An absent token is a valid
+	// choice -- it means this deployment does not expose tenant creation at all -- so it must
+	// not fail startup. A short one is not: it is the single secret standing in front of an
+	// endpoint that creates tenants, and it is guessable at 8 characters.
+	if c.Platform.AdminToken != "" && len(c.Platform.AdminToken) < 32 && c.IsProduction() {
+		problems = append(problems,
+			"platform.admin_token must be at least 32 characters in production (set TABLEX_PLATFORM_TOKEN)")
 	}
 
 	if c.Database.Driver != "postgres" && c.Database.Driver != "sqlite" {

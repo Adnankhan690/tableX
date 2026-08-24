@@ -149,6 +149,22 @@ type ServicePaymentMethods interface {
 	StartIntentForOrder(ctx context.Context, order *models.Order, restaurant *models.Restaurant) (*types.PaymentView, *response.ApplicationError)
 }
 
+// ServicePlatformMethods is the operator surface: it creates tenants (DECISIONS.md D14).
+//
+// The only interface here whose methods take no principal. There is deliberately no
+// PlatformPrincipal to pass: authorisation is a shared secret checked in middleware, not an
+// identity, because a staff login belongs to exactly one restaurant and so cannot represent
+// someone acting across all of them (DECISIONS.md D3). Nothing reachable from a staff or guest
+// token calls anything on this interface.
+type ServicePlatformMethods interface {
+	// OnboardRestaurant creates a restaurant, its first owner login, and optionally its floor
+	// of tables, in one transaction.
+	OnboardRestaurant(ctx context.Context, req *types.RequestOnboardRestaurant) (*types.ResponseOnboardRestaurant, *response.ApplicationError)
+	// ListRestaurants returns every tenant, including inactive ones -- which is exactly what
+	// the public directory withholds (DECISIONS.md D13).
+	ListRestaurants(ctx context.Context) (*types.ResponsePlatformRestaurantList, *response.ApplicationError)
+}
+
 // ServiceStatsMethods backs the admin dashboard (PRD 3).
 type ServiceStatsMethods interface {
 	Today(ctx context.Context, actor *StaffPrincipal) (*types.OrderStatsView, *response.ApplicationError)

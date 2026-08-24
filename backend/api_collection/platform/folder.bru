@@ -1,0 +1,26 @@
+meta {
+  name: platform
+  seq: 13
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  The operator surface: creating restaurants (docs/DECISIONS.md D14).
+
+  A fourth trust level, and the only one scoped to no restaurant -- it is what creates them.
+  Authorised by `X-Platform-Token`, a shared secret from the deployment's environment, not by a
+  staff JWT: a staff token carries exactly one `restaurant_id` (D3), so no staff role can
+  describe an operator acting across all of them.
+
+  **The group is not mounted unless `TABLEX_PLATFORM_TOKEN` is set.** Without it these requests
+  answer **404**, not 401 -- a deployment that does not onboard tenants over HTTP has no
+  tenant-creating endpoint at all. Locally the token is in `backend/config/local.yml` and
+  mirrored into `platform_token` in the environment.
+
+  Sequenced last on purpose. Onboarding writes a third restaurant, and running it before the
+  folders that assert exact counts and statuses against the two seeded ones would make those
+  assertions depend on this one having run.
+}

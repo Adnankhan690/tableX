@@ -1,0 +1,136 @@
+meta {
+  name: onboard-restaurant
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/platform/v1/restaurants
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Platform-Token: {{platform_token}}
+}
+
+body:json {
+  {
+    "name": "Tandoor Junction",
+    "slug": "tandoor-junction",
+    "description": "North Indian, onboarded by the platform API",
+    "address": "12 MG Road, Bengaluru",
+    "phone": "+919812345678",
+    "timezone": "Asia/Kolkata",
+    "tax_bps": 500,
+    "service_charge_bps": 0,
+    "upi_vpa": "tandoorjunction@okhdfcbank",
+    "upi_payee_name": "Tandoor Junction",
+    "payment_provider": "upi_static",
+    "owner": {
+      "name": "Meera Nair",
+      "email": "owner@tandoorjunction.test",
+      "password": "password123"
+    },
+    "tables": {
+      "prefix": "T-",
+      "from": 1,
+      "to": 4,
+      "seats": 4
+    }
+  }
+}
+
+script:post-response {
+  if (res.status === 201 && res.body.data) {
+    bru.setVar("onboarded_restaurant_uid", res.body.data.restaurant.uid)
+    bru.setVar("onboarded_restaurant_slug", res.body.data.restaurant.slug)
+    bru.setVar("onboarded_owner_uid", res.body.data.owner.uid)
+  }
+}
+
+tests {
+  test("responds 201, or 409 if this restaurant was already onboarded", function () {
+    // Both are correct answers, as with create-staff: the slug and the owner email are fixed so
+    // the request is repeatable, which means a rerun against a database that was not reseeded
+    // hits the uniqueness guard. Asserting only 201 would make a second run look like a
+    // regression; accepting anything would stop this checking that onboarding works at all.
+    expect([201, 409]).to.include(res.status)
+  })
+
+  test("a conflict names which uniqueness failed", function () {
+    if (res.status !== 409) return
+    // TX_RST_003 slug taken, TX_AUT_007 owner email already signs in elsewhere. Either is a
+    // legitimate rerun outcome; a 409 with any other code means something else conflicted.
+    expect(["TX_RST_003", "TX_AUT_007"]).to.include(res.body.code)
+  })
+
+  test("creates the owner as an owner, not as staff", function () {
+    if (res.status !== 201) return
+    // Load-bearing: the first account has to be able to create the others. A manager- or
+    // staff-role login would leave the restaurant unable to add anyone.
+    expect(res.body.data.owner.role).to.equal("owner")
+  })
+
+  test("returns no password of any kind", function () {
+    if (res.status !== 201) return
+    // Structural: StaffMember has no password field. Echoing the credential back would write it
+    // into every proxy log between here and the caller, and whoever made the call already has it.
+    const raw = JSON.stringify(res.body)
+    expect(raw).to.not.include("password")
+  })
+
+  test("creates the requested floor with a QR URL per table", function () {
+    if (res.status !== 201) return
+    expect(res.body.data.tables).to.be.an("array").with.lengthOf(4)
+    expect(res.body.data.tables[0].label).to.equal("T-1")
+    for (const table of res.body.data.tables) {
+      // The QR URLs are the deliverable. Onboarding that returned an id and left someone to go
+      // and find the codes would not have finished the job.
+      expect(table.qr_url).to.be.a("string").that.includes("/t/")
+    }
+  })
+
+  test("returns the restaurant's own landing URL", function () {
+    if (res.status !== 201) return
+    expect(res.body.data.diner_url).to.include("/r/tandoor-junction")
+  })
+}
+
+docs {
+  # Onboard a restaurant
+
+  Creates the tenant root, its first owner login and optionally its floor of tables --
+  **in one transaction**. One call rather than three because the three are useless apart: a
+  restaurant with no owner cannot be signed into, and a half-onboarded tenant is a support
+  ticket rather than a state a retry fixes.
+
+  ## Required
+
+  `name` and `owner` (`name`, `email`, `password`). Everything else has a default.
+
+  `slug` is optional -- omit it and the server derives one from the name. Either way it is
+  normalised, so `"Spice Garden!"` and `"spice-garden"` arrive at the same value. It is the
+  segment in the restaurant-level fallback QR, `/r/{slug}` (docs/DECISIONS.md D4).
+
+  `tables` is optional. A restaurant that has not counted its tables yet can add them from the
+  admin panel, and the restaurant-level QR works with none.
+
+  ## Refusals worth knowing
+
+  | Code | Why |
+  |---|---|
+  | `TX_RST_003` 409 | The slug is taken. Choose another; the unique index is the guarantee, the pre-check is only there to make this readable. |
+  | `TX_AUT_007` 409 | The owner email already signs in to another restaurant. Login refuses an ambiguous address rather than guessing, so creating this account would produce one that can never sign in. |
+  | `TX_COM_008` 422 | Unknown timezone, an out-of-range rate, a table range wider than 200, or a name with nothing in it to build a URL from. |
+  | `TX_PAY_005` 409 | The requested payment provider is not available on this deployment. Accepting it would leave the payment screen silently falling back while the owner believed their gateway was live. |
+  | `TX_AUT_009` 401 | Wrong or missing platform token. |
+  | 404 | `TABLEX_PLATFORM_TOKEN` is not set, so the group was never mounted. |
+
+  ## After it succeeds
+
+  The owner signs in at `admin_url` with the email and password from the request, then adds the
+  menu. A freshly onboarded restaurant has **no menu**, so its diner page renders an empty one
+  until categories and items exist -- that is expected, not a fault.
+}

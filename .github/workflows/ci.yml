@@ -16,6 +16,16 @@ env:
   # server, so CI supplies one that has never protected anything.
   TABLEX_JWT_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
 
+  # TABLEX_PLATFORM_TOKEN is deliberately NOT set here, and that is load-bearing rather than an
+  # omission. The onboarding routes need a token to be mounted at all (docs/DECISIONS.md D14), so
+  # they take it from backend/config/local.yml -- the same checked-in value that
+  # api_collection/environments/local.bru holds in `platform_token`.
+  #
+  # Setting it here would override the config file for the server but not for the Bruno
+  # collection, so every request in the platform folder would start answering 401. If you need a
+  # different token in CI, change both, or the collection breaks in a way that looks like a
+  # regression in onboarding.
+
 jobs:
   backend:
     name: Backend

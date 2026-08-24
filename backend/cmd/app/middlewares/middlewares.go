@@ -29,6 +29,10 @@ const (
 	HeaderGuestToken     = "X-Guest-Token"
 	HeaderIdempotencyKey = "Idempotency-Key"
 	HeaderAuthorization  = "Authorization"
+	// HeaderPlatformToken carries the operator secret. Its own header rather than
+	// Authorization so that a proxy or client configured to forward staff bearer tokens
+	// cannot accidentally present one here (DECISIONS.md D14).
+	HeaderPlatformToken = "X-Platform-Token"
 )
 
 // Middlewares aggregates every middleware constructor.

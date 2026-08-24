@@ -298,3 +298,64 @@ Both routes are rate limited. Rendering a QR is CPU work, and an unthrottled loo
 cheap way to spend the server's cycles.
 
 **Reversal cost.** Low, in both directions.
+
+---
+
+## D14 — Restaurant onboarding is an operator action, behind its own trust level
+
+**Not a PRD question.** The PRD assumes restaurants exist. Nothing in it says how one gets
+onto the platform, and until now nothing did: the only restaurants that existed were the two
+in `backend/seeds/local_seed.sql`, and adding a third meant writing SQL by hand.
+
+**Decision.** A fourth route group, `/api/platform/v1`, authorised by a **shared secret** in
+the deployment's environment (`TABLEX_PLATFORM_TOKEN`). `POST /restaurants` creates the
+restaurant, its first owner login and optionally its floor of tables in **one transaction**.
+Absent a configured token, **the group is not mounted at all** — onboarding answers 404, not
+401.
+
+Two things were considered and rejected.
+
+**A role on a staff token.** The obvious-looking option, and it is the one that breaks
+[D3](#d3--multi-tenant-data-model-single-restaurant-admin-scope). A staff JWT carries exactly
+one `restaurant_id`, by design, so there is no principal in the tenant model that can describe
+someone acting across all of them. Inventing an `is_platform_admin` claim would put tenant
+creation one wrongly-set flag away from every restaurant owner's token — and the flag would
+live on a row that restaurant owners can already edit through `PATCH /staff/:uid`. The shared
+secret belongs to no account, which is precisely why it is safer here.
+
+**Public self-serve signup.** Rejected for v1, and not because it is hard. A restaurant is a
+tenant root, and an anonymous endpoint that mints one is an unauthenticated writer of unbounded
+rows, a way to squat every desirable `/r/{slug}`, and a way to fill the public directory
+([D13](#d13--a-public-restaurant-directory-and-a-public-restaurant-qr)) with junk that real
+diners see. A platform whose premise is walk-in diners scanning codes cannot have a tenant list
+anyone can pollute. The seam for adding it later is already the right shape — one more route on
+this group, or a signup mode on the config — so this is a decision that can be revisited
+without moving anything.
+
+**Why one call and one transaction.** The three writes are useless apart. A restaurant with no
+owner cannot be signed into; an owner with no restaurant is an orphan row. A half-onboarded
+tenant is not a state a retry fixes — it needs direct database access to unpick — so the
+service validates everything *before* opening the transaction, and the transaction then only
+writes.
+
+**The owner email check is a correctness requirement, not a nicety.** `staff_user` is unique on
+`(restaurant_id, email)`, so the database would happily accept the same address at a second
+restaurant. Login would not: it refuses an address matching more than one staff row rather than
+guessing which restaurant was meant. Onboarding an owner whose email already exists elsewhere
+would therefore create an account that **can never sign in anywhere**. Onboarding refuses it up
+front with `TX_AUT_007`.
+
+**What onboarding does not do:** create a menu. A freshly onboarded restaurant renders an empty
+diner page until its owner adds categories and items. That is correct — a menu is the
+restaurant's content, not the platform's — but it does mean onboarding alone does not make a
+restaurant able to take orders, and both the API docs and the handover screen say so.
+
+**Also not done:** suspending or reactivating a restaurant. `EntityStatus` already has
+`inactive`, and every read path already refuses an inactive restaurant, so the data model is
+ready; there is simply no endpoint that sets it. That is a deliberate omission rather than an
+oversight — suspension is a policy question (what happens to live orders? to printed QR codes?)
+that deserves its own decision.
+
+**Reversal cost.** Low. One route group, one middleware, one service. Removing it leaves the
+schema untouched and puts restaurant creation back in SQL.
+

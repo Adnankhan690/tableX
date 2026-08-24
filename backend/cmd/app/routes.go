@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 
 	"tablex/internal/models"
 )
 
-// Three route groups, three trust levels. The prefix a route sits under is the whole
+// Four route groups, four trust levels. The prefix a route sits under is the whole
 // statement of who may call it, so nothing is mounted outside one of these.
 const (
 	// PublicAPIV1 needs no credentials and is rate limited.
@@ -15,12 +17,17 @@ const (
 	GuestAPIV1 = "/api/guest/v1"
 	// AdminAPIV1 needs a staff JWT, scoped to one restaurant (DECISIONS.md D3).
 	AdminAPIV1 = "/api/admin/v1"
+	// PlatformAPIV1 needs the deployment's platform token and is scoped to no restaurant --
+	// it is what creates them (DECISIONS.md D14). Not mounted at all unless a token is
+	// configured.
+	PlatformAPIV1 = "/api/platform/v1"
 )
 
 func (a *App) addRoutes(engine *gin.Engine) {
 	a.addPublicRoutes(engine)
 	a.addGuestRoutes(engine)
 	a.addAdminRoutes(engine)
+	a.addPlatformRoutes(engine)
 }
 
 // addPublicRoutes mounts the anonymous surface.
@@ -137,4 +144,31 @@ func (a *App) addAdminRoutes(engine *gin.Engine) {
 	admin.GET("/stats/range", a.controllers.Stats.Range)
 
 	admin.GET("/stream", a.controllers.Realtime.StaffStream)
+}
+
+// addPlatformRoutes mounts the operator surface, if this deployment has one.
+//
+// Absent a configured token the group is never registered, so onboarding answers 404 rather
+// than 401 -- the same shape as the Razorpay adapter, which stays unregistered without
+// credentials instead of failing at the point of use. A deployment that does not onboard
+// tenants over HTTP therefore has no tenant-creating endpoint at all, which is a stronger
+// guarantee than one guarded by a secret someone remembered to set.
+func (a *App) addPlatformRoutes(engine *gin.Engine) {
+	if !a.cfg.Platform.OnboardingEnabled() {
+		a.logger.With(context.Background()).Infof(
+			"[addPlatformRoutes] no platform token configured, %s not mounted -- "+
+				"set TABLEX_PLATFORM_TOKEN to enable restaurant onboarding", PlatformAPIV1)
+		return
+	}
+
+	// Rate limited as well as authenticated. The limiter is not the protection here -- the
+	// token is -- but onboarding is the most expensive write in the system (a bcrypt hash plus
+	// up to 200 QR tokens), so a loop over it with a valid token is worth bounding too.
+	platform := engine.Group(PlatformAPIV1, a.middlewares.RateLimit(), a.middlewares.PlatformAuth())
+
+	platform.POST("/restaurants", a.controllers.Platform.OnboardRestaurant)
+	platform.GET("/restaurants", a.controllers.Platform.ListRestaurants)
+
+	a.logger.With(context.Background()).Infof(
+		"[addPlatformRoutes] %s mounted -- restaurant onboarding is enabled", PlatformAPIV1)
 }
