@@ -1,0 +1,90 @@
+# tableX -- production configuration.
+#
+# Precedence is defaults -> this file -> environment. This file is checked in and carries
+# only the shape and the non-secret production values; every secret and every value that
+# differs per deployment comes from the environment. See render.yaml for what supplies them.
+#
+# Four things are enforced at startup by config.Validate and are NOT set here, deliberately,
+# because a checked-in value for any of them is a value that ships:
+#
+#   TABLEX_JWT_SECRET      -- required, >= 32 chars in production
+#   TABLEX_DINER_BASE_URL  -- required, encoded into every table QR code
+#   TABLEX_TRUSTED_PROXIES -- required in production, or the client IP is spoofable
+#   TABLEX_PLATFORM_TOKEN  -- optional; absent means tenant onboarding is not mounted at all
+
+app:
+  name: tablex
+  env: production
+  # diner_base_url and admin_base_url come from the environment. Startup fails without the
+  # diner one rather than guessing a host and printing QR stickers that point at it.
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  # allowed_origins comes from the environment: it is the public origin of the diner and
+  # admin apps, which is not known until they have hostnames.
+  read_timeout: 15s
+  write_timeout: 30s
+  # Long enough for an in-flight order-placement transaction to commit before the old
+  # container goes away on a deploy.
+  shutdown_timeout: 20s
+  # trusted_proxies comes from the environment -- it describes the hosting platform's
+  # ingress, not the application.
+  #
+  # 300/min is per IP, and a restaurant's diners commonly share one NAT address over the
+  # venue wifi, so this is deliberately not tight. It bounds a scraper, not a busy table.
+  rate_limit_per_minute: 300
+
+database:
+  driver: postgres
+  # host/port/user/password/name are unused in production: DATABASE_URL is read directly
+  # (config.applyEnv), and DSN overrides every field above it (config.PostgresDSN).
+  ssl_mode: require
+  # Managed Postgres plans cap connections well below what 25 per replica would reach at two
+  # replicas. 10 leaves headroom for the pre-deploy migration and a psql session.
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime: 30m
+  # Never true here: it logs every statement WITH ITS PARAMETERS, which in this schema means
+  # order contents and staff password hashes flowing through the log pipeline.
+  log_queries: false
+
+auth:
+  # jwt_secret comes from the environment. There is no default in code and none here.
+  access_token_ttl: 2h
+  # Spans a shift, so a tablet on the floor is not re-authenticating during dinner service.
+  refresh_token_ttl: 12h
+  bcrypt_cost: 12
+
+platform:
+  # admin_token comes from the environment, and only if this deployment should expose tenant
+  # creation over HTTP at all. Left unset, /api/platform/v1 is never mounted and answers 404.
+
+guest:
+  session_ttl: 12h
+  max_items_per_order: 50
+  max_quantity_per_item: 99
+
+payments:
+  # Static UPI needs no gateway account and cannot confirm that money arrived -- staff marks
+  # payment received (DECISIONS.md D2). Razorpay credentials, when supplied by the
+  # environment, register the gateway; absent, the registry falls back to this.
+  default_provider: upi_static
+  upi_static_note: "Order {{order}} ref {{ref}}"
+  razorpay:
+    key_id: ""
+    key_secret: ""
+    webhook_secret: ""
+    base_url: https://api.razorpay.com/v1
+
+realtime:
+  enabled: true
+  ping_interval: 30s
+  pong_wait: 60s
+  write_wait: 10s
+  send_buffer_size: 64
+
+log:
+  level: info
+  # json here, text locally: production logs are read by a collector, not a human tailing them.
+  format: json

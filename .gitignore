@@ -23,8 +23,12 @@ vendor/
 .env.*.local
 !.env.example
 backend/config/*.local.yml
-backend/config/production.yml
 backend/config/staging.yml
+# production.yml is deliberately NOT ignored. It carries the production *shape* -- pool
+# sizes, timeouts, ssl_mode, log format -- and no secrets: jwt_secret, admin_token and the
+# database credentials all come from the environment (see the header of that file). The
+# Docker image COPYs it, so ignoring it makes every build that clones this repo fail on a
+# missing file while building fine on a machine that happens to have it locally.
 
 # Test artifacts
 playwright-report/
