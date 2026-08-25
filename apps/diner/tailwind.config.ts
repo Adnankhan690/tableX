@@ -1,9 +1,10 @@
 import type { Config } from 'tailwindcss'
 
 /**
- * Colours are declared as `var(--tx-*)` rather than literal hex so a single set of CSS
- * variables in globals.css drives both the light and dark themes -- the dark theme is a
- * variable swap in one media query, not a `dark:` variant on every element.
+ * Colours are declared as `var(--tx-*)` rather than literal hex so that a single set of CSS
+ * variables in globals.css is the one definition of each colour, and so a restaurant-specific
+ * palette can be injected later as a single <style> block. The theme is light-only -- see the
+ * note in globals.css.
  *
  * The trade-off, stated because it will otherwise surprise someone: Tailwind's opacity
  * modifiers do NOT work on these tokens (`bg-surface/50` produces nothing usable), since
@@ -30,8 +31,8 @@ const config: Config = {
         muted: 'var(--tx-muted)',
         line: 'var(--tx-line)',
         accent: 'var(--tx-accent)',
-        // Foreground for text sitting ON accent. Kept as its own token because it inverts
-        // between themes and is not simply white.
+        // Foreground for text sitting ON accent. Kept as its own token rather than assumed to
+        // be white, so a future warmer or paler accent only has to change one pair.
         'accent-ink': 'var(--tx-accent-ink)',
         'accent-soft': 'var(--tx-accent-soft)',
         veg: 'var(--tx-veg)',

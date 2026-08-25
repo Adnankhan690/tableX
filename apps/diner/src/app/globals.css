@@ -3,80 +3,71 @@
 @tailwind utilities;
 
 /**
- * The theme lives here as CSS variables rather than in tailwind.config.ts so that dark mode
- * is one variable swap instead of a `dark:` variant on every coloured element, and so a
- * restaurant-specific palette can later be injected as a single <style> block without
- * rebuilding the app.
+ * The theme lives here as CSS variables rather than in tailwind.config.ts so that each colour
+ * has exactly one definition, and so a restaurant-specific palette can later be injected as a
+ * single <style> block without rebuilding the app.
+ *
+ * It is light-only, and `color-scheme: light` below is what enforces it: the menu renders the
+ * same whether or not the diner's phone is set to dark mode. That is a deliberate reversal of
+ * the earlier design, which auto-switched to a dark palette -- a menu is a storefront, and a
+ * diner scanning the QR at the next table should not be looking at a different-coloured
+ * restaurant because their phone is set differently. Do not re-add a
+ * `prefers-color-scheme: dark` block here without resolving that.
  */
 :root {
   color-scheme: light;
 
-  /* Warm near-white, not #fff: a pure-white full-screen menu is harsh in the dim lighting
-     these screens are actually read in. */
-  --tx-bg: #fdfaf5;
+  /* White-first, with the warmth kept in the undertone rather than in the lightness: #fffcf8 is
+     a 1.02:1 whisper off pure white, so the menu reads as a clean white page while still sitting
+     in the same warm family as the food photography and the accent. The earlier cream (#fdfaf5)
+     was chosen to soften a full-screen white in dim restaurant lighting; the softening is now
+     carried by the warm hue and by --tx-surface-sunken instead, which keeps the page white
+     without going cold. Cards are pure white on top of this. */
+  --tx-bg: #fffcf8;
   --tx-surface: #ffffff;
-  --tx-surface-sunken: #f6f0e7;
+  /* A second, slightly recessed surface: section headers and disabled dish cards. */
+  --tx-surface-sunken: #f7f2ea;
   --tx-ink: #1c1917;
-  --tx-muted: #78716c;
-  --tx-line: #ebe3d8;
+  /* Secondary text. Darkened from #78716c, which measured 4.80:1 on white and only 4.30:1 on
+     the sunken surface -- under AA on the ground it is most often used against. */
+  --tx-muted: #6d6560;
+  --tx-line: #e7dccd;
 
   /* Saffron/amber. Chosen over the reflexive red because red on a menu reads as an error
-     state, and because this is the colour Indian food packaging already uses. */
-  --tx-accent: #c2600a;
+     state, and because this is the colour Indian food packaging already uses. Deepened from
+     #c2600a, which measured 4.22:1 on white and 3.76:1 on --tx-accent-soft: `text-accent`
+     appears 12 times in this app, so the accent has to be legal as body text, not only as a
+     button fill. */
+  --tx-accent: #ad5207;
+  /* Foreground for text sitting ON accent -- the sticky cart bar, the place-order button. Kept
+     as its own token rather than assumed to be white, so a future warmer or paler accent only
+     has to change one pair. */
   --tx-accent-ink: #ffffff;
-  --tx-accent-soft: #fdf1e0;
+  --tx-accent-soft: #fdf0df;
 
   /* The veg/non-veg marker colours (PRD 6.2). These are a market convention, not a brand
      choice -- diners read the shape and colour without reading the word, so they should not
-     be re-picked for aesthetic reasons. */
-  --tx-veg: #0a8f3c;
+     be re-picked for aesthetic reasons. Tuned only for contrast on a whiter surface: veg moved
+     from #0a8f3c (4.19:1) so it clears 3:1 as a glyph with room to spare, and egg from #b45309
+     for the same reason on the sunken fill. The hues are unchanged. */
+  --tx-veg: #0a7d35;
   --tx-nonveg: #9b1c1c;
-  --tx-egg: #b45309;
+  --tx-egg: #a1500a;
 
   /* System faces only. No webfont: see tailwind.config.ts fontFamily. */
   --tx-font-sans:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
     sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
 
-  --tx-tap-highlight: rgb(194 96 10 / 0.14);
-}
+  --tx-tap-highlight: rgb(173 82 7 / 0.14);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    /* Warm-shifted rather than neutral grey, so food photography does not sit on a cold
-       background that makes it look grey too. */
-    --tx-bg: #17130f;
-    --tx-surface: #221c17;
-    --tx-surface-sunken: #1c1712;
-    --tx-ink: #f7f2ea;
-    --tx-muted: #a8a29e;
-    --tx-line: #362d24;
-
-    /* Lifted towards yellow: the light-mode accent fails contrast against a dark surface. */
-    --tx-accent: #f0a538;
-    --tx-accent-ink: #1c1105;
-    --tx-accent-soft: #2e2214;
-
-    /* Same convention, lifted for contrast. The hue is what carries the meaning; the
-       light-mode values are unreadable on a dark card. */
-    --tx-veg: #3fbd66;
-    --tx-nonveg: #f0625f;
-    --tx-egg: #e0a03a;
-
-    --tx-tap-highlight: rgb(240 165 56 / 0.18);
-  }
-}
-
-/**
- * Bridge to @tablex/ui.
- *
- * The shared package reads its own token names with neutral fallbacks, so without these it
- * renders in grey inside a warm theme. Mapping rather than redefining keeps one source of
- * truth for each colour -- change --tx-accent and everything that derives from it follows.
- */
-:root {
+  /**
+   * Bridge to @tablex/ui.
+   *
+   * The shared package reads its own token names with neutral fallbacks, so without these it
+   * renders in grey inside a warm theme. Mapping rather than redefining keeps one source of
+   * truth for each colour -- change --tx-accent and everything that derives from it follows.
+   */
   --tx-fg: var(--tx-ink);
   --tx-muted-fg: var(--tx-muted);
   --tx-error-fg: var(--tx-nonveg);
@@ -89,25 +80,14 @@
      tinted to sit on the warm surface rather than borrowed from the admin palette. */
   --tx-tone-new-bg: var(--tx-accent-soft);
   --tx-tone-new-fg: var(--tx-accent);
-  --tx-tone-progress-bg: #e8eef7;
-  --tx-tone-progress-fg: #2c4a7c;
-  --tx-tone-ready-bg: #e4f3e8;
-  --tx-tone-ready-fg: #17692f;
+  --tx-tone-progress-bg: #e9eef7;
+  --tx-tone-progress-fg: #28477a;
+  --tx-tone-ready-bg: #e0f2e6;
+  --tx-tone-ready-fg: #116b2e;
   --tx-tone-done-bg: var(--tx-surface-sunken);
   --tx-tone-done-fg: var(--tx-muted);
-  --tx-tone-failed-bg: #fbe9e7;
+  --tx-tone-failed-bg: #fceae7;
   --tx-tone-failed-fg: #8f1f1c;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --tx-tone-progress-bg: #1b2634;
-    --tx-tone-progress-fg: #9dc0ee;
-    --tx-tone-ready-bg: #16281c;
-    --tx-tone-ready-fg: #6ed48c;
-    --tx-tone-failed-bg: #2c1917;
-    --tx-tone-failed-fg: #f0908c;
-  }
 }
 
 @layer base {

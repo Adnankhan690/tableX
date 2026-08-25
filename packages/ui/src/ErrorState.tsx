@@ -49,7 +49,7 @@ export function ErrorState({ message, code, requestId, onRetry, className }: Err
         translation (PRD 7) where the message above does not.
       */}
       {code || requestId ? (
-        <p className="font-mono text-[11px] leading-4 text-[var(--tx-muted-fg,#6b7280)]">
+        <p className="font-mono text-[11px] leading-4 text-[var(--tx-muted-fg,#616875)]">
           {code ? <span data-error-code-text="">{code}</span> : null}
           {code && requestId ? ' · ' : null}
           {requestId ? <span data-request-id={requestId}>ref {requestId}</span> : null}

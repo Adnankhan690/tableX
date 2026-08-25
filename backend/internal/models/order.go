@@ -15,8 +15,14 @@ type Order struct {
 	GuestSessionID *int32 `json:"guest_session_id,omitempty"`
 	// OrderNumber is the short daily counter shouted across a kitchen, "A-014"
 	// (DECISIONS.md D9). UID remains the API identifier.
-	OrderNumber string      `gorm:"size:32;not null" json:"order_number"`
-	Status      OrderStatus `gorm:"size:32;not null;default:'placed'" json:"status"`
+	OrderNumber string `gorm:"size:32;not null" json:"order_number"`
+	// BusinessDate is the service date OrderNumber was allocated against, in the restaurant's
+	// own timezone -- a 1am order belongs to the previous evening's service. Stored rather than
+	// derived from PlacedAt because it is what scopes the uniqueness of OrderNumber: the counter
+	// resets daily, so without the date in the index the first order of each day collides with
+	// the previous day's. Uniqueness is (restaurant_id, business_date, order_number).
+	BusinessDate time.Time   `gorm:"type:date;not null" json:"business_date"`
+	Status       OrderStatus `gorm:"size:32;not null;default:'placed'" json:"status"`
 
 	// All amounts are paise (DECISIONS.md D7).
 	SubtotalMinor      int64  `gorm:"not null" json:"subtotal_minor"`

@@ -25,7 +25,7 @@ export function EmptyState({ title, description, action, className }: EmptyState
     >
       <p className="text-sm font-medium text-[var(--tx-fg,#1f2430)]">{title}</p>
       {description ? (
-        <p className="max-w-sm text-sm text-[var(--tx-muted-fg,#6b7280)]">{description}</p>
+        <p className="max-w-sm text-sm text-[var(--tx-muted-fg,#616875)]">{description}</p>
       ) : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
