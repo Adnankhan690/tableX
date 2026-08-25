@@ -22,10 +22,9 @@ export const viewport: Viewport = {
    */
   maximumScale: 5,
   userScalable: true,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fdfaf5' },
-    { media: '(prefers-color-scheme: dark)', color: '#17130f' },
-  ],
+  // One value, not a light/dark pair: the menu is light-only (see globals.css), so offering the
+  // browser a dark chrome colour would tint the address bar to a theme the page never renders.
+  themeColor: '#fffcf8',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

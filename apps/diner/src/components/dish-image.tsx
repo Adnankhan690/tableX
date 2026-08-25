@@ -11,7 +11,7 @@ import Image from 'next/image'
 
 /** Muted, food-adjacent tints. Deliberately low-saturation so they recede behind the text. */
 const PLACEHOLDER_TINTS = [
-  'bg-[#e9dcc6] text-[#7a6034]',
+  'bg-[#e9dcc6] text-[#70562c]',
   'bg-[#dfe6d5] text-[#4e6238]',
   'bg-[#eddad5] text-[#7d4a3f]',
   'bg-[#dbe1ea] text-[#465468]',

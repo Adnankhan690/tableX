@@ -68,7 +68,7 @@ export function OrderCard({
       className={cn(
         'rounded-card border bg-surface p-3 shadow-card',
         tone === 'late' ? 'border-danger bg-age-late' : '',
-        tone === 'warn' ? 'border-age-warn bg-age-warn' : '',
+        tone === 'warn' ? 'border-age-warn-line bg-age-warn' : '',
         tone === 'calm' ? 'border-line' : '',
       )}
     >

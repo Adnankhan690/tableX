@@ -97,7 +97,14 @@ func (s *ServiceOrder) Place(
 			// Returning it is the whole point of idempotency. Surfacing a 500 here would leave a
 			// diner staring at an error for an order that exists and is already in the kitchen,
 			// which is the exact confusion D12 sets out to remove.
-			if isDuplicateKey(err) {
+			//
+			// It must be THIS index though, not merely some unique index. orders carries three
+			// (uid, the idempotency key, and the order number), and treating every 23505 as the
+			// idempotency race sends the other two down a path that looks up a key which was
+			// never the problem, finds nothing, and reports "could not read the winner" -- a log
+			// line naming a race that never happened, and a generic 500 for the diner. That is
+			// exactly how the daily order-number collision stayed hidden.
+			if isIdempotencyDuplicate(err) {
 				return errIdempotentRace
 			}
 			return fmt.Errorf("create order: %w", err)
@@ -184,6 +191,25 @@ func isDuplicateKey(err error) bool {
 	return strings.Contains(msg, "duplicate key") ||
 		strings.Contains(msg, "unique constraint") ||
 		strings.Contains(msg, "sqlstate 23505")
+}
+
+// isIdempotencyDuplicate reports whether err is a unique violation on the idempotency key
+// specifically, rather than on any of the other unique indexes orders carries.
+//
+// Both drivers name the offending object in the message and both spell it with the same word:
+// Postgres reports the index, `unique constraint "idx_orders_idempotency"`, and SQLite reports
+// the columns, `orders.restaurant_id, orders.idempotency_key`. Matching the shared token is
+// what keeps this correct on either.
+//
+// Note what this deliberately does NOT do: it never widens to "some unique index was hit".
+// gorm.ErrDuplicatedKey carries no constraint name, so a translated error cannot be attributed
+// and does not qualify on its own -- an unattributable duplicate is surfaced as a real error
+// rather than silently assumed to be this one.
+func isIdempotencyDuplicate(err error) bool {
+	if !isDuplicateKey(err) {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "idempotency")
 }
 
 // cartLine is one validated, deduplicated request line.
@@ -325,8 +351,12 @@ func (s *ServiceOrder) buildOrder(
 	serviceCharge := utils.ApplyBasisPoints(subtotal, restaurant.ServiceChargeBps)
 
 	now := time.Now().UTC()
+	// One business date for both the counter and the row: the number's uniqueness is scoped by
+	// this value, so computing it twice would risk the row landing on a different day than the
+	// counter that issued its number (a placement straddling local midnight).
+	businessDate := restaurant.BusinessDate(now)
 	number, err := s.Access.Repositories.Order.NextOrderNumber(
-		ctx, tx, restaurant.ID, restaurant.BusinessDate(now))
+		ctx, tx, restaurant.ID, businessDate)
 	if err != nil {
 		return nil, fmt.Errorf("allocate order number: %w", err)
 	}
@@ -337,6 +367,7 @@ func (s *ServiceOrder) buildOrder(
 		TableID:        guest.TableID,
 		GuestSessionID: &guest.SessionID,
 		OrderNumber:    formatOrderNumber(number),
+		BusinessDate:   businessDate,
 		Status:         models.OrderStatusPlaced,
 
 		SubtotalMinor:      subtotal,

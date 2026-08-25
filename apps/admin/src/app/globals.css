@@ -6,30 +6,57 @@
  * Cool neutral palette, chosen to be unmistakably not the diner app. Prefixed --ad-* rather
  * than --tx-* for the same reason: if the two ever share a stylesheet by accident, the
  * variables must not silently merge.
+ *
+ * The theme is light-only and deliberately so -- `color-scheme: light` below is what enforces
+ * it, so the panel stays white on a staff member's machine regardless of their OS setting. A
+ * kitchen tablet and a manager's laptop showing the same board in two different colour schemes
+ * is a support problem, not a feature. Do not re-add a `prefers-color-scheme: dark` block here
+ * without also solving that.
+ *
+ * The colours still live in variables rather than literal hex in tailwind.config.ts, because
+ * that keeps one definition per colour and lets a per-restaurant palette be injected later as a
+ * single <style> block without rebuilding the app.
+ *
+ * White-first: the canvas is a 1.05:1 whisper off pure white and every card is #ffffff, so
+ * structure is carried by the hairline (--ad-line) and the existing card shadow rather than by a
+ * grey page fill. --ad-bg is not decorative -- 23 form inputs use `bg-bg` inside a `bg-surface`
+ * card, so it has to stay a shade off white or every field in the panel loses its fill.
  */
 :root {
   color-scheme: light;
 
-  --ad-bg: #f6f7f9;
+  --ad-bg: #f8fafc;
   --ad-surface: #ffffff;
-  --ad-surface-sunken: #eef1f5;
-  --ad-ink: #111827;
-  --ad-muted: #64748b;
-  --ad-line: #e2e6ec;
+  --ad-surface-sunken: #eef1f6;
+  --ad-ink: #10161f;
+  /* Secondary text, and the most-consumed colour in the app after ink. Darker than a
+     conventional muted grey because it must also clear 4.5:1 on the two age tints below, where
+     a paler value fails -- 5.10:1 on --ad-age-late is the binding constraint. */
+  --ad-muted: #4f5b6d;
+  /* The structural token: every card outline, divider, input edge and table rule. Crisper than
+     a typical light-theme hairline (1.66:1 on white) because with no grey page fill this is what
+     turns the board, the stats strip and the menu tables into a legible data grid. */
+  --ad-line: #c0cad8;
 
-  --ad-accent: #1d4ed8;
+  --ad-accent: #0b57d0;
   --ad-accent-ink: #ffffff;
-  --ad-accent-soft: #e8eeff;
+  --ad-accent-soft: #dde8fb;
 
-  --ad-danger: #b42318;
-  --ad-danger-soft: #fdecea;
-  --ad-success: #157347;
+  --ad-danger: #b4231b;
+  --ad-danger-soft: #fdeae7;
+  --ad-success: #0a6b3c;
 
   /* Age escalation tints for the order board. Deliberately pale: they sit behind text that
      still has to be readable, and a saturated fill would make a late order harder to read
-     rather than easier to notice. */
-  --ad-age-warn: #fff6e5;
-  --ad-age-late: #fdecea;
+     rather than easier to notice. Both are a clear step off white (1.19:1 and 1.35:1) so a late
+     ticket is triageable across a kitchen, and a clear step apart from each other (1.14:1) so
+     the escalation reads as three states rather than a gradient. */
+  --ad-age-warn: #ffeab8;
+  /* order-card.tsx sets `border-age-warn bg-age-warn` on a warn card. Without a separate border
+     value the fill and the outline are the same colour, so the warn card is the only one on the
+     board with no visible edge -- which reads as a rendering bug on a white theme. */
+  --ad-age-warn-line: #f5cf85;
+  --ad-age-late: #ffd4ce;
 
   --ad-font-sans:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -40,57 +67,29 @@
   --tx-muted-fg: var(--ad-muted);
   --tx-error-fg: var(--ad-danger);
 
-  --tx-food-veg: #0a8f3c;
-  --tx-food-nonveg: #9b1c1c;
-  --tx-food-egg: #b45309;
+  --tx-food-veg: #0b7a33;
+  /* Same hue family as --ad-danger on purpose: one red in the palette, so a non-veg mark and a
+     destructive action never read as two different warnings. */
+  --tx-food-nonveg: #a01818;
+  --tx-food-egg: #9a4a06;
 
   /* Status tones. These carry the same meaning as on the diner side but are tuned for a dense
-     board read at arm's length rather than a phone held close. */
-  --tx-tone-new-bg: #fff2d9;
-  --tx-tone-new-fg: #92400e;
-  --tx-tone-progress-bg: #e3ecfd;
-  --tx-tone-progress-fg: #1e40af;
-  --tx-tone-ready-bg: #dcf5e4;
-  --tx-tone-ready-fg: #106b36;
+     board read at arm's length rather than a phone held close.
+     `new` is blue and `progress` is amber, which is the mapping @tablex/ui already defaults to.
+     The reverse -- an amber `new` pill -- cannot work here: escalation applies only to `placed`
+     orders (see ageTone in order-card.tsx), so the `new` pill is the one pill that sits on an
+     amber card, and amber-on-amber is exactly where it would disappear. Amber is safe for
+     `progress` because an accepted order is never tinted. */
+  --tx-tone-new-bg: #c7dafc;
+  --tx-tone-new-fg: #0f3f9e;
+  --tx-tone-progress-bg: #ffdf9e;
+  --tx-tone-progress-fg: #6d3f05;
+  --tx-tone-ready-bg: #c9edd7;
+  --tx-tone-ready-fg: #0a6435;
   --tx-tone-done-bg: var(--ad-surface-sunken);
   --tx-tone-done-fg: var(--ad-muted);
   --tx-tone-failed-bg: var(--ad-danger-soft);
   --tx-tone-failed-fg: var(--ad-danger);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    --ad-bg: #0d1117;
-    --ad-surface: #161b22;
-    --ad-surface-sunken: #11161d;
-    --ad-ink: #e6edf3;
-    --ad-muted: #8b949e;
-    --ad-line: #262c36;
-
-    --ad-accent: #6f9bf5;
-    --ad-accent-ink: #08122a;
-    --ad-accent-soft: #17243d;
-
-    --ad-danger: #f28b82;
-    --ad-danger-soft: #2b1614;
-    --ad-success: #57cc7f;
-
-    --ad-age-warn: #2a2214;
-    --ad-age-late: #2e1917;
-
-    --tx-food-veg: #3fbd66;
-    --tx-food-nonveg: #f0625f;
-    --tx-food-egg: #e0a03a;
-
-    --tx-tone-new-bg: #2f2410;
-    --tx-tone-new-fg: #f0c674;
-    --tx-tone-progress-bg: #16233a;
-    --tx-tone-progress-fg: #9dc0ee;
-    --tx-tone-ready-bg: #14281b;
-    --tx-tone-ready-fg: #6ed48c;
-  }
 }
 
 @layer base {

@@ -12,10 +12,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f6f7f9' },
-    { media: '(prefers-color-scheme: dark)', color: '#0d1117' },
-  ],
+  // One value, not a light/dark pair: the panel is light-only (see globals.css), so offering the
+  // browser a dark chrome colour would tint the address bar to a theme the page never renders.
+  themeColor: '#f8fafc',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
