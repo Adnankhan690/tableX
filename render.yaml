@@ -1,0 +1,113 @@
+# tableX -- Render Blueprint for the production API.
+#
+# Scope is the backend and its database only. The diner and admin apps are not deployed here
+# yet; until they are, TABLEX_DINER_BASE_URL has nowhere real to point, and that value is
+# encoded into every table QR code -- so do not print stickers off this deployment.
+#
+# Apply with: Render dashboard -> Blueprints -> New Blueprint Instance -> pick this repo.
+# Values marked `sync: false` are deliberately not in this file and must be set in the
+# dashboard on first apply; see the notes on each.
+
+databases:
+  - name: tablex-postgres
+    databaseName: tablex
+    user: tablex
+    # Same major version as docker-compose.yml, so local and production are not diverging on
+    # Postgres behaviour -- this schema uses partial unique indexes and a business-date
+    # column whose semantics should not be discovered to differ in production.
+    postgresMajorVersion: "17"
+    region: singapore
+    # Not `free`: a free Render database is deleted after 30 days, which for the only copy of
+    # a restaurant's order history is data loss on a timer.
+    plan: basic-256mb
+    ipAllowList: []          # Empty means private network only -- no public Postgres.
+
+services:
+  - type: web
+    name: tablex-api
+    runtime: docker
+    region: singapore
+    # Not `free`: preDeployCommand requires a paid instance type, and a free service spins
+    # down when idle -- a diner scanning a QR code would wait ~50s for a cold start.
+    plan: starter
+    branch: main
+
+    dockerfilePath: ./backend/Dockerfile
+    # The Go module is self-contained in backend/; see the note at the top of the Dockerfile.
+    dockerContext: ./backend
+
+    # Ready, not live: /health/live answers as soon as the process is up, whereas
+    # /health/ready checks the database. Routing traffic to a replica that cannot reach
+    # Postgres just converts a deploy problem into 500s.
+    healthCheckPath: /api/public/v1/health/ready
+
+    # Migrations run here rather than at server startup. A failure stops the rollout with the
+    # previous version still serving; migrating in the entrypoint would instead have every
+    # replica race the same DDL and present the failure as a crash loop.
+    preDeployCommand: /app/migrate --config /app/config/production.yml
+
+    envVars:
+      # ---- supplied by the platform ----
+
+      # config.applyEnv reads DATABASE_URL directly, and a DSN overrides every discrete
+      # database field, so nothing else about the connection needs configuring.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tablex-postgres
+          property: connectionString
+
+      # ---- non-secret, safe to keep in the repository ----
+
+      - key: TABLEX_ENV
+        # Turns on the stricter half of config.Validate: minimum secret lengths and the
+        # trusted-proxies requirement below.
+        value: production
+
+      - key: TABLEX_PORT
+        value: "8080"
+
+      - key: TABLEX_LOG_FORMAT
+        value: json
+
+      # VERIFY THIS ONCE DEPLOYED. Render terminates TLS at its edge and forwards over the
+      # private network, so the immediate peer is a private address and this range covers it.
+      # But if it is wrong, Gin reads the wrong entry from X-Forwarded-For, the client IP
+      # becomes attacker-controlled, and the per-IP rate limiter silently stops limiting --
+      # it fails open and looks healthy. Confirm against a real request's forwarded chain.
+      - key: TABLEX_TRUSTED_PROXIES
+        value: 10.0.0.0/8
+
+      # ---- set in the dashboard on first apply ----
+
+      # Generate with: openssl rand -hex 32
+      # Rotating it invalidates every staff session, which is the intended behaviour.
+      - key: TABLEX_JWT_SECRET
+        sync: false
+
+      # The public origin of the diner app. Encoded into every table QR code and validated at
+      # startup, so it needs the real hostname with its scheme, e.g. https://order.example.com
+      # Until the diner app is deployed, the API's own URL is a placeholder that boots but is
+      # not something to generate QR codes against.
+      - key: TABLEX_DINER_BASE_URL
+        sync: false
+
+      - key: TABLEX_ADMIN_BASE_URL
+        sync: false
+
+      # Comma-separated CORS allowlist: the diner and admin origins. Empty means same-origin
+      # only, which blocks both apps once they are on their own hostnames.
+      - key: TABLEX_ALLOWED_ORIGINS
+        sync: false
+
+      # OPTIONAL, AND A POLICY DECISION (DECISIONS.md D14).
+      #
+      # Leave it unset and /api/platform/v1 is never mounted -- restaurant onboarding answers
+      # 404, and tenants are created some other way (psql, or a seed). Set it and that
+      # endpoint exists, guarded by this one shared secret, which creates a restaurant, its
+      # owner login and its tables. Treat it like a root password: >= 32 characters (enforced
+      # in production), never the same value as TABLEX_JWT_SECRET, rotated when someone
+      # holding it leaves.
+      #
+      # Generate with: openssl rand -hex 32
+      - key: TABLEX_PLATFORM_TOKEN
+        sync: false

@@ -1,0 +1,23 @@
+# Keep the build context to the Go module. Everything here either cannot affect the binary
+# or must not be inside an image that ships.
+
+# Build output -- a host-built binary in the context would be copied over and is the wrong
+# architecture besides.
+bin/
+
+# Tests and fixtures do not affect the compiled server, and excluding them keeps the context
+# small enough that `go mod download` stays the slowest step.
+**/*_test.go
+seeds/
+
+# The Bruno collection is CI's executable copy of docs/API.md, not a runtime artifact.
+api_collection/
+
+# Never: local.yml carries a checked-in JWT secret and platform token, and an image that
+# contains them can be started with --config config/local.yml by accident.
+config/local.yml
+
+.env
+.env.*
+coverage.out
+coverage.html
