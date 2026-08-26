@@ -6,6 +6,7 @@ import { cn, ErrorState, Spinner } from '@tablex/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
+import { Select, type SelectOption } from '@/components/select'
 import { api } from '@/lib/api'
 
 const ROLES: readonly StaffRole[] = ['owner', 'manager', 'staff']
@@ -15,6 +16,26 @@ const ROLE_DESCRIPTION: Record<StaffRole, string> = {
   manager: 'Orders, the menu, tables and settings.',
   staff: 'Orders and marking dishes sold out.',
 }
+
+/** Sentence case, because the role reads as a word in the UI and not as the API's enum value. */
+const ROLE_LABEL: Record<StaffRole, string> = {
+  owner: 'Owner',
+  manager: 'Manager',
+  staff: 'Staff',
+}
+
+/**
+ * The role choices, with what each one can do carried on the option itself.
+ *
+ * The consequence of this pick is invisible from the three words alone, and it is the one field
+ * on this page that grants access -- so it is spelled out where the choice is made, not only
+ * under the closed control.
+ */
+const ROLE_OPTIONS: readonly SelectOption<StaffRole>[] = ROLES.map((role) => ({
+  value: role,
+  label: ROLE_LABEL[role],
+  description: ROLE_DESCRIPTION[role],
+}))
 
 export function StaffManager() {
   const auth = useRequireAuth()
@@ -148,30 +169,22 @@ export function StaffManager() {
                   </div>
 
                   {isOwner ? (
-                    <select
+                    <Select
                       value={member.role}
                       disabled={busy}
-                      onChange={(event) =>
+                      onChange={(role) =>
                         run(
-                          (token) =>
-                            api.updateStaff(token, member.uid, {
-                              role: event.target.value as StaffRole,
-                            }),
+                          (token) => api.updateStaff(token, member.uid, { role }),
                           'Could not change the role.',
                         )
                       }
-                      aria-label={`Role for ${member.name}`}
-                      className="min-h-tap rounded-card border border-line bg-bg px-2 text-sm"
-                    >
-                      {ROLES.map((role) => (
-                        <option key={role} value={role}>
-                          {role}
-                        </option>
-                      ))}
-                    </select>
+                      options={ROLE_OPTIONS}
+                      ariaLabel={`Role for ${member.name}`}
+                      className="w-[8.5rem] shrink-0"
+                    />
                   ) : (
                     <span className="rounded bg-surface-sunken px-2 py-0.5 text-xs">
-                      {member.role}
+                      {ROLE_LABEL[member.role]}
                     </span>
                   )}
 
@@ -226,28 +239,20 @@ export function StaffManager() {
                 onChange={(v) => setDraft({ ...draft, password: v })}
                 hint="At least 8 characters. Share it with them directly and ask them to change it."
               />
-              <label className="block">
-                <span className="text-xs font-medium">Role</span>
-                <select
+              <div>
+                <Select
+                  label="Role"
                   value={draft.role}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      role: event.target.value as StaffRole,
-                    })
-                  }
-                  className="mt-1 min-h-tap w-full rounded-card border border-line bg-bg px-2 text-sm"
-                >
-                  {ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(role) => setDraft({ ...draft, role })}
+                  options={ROLE_OPTIONS}
+                  className="w-full"
+                />
+                {/* Repeats the selected option's description under the closed control, so the
+                    grant is still on screen when the list is shut. */}
                 <span className="mt-1 block text-xs text-muted">
                   {ROLE_DESCRIPTION[draft.role]}
                 </span>
-              </label>
+              </div>
               <button
                 type="button"
                 disabled={busy || draft.password.length < 8 || draft.email.trim() === ''}

@@ -9,6 +9,7 @@ import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { OrderCard } from '@/components/order-card'
 import { PageHeader } from '@/components/page-header'
 import { ReasonDialog } from '@/components/reason-dialog'
+import { Select } from '@/components/select'
 import { StatsStrip } from '@/components/stats-strip'
 import { useAdminStream } from '@/hooks/useAdminStream'
 import { api } from '@/lib/api'
@@ -149,6 +150,24 @@ export function OrderBoard() {
     return { buckets, closed }
   }, [orders])
 
+  /**
+   * The table filter's options.
+   *
+   * Sorted here rather than taken in API order, which is by label as a string: that puts T-10
+   * between T-1 and T-2, and a floor numbered past nine reads as scrambled. The numeric tail is
+   * compared as a number so T-2 precedes T-10, and labels with no number ("Patio 1") fall back
+   * to a plain comparison and sort after.
+   */
+  const tableOptions = useMemo(
+    () => [
+      { value: '', label: 'All tables' },
+      ...[...tables]
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+        .map((table) => ({ value: table.uid, label: `Table ${table.label}` })),
+    ],
+    [tables],
+  )
+
   if (auth === null) return null
 
   const pendingOrder = pending ? (orders ?? []).find((o) => o.uid === pending.orderUid) : undefined
@@ -183,19 +202,13 @@ export function OrderBoard() {
           aria-label="Search orders"
           className="min-h-tap min-w-[12rem] flex-1 rounded-card border border-line bg-bg px-3 text-sm outline-none focus:border-accent"
         />
-        <select
+        <Select
           value={tableFilter}
-          onChange={(event) => setTableFilter(event.target.value)}
-          aria-label="Filter by table"
-          className="min-h-tap rounded-card border border-line bg-bg px-2 text-sm"
-        >
-          <option value="">All tables</option>
-          {tables.map((table) => (
-            <option key={table.uid} value={table.uid}>
-              Table {table.label}
-            </option>
-          ))}
-        </select>
+          onChange={setTableFilter}
+          options={tableOptions}
+          ariaLabel="Filter by table"
+          className="min-w-[10rem]"
+        />
         <Toggle label="Unpaid only" active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)} />
         <Toggle
           label={showClosed ? 'Showing all' : 'Live only'}
