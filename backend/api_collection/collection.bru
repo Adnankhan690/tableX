@@ -75,12 +75,26 @@ docs {
   `local` targets the API on **:8080** — not the diner app on :3000. Pages and data are served by
   different processes, which is the most common source of a confusing 404.
 
-  The seed's QR tokens are fixed, so `qr_token` stays valid across reseeds. That is a local-only
-  convenience: in any deployed environment tokens are random, so `staging` leaves them blank and
-  they must be read from the admin panel (Tables → QR).
+  `production` targets `https://api.tabley.in`, the live deployment.
 
-  Never commit a real token or a staff password to `staging.bru`. A table QR token is a
-  **capability** — possession of it authorises ordering at that table (docs/DECISIONS.md D4).
+  **Do not `bru run` the whole collection against `production`.** Everything above about running
+  it in order assumes a freshly seeded database, and against a real deployment that assumption
+  fails in both directions: several requests assert exact statuses ("this order is now accepted")
+  that only hold from a known starting state, so the run reports failures that are not bugs; and
+  the requests that do succeed leave real rows behind -- `platform / onboard-restaurant` creates
+  an actual restaurant with an owner login and a floor of tables. Use single requests there
+  (`health`, `admin-auth / login`, `platform / onboard-restaurant`), never the runner.
+
+  The first request to `production` after an idle period can take ~50s. The API is on a free
+  instance that spins down, so a timeout there is a cold start rather than an outage.
+
+  The seed's QR tokens are fixed, so `qr_token` stays valid across reseeds. That is a local-only
+  convenience: in any deployed environment tokens are random, so `staging` and `production` leave
+  them blank and they must be read from the admin panel (Tables → QR).
+
+  Never commit a real token or a staff password to `staging.bru` or `production.bru`. A table QR
+  token is a **capability** -- possession of it authorises ordering at that table
+  (docs/DECISIONS.md D4), and `platform_token` creates tenants.
 
   The credential-shaped variables start empty and are filled in by post-response scripts. Do not
   paste tokens in by hand; run `public / scan-table` and `admin-auth / login` instead.
