@@ -2,8 +2,15 @@
 
 import { isApiError } from '@tablex/api-client'
 import type { OnboardRestaurantRequest, OnboardRestaurantResponse } from '@tablex/shared'
-import { Spinner } from '@tablex/ui'
 import { useMemo, useState } from 'react'
+import {
+  Button,
+  CardHeader,
+  Input,
+  Notice,
+  Card as UICard,
+  Field as UIField,
+} from '@/components/ui'
 import { checkTableRange, parsePercentToBps, slugPreview } from '@/lib/onboard-input'
 import { platformApi } from '@/lib/platform'
 import { OnboardResult } from './onboard-result'
@@ -163,9 +170,9 @@ export function OnboardForm() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8">
-      <h1 className="text-lg font-semibold">Onboard a restaurant</h1>
-      <p className="mt-1 text-sm text-muted">
+    <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <h1 className="text-display font-semibold tracking-tight">Onboard a restaurant</h1>
+      <p className="mt-1.5 text-base text-muted">
         Creates the restaurant, its first owner login and its table QR codes in one step. This is an
         operator action, not a restaurant one — it needs the deployment&apos;s platform token, not a
         staff sign-in.
@@ -373,41 +380,32 @@ export function OnboardForm() {
           )}
         </Card>
 
-        {problem !== null ? (
-          <p
-            role="alert"
-            className="rounded-card border border-line bg-danger-soft px-3 py-2 text-sm font-medium text-danger"
-          >
-            {problem}
-          </p>
-        ) : null}
+        {problem !== null ? <Notice tone="danger">{problem}</Notice> : null}
 
         <div>
-          <button
-            type="submit"
-            disabled={busy}
-            className="flex min-h-tap items-center justify-center gap-2 rounded-card bg-accent px-5 text-sm font-semibold text-accent-ink disabled:opacity-40"
-          >
-            {busy ? (
-              <>
-                <Spinner /> Onboarding
-              </>
-            ) : (
-              'Onboard restaurant'
-            )}
-          </button>
+          <Button type="submit" variant="primary" loading={busy} loadingLabel="Onboarding…">
+            Onboard restaurant
+          </Button>
         </div>
       </form>
     </main>
   )
 }
 
+/**
+ * The section wrapper and the text field, kept as thin local shims over the shared primitives.
+ *
+ * Rewriting these two rather than the fifteen call sites below is deliberate: the props are already
+ * the right shape, so the whole form picks up the panel's field styling, its focus ring and its
+ * label wiring without a fifteen-place edit that could quietly drop a `required` or an
+ * autocomplete hint on a form that creates a tenant.
+ */
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-3 rounded-card border border-line bg-surface p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
+    <UICard className="space-y-3">
+      <CardHeader title={title} />
       {children}
-    </section>
+    </UICard>
   )
 }
 
@@ -431,21 +429,20 @@ function Field({
   autoComplete?: string
 }) {
   return (
-    <label className="block">
-      <span className="text-xs font-medium">
-        {label}
-        {required ? <span className="text-danger"> *</span> : null}
-      </span>
-      <input
-        type={type ?? 'text'}
-        value={value}
-        required={required}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        inputMode={numeric ? 'decimal' : undefined}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 min-h-tap w-full rounded-card border border-line bg-bg px-3 text-sm outline-none focus:border-accent"
-      />
-    </label>
+    <UIField label={label} optional={!required}>
+      {({ id }) => (
+        <Input
+          id={id}
+          type={type ?? 'text'}
+          value={value}
+          required={required}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          inputMode={numeric ? 'decimal' : undefined}
+          numeric={numeric}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+    </UIField>
   )
 }

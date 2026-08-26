@@ -3,7 +3,7 @@
 import { isApiError } from '@tablex/api-client'
 import type { OrderStatus, OrderView, TableInfo, TransitionTarget } from '@tablex/shared'
 import { requiresReason, STAFF_STATUS_LABEL, TRANSITION_VERB } from '@tablex/shared'
-import { cn, EmptyState, ErrorState, Spinner } from '@tablex/ui'
+import { cn, ErrorState } from '@tablex/ui'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { OrderCard } from '@/components/order-card'
@@ -11,6 +11,15 @@ import { PageHeader } from '@/components/page-header'
 import { ReasonDialog } from '@/components/reason-dialog'
 import { Select } from '@/components/select'
 import { StatsStrip } from '@/components/stats-strip'
+import {
+  Count,
+  EmptyState,
+  Notice,
+  SearchInput,
+  Skeleton,
+  ToggleChip,
+  Toolbar,
+} from '@/components/ui'
 import { useAdminStream } from '@/hooks/useAdminStream'
 import { api } from '@/lib/api'
 
@@ -33,8 +42,15 @@ export function OrderBoard() {
   const [orders, setOrders] = useState<OrderView[] | null>(null)
   const [tables, setTables] = useState<TableInfo[]>([])
   const [error, setError] = useState<unknown>(null)
-  const [busyUid, setBusyUid] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [busy, setBusy] = useState<{ uid: string; target: TransitionTarget } | null>(null)
+  /**
+   * The one message channel on this page, with a tone.
+   *
+   * It used to be a bare string rendered in accent-soft with role="status", so "already updated on
+   * another device" -- routine, expected, harmless -- looked identical to "Could not update the
+   * order". A failure that reads like a confirmation is a failure nobody acts on.
+   */
+  const [notice, setNotice] = useState<{ tone: 'accent' | 'danger'; text: string } | null>(null)
   const [pending, setPending] = useState<PendingReason | null>(null)
 
   const [showClosed, setShowClosed] = useState(false)
@@ -100,12 +116,12 @@ export function OrderBoard() {
         return
       }
 
-      setBusyUid(order.uid)
+      setBusy({ uid: order.uid, target })
       setNotice(null)
 
       getToken().then((token) => {
         if (!token) {
-          setBusyUid(null)
+          setBusy(null)
           return
         }
         api
@@ -114,11 +130,11 @@ export function OrderBoard() {
             ...(reason ? { reason } : {}),
           })
           .then(() => {
-            setBusyUid(null)
+            setBusy(null)
             load()
           })
           .catch((err: unknown) => {
-            setBusyUid(null)
+            setBusy(null)
 
             /**
              * A 409 is another device having got there first -- two staff phones tapping Accept in
@@ -126,11 +142,17 @@ export function OrderBoard() {
              * it briefly, and let the buttons re-render from the server's new answer.
              */
             if (isApiError(err) && err.isStale) {
-              setNotice(`Order ${order.order_number} was already updated on another device.`)
+              setNotice({
+                tone: 'accent',
+                text: `Order ${order.order_number} was already updated on another device.`,
+              })
               load()
               return
             }
-            setNotice(isApiError(err) ? err.message : 'Could not update the order.')
+            setNotice({
+              tone: 'danger',
+              text: isApiError(err) ? err.message : 'Could not update the order.',
+            })
           })
       })
     },
@@ -176,12 +198,15 @@ export function OrderBoard() {
     <>
       <PageHeader
         title="Orders"
-        subtitle={showClosed ? 'All orders' : 'Live orders'}
-        right={
+        subtitle={showClosed ? 'Every order, newest first' : 'Live orders, today'}
+        meta={
           <span className="flex items-center gap-1.5 text-xs text-muted">
             <span
               aria-hidden="true"
-              className={cn('h-1.5 w-1.5 rounded-full', live ? 'bg-success' : 'bg-muted')}
+              className={cn(
+                'h-1.5 w-1.5 rounded-full',
+                live ? 'animate-pulse-slow bg-success' : 'bg-muted',
+              )}
             />
             {/* Staff need to know whether to trust this board second-by-second. Polling is still
                 correct, just slower, and saying which mode it is in avoids a staff member
@@ -193,14 +218,13 @@ export function OrderBoard() {
 
       <StatsStrip />
 
-      <div className="no-print flex flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2">
-        <input
-          type="search"
+      <Toolbar>
+        <SearchInput
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onValueChange={setSearch}
           placeholder="Order number or customer"
-          aria-label="Search orders"
-          className="min-h-tap min-w-[12rem] flex-1 rounded-card border border-line bg-bg px-3 text-sm outline-none focus:border-accent"
+          label="Search orders"
+          className="min-w-[14rem]"
         />
         <Select
           value={tableFilter}
@@ -209,21 +233,18 @@ export function OrderBoard() {
           ariaLabel="Filter by table"
           className="min-w-[10rem]"
         />
-        <Toggle label="Unpaid only" active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)} />
-        <Toggle
-          label={showClosed ? 'Showing all' : 'Live only'}
-          active={showClosed}
-          onClick={() => setShowClosed((v) => !v)}
-        />
-      </div>
+        <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
+          Unpaid only
+        </ToggleChip>
+        <ToggleChip active={showClosed} onClick={() => setShowClosed((v) => !v)}>
+          {showClosed ? 'Showing all' : 'Live only'}
+        </ToggleChip>
+      </Toolbar>
 
       {notice !== null ? (
-        <p
-          role="status"
-          className="no-print border-b border-line bg-accent-soft px-4 py-2 text-sm text-accent"
-        >
-          {notice}
-        </p>
+        <div className="no-print border-b border-line bg-surface px-4 py-2.5">
+          <Notice tone={notice.tone}>{notice.text}</Notice>
+        </div>
       ) : null}
 
       <main className="p-4">
@@ -235,66 +256,95 @@ export function OrderBoard() {
             onRetry={load}
           />
         ) : orders === null ? (
-          <div className="flex items-center justify-center gap-2 py-20 text-muted">
-            <Spinner /> Loading orders
+          /* Skeletons shaped like the board rather than a centred spinner: the layout does not
+             jump when the first refresh lands, and on a board that refetches every few seconds
+             that is the difference between a calm screen and a flickering one. */
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {COLUMNS.map((status) => (
+              <div key={status} className="space-y-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-32 w-full" />
+              </div>
+            ))}
           </div>
         ) : orders.length === 0 ? (
           <EmptyState
             // Calm, not alarming. An empty board during a quiet hour is the normal state, and
             // copy that reads like a failure would train staff to distrust it.
-            title={showClosed ? 'No orders match' : 'No live orders'}
+            title={showClosed ? 'No orders match these filters' : 'No live orders'}
             description={
               showClosed
-                ? 'Try clearing the filters.'
+                ? 'Clear the search or the table filter to see the rest.'
                 : 'New orders appear here the moment a diner places one.'
             }
+            icon={
+              <>
+                <rect x="3" y="4" width="14" height="13" rx="2" strokeWidth="1.5" />
+                <path d="M7 9h6M7 12.5h4" strokeWidth="1.5" strokeLinecap="round" />
+              </>
+            }
           />
+        ) : showClosed ? (
+          /*
+            "Showing all" gets its own layout rather than reusing the live grid.
+            The pipeline columns encode what to do next, which is meaningless for orders that are
+            already finished -- and the grid put a stranded "SERVED 0" header over blank canvas.
+            A flat newest-first list is what someone looking up a past order actually wants.
+          */
+          <div className="mx-auto grid max-w-3xl gap-2">
+            <p className="text-xs text-muted">
+              {orders.length} {orders.length === 1 ? 'order' : 'orders'}, newest first
+            </p>
+            {orders.map((order) => (
+              <OrderCard
+                key={order.uid}
+                order={order}
+                now={now}
+                pending={busy?.uid === order.uid ? busy.target : null}
+                onTransition={(target) => transition(order, target)}
+              />
+            ))}
+          </div>
         ) : (
-          /* Columns on a laptop, a single stacked list on a tablet in portrait. */
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          /*
+            THE PIPELINE MUST STAY MONOTONIC.
+
+            Five columns at xl, and below that ONE full-width column per stage, stacked in pipeline
+            order. The old `md:grid-cols-2 xl:grid-cols-5` wrapped into a 2-up zigzag at the 820px
+            tablet target, which put the PREPARING heading directly under NEW's cards -- so a staff
+            member scanning down the tablet read a stage header as a continuation of the previous
+            stage, and grid row-equalising left a 360px void beside a short column. The board's one
+            job is to encode what happens next by position; a zigzag destroys exactly that.
+          */
+          <div className="grid gap-x-3 gap-y-5 xl:grid-cols-5">
             {COLUMNS.map((status) => {
               const bucket = grouped.buckets.get(status) ?? []
-              if (showClosed && bucket.length === 0) return null
-
               return (
                 <section key={status} className="min-w-0">
-                  <h2 className="mb-2 flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-muted">
+                  {/* The count sits WITH its label, not pushed to the far edge of a 270px-wide
+                      column where it read as belonging to the next stage along. */}
+                  <h2 className="sticky top-[3.75rem] z-10 mb-2 flex items-center gap-2 bg-bg py-1 text-xs font-semibold uppercase tracking-wide text-muted xl:static">
                     {STAFF_STATUS_LABEL[status]}
-                    <span className="tabular-nums">{bucket.length}</span>
+                    <Count value={bucket.length} />
                   </h2>
-                  <div className="space-y-2">
-                    {bucket.map((order) => (
-                      <OrderCard
-                        key={order.uid}
-                        order={order}
-                        now={now}
-                        busy={busyUid === order.uid}
-                        onTransition={(target) => transition(order, target)}
-                      />
-                    ))}
-                  </div>
+                  {bucket.length === 0 ? (
+                    <EmptyState compact title="Nothing here" className="bg-surface" />
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                      {bucket.map((order) => (
+                        <OrderCard
+                          key={order.uid}
+                          order={order}
+                          now={now}
+                          pending={busy?.uid === order.uid ? busy.target : null}
+                          onTransition={(target) => transition(order, target)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </section>
               )
             })}
-
-            {grouped.closed.length > 0 ? (
-              <section className="min-w-0">
-                <h2 className="mb-2 flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-muted">
-                  Closed
-                  <span className="tabular-nums">{grouped.closed.length}</span>
-                </h2>
-                <div className="space-y-2">
-                  {grouped.closed.map((order) => (
-                    <OrderCard
-                      key={order.uid}
-                      order={order}
-                      now={now}
-                      onTransition={() => undefined}
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
           </div>
         )}
       </main>
@@ -317,29 +367,5 @@ export function OrderBoard() {
         }}
       />
     </>
-  )
-}
-
-function Toggle({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'min-h-tap shrink-0 rounded-card border px-3 text-sm font-medium',
-        active ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted',
-      )}
-    >
-      {label}
-    </button>
   )
 }

@@ -11,8 +11,8 @@
  * handler.
  *
  * Prerequisites:
- *     make reset && make backend &                                     # API on :8080, seeded
- *     bun run --cwd apps/admin build && PORT=3005 bunx next start -p 3005
+ *     make reset && make backend &   # API on :8080, seeded
+ *     bun run --cwd apps/admin dev   # panel on :3001
  *
  * Then, from apps/admin so @playwright/test resolves:
  *     node e2e/select.mjs
@@ -22,7 +22,7 @@
 
 import { chromium } from '@playwright/test'
 
-const APP = process.env.ADMIN_URL ?? 'http://localhost:3005'
+const APP = process.env.ADMIN_URL ?? 'http://localhost:3001'
 const SHOT = '/tmp/tx-shots'
 let pass = 0,
   fail = 0

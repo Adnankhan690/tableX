@@ -3,66 +3,101 @@
 @tailwind utilities;
 
 /**
- * Cool neutral palette, chosen to be unmistakably not the diner app. Prefixed --ad-* rather
- * than --tx-* for the same reason: if the two ever share a stylesheet by accident, the
- * variables must not silently merge.
+ * The admin panel's design tokens.
  *
- * The theme is light-only and deliberately so -- `color-scheme: light` below is what enforces
- * it, so the panel stays white on a staff member's machine regardless of their OS setting. A
- * kitchen tablet and a manager's laptop showing the same board in two different colour schemes
- * is a support problem, not a feature. Do not re-add a `prefers-color-scheme: dark` block here
- * without also solving that.
+ * Cool neutral, chosen to be unmistakably not the diner app. Prefixed --ad-* rather than --tx-*
+ * for the same reason: if the two ever share a stylesheet by accident, the variables must not
+ * silently merge.
  *
- * The colours still live in variables rather than literal hex in tailwind.config.ts, because
- * that keeps one definition per colour and lets a per-restaurant palette be injected later as a
- * single <style> block without rebuilding the app.
+ * The theme is light-only and deliberately so -- `color-scheme: light` below is what enforces it,
+ * so the panel stays white on a staff member's machine regardless of their OS setting. A kitchen
+ * tablet and a manager's laptop showing the same board in two different colour schemes is a
+ * support problem, not a feature. Do not re-add a `prefers-color-scheme: dark` block here without
+ * also solving that.
  *
- * White-first: the canvas is a 1.05:1 whisper off pure white and every card is #ffffff, so
- * structure is carried by the hairline (--ad-line) and the existing card shadow rather than by a
- * grey page fill. --ad-bg is not decorative -- 23 form inputs use `bg-bg` inside a `bg-surface`
- * card, so it has to stay a shade off white or every field in the panel loses its fill.
+ * Colours live in variables rather than literal hex in tailwind.config.ts, because that keeps one
+ * definition per colour and lets a per-restaurant palette be injected later as a single <style>
+ * block without rebuilding. The same caveat applies as in the diner app: Tailwind opacity
+ * modifiers do NOT work on these tokens, so `bg-accent/40` silently produces nothing. Every
+ * translucent-looking state below is a separate solid token instead.
+ *
+ * STRUCTURE IS CARRIED BY THREE WEIGHTS OF LINE, not by one. The previous single --ad-line had to
+ * be crisp enough to outline a card and quiet enough to rule a table, and it could not be both:
+ * at 1.66:1 it turned every list into a stack of boxes. Now:
+ *   --ad-divider    internal rules between rows in one container -- barely there on purpose
+ *   --ad-line       the edge of a card or panel against the canvas
+ *   --ad-line-strong  the edge of a control: input, select, secondary button
+ * Ratios below are against --ad-surface (#ffffff) unless stated.
  */
 :root {
   color-scheme: light;
 
-  --ad-bg: #f8fafc;
+  /* Canvas and surfaces. The canvas is a whisper off white (1.04:1) so a white card reads as
+     raised without a heavy shadow; sunken is the fill of an inert or read-only control. */
+  --ad-bg: #f6f7f9;
   --ad-surface: #ffffff;
-  --ad-surface-sunken: #eef1f6;
-  --ad-ink: #10161f;
-  /* Secondary text, and the most-consumed colour in the app after ink. Darker than a
-     conventional muted grey because it must also clear 4.5:1 on the two age tints below, where
-     a paler value fails -- 5.10:1 on --ad-age-late is the binding constraint. */
-  --ad-muted: #4f5b6d;
-  /* The structural token: every card outline, divider, input edge and table rule. Crisper than
-     a typical light-theme hairline (1.66:1 on white) because with no grey page fill this is what
-     turns the board, the stats strip and the menu tables into a legible data grid. */
-  --ad-line: #c0cad8;
+  --ad-surface-sunken: #f1f3f7;
+  /* The fill of an editable field. Distinct from sunken so a disabled input and an active one are
+     not the same colour -- 19 controls across the panel depend on that difference. */
+  --ad-field: #fbfcfd;
 
+  /* Ink. Three steps, and no more: a fourth grey is indistinguishable in use and doubles the
+     number of decisions per line of text. */
+  --ad-ink: #0e1520; /* 18.9:1 -- headings, values, anything load-bearing */
+  --ad-muted: #505c6e; /* 7.4:1 -- secondary text, and the most-used colour after ink */
+  --ad-faint: #6c7889; /* 4.6:1 -- micro-labels and column headers; still passes body text */
+
+  --ad-divider: #e9edf3; /* 1.14:1 -- decorative, never the only cue */
+  --ad-line: #dce2ea; /* 1.26:1 -- card and panel edges, paired with shadow-card */
+  --ad-line-strong: #bcc7d6; /* 1.77:1 -- control edges, always paired with a field fill */
+
+  /* Accent. One blue, four roles. White on accent is 5.6:1, so a filled primary button carries
+     its label at AA even at 13px. */
   --ad-accent: #0b57d0;
+  --ad-accent-hover: #0a49ad;
   --ad-accent-ink: #ffffff;
-  --ad-accent-soft: #dde8fb;
+  --ad-accent-soft: #e7f0fe; /* selected row / active nav fill; accent text on it is 5.2:1 */
+  --ad-accent-line: #b5cff8; /* the edge of a selected surface -- 1.9:1, decorative only */
 
-  --ad-danger: #b4231b;
-  --ad-danger-soft: #fdeae7;
-  --ad-success: #0a6b3c;
+  /* Status. Each is a text-safe colour plus a soft fill plus an edge, so a notice never needs an
+     opacity modifier to look tinted. */
+  --ad-danger: #b4231b; /* 6.4:1 */
+  --ad-danger-hover: #97160f;
+  --ad-danger-soft: #fdecea;
+  --ad-danger-line: #f2c2bc;
+  --ad-warning: #8a4b00; /* 6.9:1 -- the text colour, not the tint */
+  --ad-warning-soft: #fff6e6;
+  --ad-warning-line: #f2cd8c;
+  --ad-success: #0a6b3c; /* 5.9:1 */
+  --ad-success-soft: #e6f6ec;
+  --ad-success-line: #a8dcbe;
 
-  /* Age escalation tints for the order board. Deliberately pale: they sit behind text that
-     still has to be readable, and a saturated fill would make a late order harder to read
-     rather than easier to notice. Both are a clear step off white (1.19:1 and 1.35:1) so a late
-     ticket is triageable across a kitchen, and a clear step apart from each other (1.14:1) so
-     the escalation reads as three states rather than a gradient. */
-  --ad-age-warn: #ffeab8;
-  /* order-card.tsx sets `border-age-warn bg-age-warn` on a warn card. Without a separate border
-     value the fill and the outline are the same colour, so the warn card is the only one on the
-     board with no visible edge -- which reads as a rendering bug on a white theme. */
-  --ad-age-warn-line: #f5cf85;
-  --ad-age-late: #ffd4ce;
+  /**
+   * Order-age escalation.
+   *
+   * These used to fill the whole order card, which had two costs the board could not carry: every
+   * word on a late ticket sat on saturated pink, and two late tickets merged into one continuous
+   * block with no visible seam between them. Escalation now rides a 3px edge bar plus a tinted
+   * header strip, and the card body stays white -- so these tints only ever sit behind a heading,
+   * never behind a paragraph or a button, and the binding contrast constraint disappears.
+   */
+  --ad-age-warn-bar: #d98a04; /* the bar itself -- 3.1:1 against surface, a real boundary */
+  --ad-age-warn-tint: #fff8ea; /* header strip; ink on it is 17.6:1, muted 6.9:1 */
+  --ad-age-late-bar: #c9342a; /* 4.6:1 */
+  --ad-age-late-tint: #fdeeec; /* ink 17.4:1, muted 6.8:1 */
 
+  /* Focus. One ring, defined once, used by the base rule below and by any component that needs to
+     draw its own. */
+  --ad-focus: #0b57d0;
+
+  /* next/font injects the family; the fallback stack matters on the first paint and if the font
+     request fails, so it is a real stack rather than a bare sans-serif. */
   --ad-font-sans:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    var(--font-admin-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
 
-  /* Bridge to @tablex/ui, which reads its own token names. Mapped rather than duplicated so
-     each colour has one definition. */
+  /* Bridge to @tablex/ui, which reads its own token names. Mapped rather than duplicated so each
+     colour has one definition. */
   --tx-fg: var(--ad-ink);
   --tx-muted-fg: var(--ad-muted);
   --tx-error-fg: var(--ad-danger);
@@ -73,19 +108,15 @@
   --tx-food-nonveg: #a01818;
   --tx-food-egg: #9a4a06;
 
-  /* Status tones. These carry the same meaning as on the diner side but are tuned for a dense
-     board read at arm's length rather than a phone held close.
-     `new` is blue and `progress` is amber, which is the mapping @tablex/ui already defaults to.
-     The reverse -- an amber `new` pill -- cannot work here: escalation applies only to `placed`
-     orders (see ageTone in order-card.tsx), so the `new` pill is the one pill that sits on an
-     amber card, and amber-on-amber is exactly where it would disappear. Amber is safe for
-     `progress` because an accepted order is never tinted. */
-  --tx-tone-new-bg: #c7dafc;
-  --tx-tone-new-fg: #0f3f9e;
-  --tx-tone-progress-bg: #ffdf9e;
-  --tx-tone-progress-fg: #6d3f05;
-  --tx-tone-ready-bg: #c9edd7;
-  --tx-tone-ready-fg: #0a6435;
+  /* Status tones for @tablex/ui's StatusBadge. Softened alongside the rest of the palette: the
+     pill sits inside a card that is now bounded by a hairline rather than a colour field, so it
+     no longer has to shout over a tinted background. */
+  --tx-tone-new-bg: #e7f0fe;
+  --tx-tone-new-fg: #0b3f9e;
+  --tx-tone-progress-bg: #fff6e6;
+  --tx-tone-progress-fg: #7a4300;
+  --tx-tone-ready-bg: #e6f6ec;
+  --tx-tone-ready-fg: #0a5c33;
   --tx-tone-done-bg: var(--ad-surface-sunken);
   --tx-tone-done-fg: var(--ad-muted);
   --tx-tone-failed-bg: var(--ad-danger-soft);
@@ -98,25 +129,58 @@
     color: var(--ad-ink);
     font-family: var(--ad-font-sans);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Inter's contextual alternates give a single-storey 'a' at small sizes in some renderers;
+       ss01 keeps the double-storey form, which is what makes a dense table legible. */
+    font-feature-settings:
+      "cv05" 1,
+      "ss01" 1;
   }
 
   /* This panel is driven at speed during service, often by keyboard on a laptop behind the
-     counter, so focus has to stay obvious. */
+     counter, so focus has to stay obvious.
+
+     Note for anyone adding an input: Tailwind's `outline-none` compiles to a transparent 2px
+     outline in the utilities layer, which outranks this rule and silently removes the ring. Six
+     inputs used to do exactly that. Style the resting border instead. */
   :focus-visible {
-    outline: 2px solid var(--ad-accent);
+    outline: 2px solid var(--ad-focus);
     outline-offset: 2px;
+  }
+
+  /* Selection in the panel's own accent rather than the browser's default blue, which clashes
+     with it at this saturation. */
+  ::selection {
+    background-color: var(--ad-accent-soft);
+    color: var(--ad-ink);
+  }
+
+  /* Numerals in a column must not shift width as they change, or a board of live totals jitters
+     once a second. Applied by utility where it matters; declared here so `tabular-nums` is
+     always available on this stack. */
+  [data-tabular] {
+    font-variant-numeric: tabular-nums;
   }
 }
 
 @layer utilities {
   /**
-   * Wide content -- the order table, the QR sheet -- scrolls inside its own container. The page
-   * body must never scroll sideways: on a tablet in portrait that turns every vertical swipe
-   * into a fight with the horizontal axis.
+   * Wide content -- the order board's column rail, the QR sheet -- scrolls inside its own
+   * container. The page body must never scroll sideways: on a tablet in portrait that turns every
+   * vertical swipe into a fight with the horizontal axis.
    */
   .scroll-x-contain {
     overflow-x: auto;
     overscroll-behavior-x: contain;
+  }
+
+  /* Hides the scrollbar without disabling the scroll. Used only on the board's column rail, where
+     the columns themselves are the affordance and a 15px grey bar under a live board is noise. */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }
 

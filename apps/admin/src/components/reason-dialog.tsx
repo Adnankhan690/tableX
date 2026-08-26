@@ -1,108 +1,87 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Button, Dialog, Field, Textarea } from '@/components/ui'
+
+/** The shortest reason that tells a diner anything. Below this it is noise in their order screen. */
+const MIN_REASON = 3
+const MAX_REASON = 200
+
+export interface ReasonDialogProps {
+  open: boolean
+  title: string
+  description: string
+  confirmLabel: string
+  onCancel: () => void
+  onConfirm: (reason: string) => void
+}
 
 /**
- * Collects a required reason before a destructive transition.
+ * The reason a refusal needs before it can happen.
  *
- * Built on the native `<dialog>` element rather than an overlay div or a dialog library. The
- * browser gives focus trapping, Escape-to-close, inert background content and the correct ARIA
- * role for free -- reimplementing those by hand is where accessible modals usually go wrong, and
- * a library would be a dependency for one component.
+ * Asked for up front rather than after a rejected submit: the server refuses these without a
+ * reason (docs/DECISIONS.md D1), and collecting it afterwards makes the staff member do the work
+ * twice.
  *
- * The one thing the native element does not do is close on backdrop click, which is deliberate
- * here: an accidental tap outside must not silently abandon a reject the staff member was
- * halfway through explaining.
+ * The confirm button is a filled danger control, and it stays LEGIBLE while disabled. It used to
+ * fade to `opacity-40` -- white on pale red at 2.05:1 -- in the state the dialog always opens in,
+ * so the one word telling a staff member what is about to happen to a real order was unreadable
+ * until they had already typed.
  */
 export function ReasonDialog({
   open,
   title,
   description,
   confirmLabel,
-  onConfirm,
   onCancel,
-}: {
-  open: boolean
-  title: string
-  description: string
-  confirmLabel: string
-  onConfirm: (reason: string) => void
-  onCancel: () => void
-}) {
-  const ref = useRef<HTMLDialogElement>(null)
+  onConfirm,
+}: ReasonDialogProps) {
   const [reason, setReason] = useState('')
 
+  // Cleared on open, not on close: closing animates, and a flash of the previous refusal's reason
+  // on the way out is worse than an empty box on the way in.
   useEffect(() => {
-    const dialog = ref.current
-    if (!dialog) return
-
-    if (open && !dialog.open) {
-      setReason('')
-      dialog.showModal()
-    } else if (!open && dialog.open) {
-      dialog.close()
-    }
+    if (open) setReason('')
   }, [open])
 
-  // Escape fires the dialog's own cancel event; the parent has to hear about it or its `open`
-  // state and the DOM would disagree, and the dialog could never be reopened.
-  useEffect(() => {
-    const dialog = ref.current
-    if (!dialog) return
-
-    const handleCancel = (event: Event) => {
-      event.preventDefault()
-      onCancel()
-    }
-    dialog.addEventListener('cancel', handleCancel)
-    return () => dialog.removeEventListener('cancel', handleCancel)
-  }, [onCancel])
-
   const trimmed = reason.trim()
+  const ready = trimmed.length >= MIN_REASON
 
   return (
-    <dialog
-      ref={ref}
-      className="w-[min(28rem,92vw)] rounded-card border border-line bg-surface p-5 text-ink backdrop:bg-black/40"
+    <Dialog
+      open={open}
+      title={title}
+      description={description}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button onClick={onCancel}>Keep the order</Button>
+          <Button variant="danger" disabled={!ready} onClick={() => onConfirm(trimmed)}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
     >
-      <h2 className="text-base font-semibold">{title}</h2>
-      <p className="mt-1 text-sm text-muted">{description}</p>
-
-      <label className="mt-4 block">
-        <span className="text-sm font-medium">Reason</span>
-        <textarea
-          // autoFocus is correct here: the dialog exists solely to collect this field, so the
-          // caret belongs in it the moment it opens.
-          autoFocus
-          value={reason}
-          maxLength={500}
-          rows={3}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="e.g. we have run out of paneer"
-          className="mt-1 w-full rounded-card border border-line bg-bg p-2 text-sm outline-none focus:border-accent"
-        />
-      </label>
-      <p className="mt-1 text-xs text-muted">The customer is shown this, so keep it clear.</p>
-
-      <div className="mt-4 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="min-h-tap rounded-card border border-line px-4 text-sm font-medium"
-        >
-          Keep the order
-        </button>
-        <button
-          type="button"
-          // The server rejects these transitions without a reason, so the button stays disabled
-          // rather than submitting into a guaranteed 422.
-          disabled={trimmed === ''}
-          onClick={() => onConfirm(trimmed)}
-          className="min-h-tap rounded-card bg-danger px-4 text-sm font-semibold text-white disabled:opacity-40"
-        >
-          {confirmLabel}
-        </button>
-      </div>
-    </dialog>
+      <Field
+        label="Reason"
+        hint={`The diner sees this. ${MAX_REASON - reason.length} characters left.`}
+      >
+        {({ id, describedBy }) => (
+          <Textarea
+            id={id}
+            aria-describedby={describedBy}
+            // Autofocus is right for a single-field dialog: the only reason it is open is to
+            // collect this, and the Dialog announces its title as the accessible name before the
+            // caret lands here, so a screen-reader user still hears what they are refusing.
+            autoFocus
+            value={reason}
+            maxLength={MAX_REASON}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Out of stock, kitchen closing, duplicate order…"
+            rows={3}
+          />
+        )}
+      </Field>
+    </Dialog>
   )
 }

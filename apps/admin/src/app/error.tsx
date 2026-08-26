@@ -1,28 +1,74 @@
 'use client'
 
+import Link from 'next/link'
+import { Button } from '@/components/ui'
+
 /**
- * `reset` re-renders the failed segment, which recovers a transient fetch failure without
- * making a staff member sign in again mid-service. The raw error is not shown: it is a bundler
- * or React message, and the actionable detail is the request id carried on any API failure.
+ * `reset` re-renders the failed segment, which recovers a transient fetch failure without making a
+ * staff member sign in again mid-service. The raw error is still not shown -- it is a bundler or
+ * React message, not something a manager can act on -- but `digest` is, because it is the one
+ * string that lets someone reading the server logs find this exact failure.
+ *
+ * The alternatives matter as much as the retry: this used to be a single button, so a staff member
+ * whose board had broken mid-service had no route to the rest of the panel or to a fresh sign-in.
  *
  * The name shadows the global Error, and stays that way: Next requires this to be the default
  * export of error.tsx and names it Error by convention.
  */
 // biome-ignore lint/suspicious/noShadowRestrictedNames: Next names this export Error by convention
-export default function Error({ reset }: { error: Error; reset: () => void }) {
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
-      <h1 className="text-lg font-semibold">Something went wrong</h1>
-      <p className="max-w-sm text-sm text-muted">
-        This is usually a connection problem. Try again, or reload the page.
-      </p>
-      <button
-        type="button"
-        onClick={reset}
-        className="min-h-tap rounded-card bg-accent px-4 text-sm font-semibold text-accent-ink"
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+      <span
+        aria-hidden="true"
+        className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-danger-soft text-danger"
       >
-        Try again
-      </button>
+        {/* The heading names the state; the glyph is decoration. */}
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          className="h-5 w-5"
+        >
+          <circle cx="10" cy="10" r="7.25" strokeWidth="1.75" />
+          <path d="M10 6.5v4.5M10 13.5v.01" strokeWidth="1.75" strokeLinecap="round" />
+        </svg>
+      </span>
+      <div>
+        <h1 className="text-display font-semibold">Something went wrong</h1>
+        <p className="mx-auto mt-1.5 max-w-sm text-base text-muted">
+          This is usually a connection problem. Try again — nothing you had open has been lost.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button variant="primary" onClick={reset}>
+          Try again
+        </Button>
+        <Link
+          href="/orders"
+          className="inline-flex min-h-tap items-center rounded-control border border-line-strong bg-surface px-3.5 text-base font-medium transition-colors hover:bg-surface-sunken"
+        >
+          Go to the board
+        </Link>
+        <Link
+          href="/login"
+          className="inline-flex min-h-tap items-center rounded-control px-3.5 text-base font-medium text-muted transition-colors hover:bg-surface-sunken hover:text-ink"
+        >
+          Sign in again
+        </Link>
+      </div>
+      {error.digest ? (
+        <p className="text-xs text-faint">
+          Quote this if you report it: <span className="font-mono text-muted">{error.digest}</span>
+        </p>
+      ) : null}
     </main>
   )
 }

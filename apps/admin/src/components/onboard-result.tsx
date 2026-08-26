@@ -20,34 +20,33 @@ export function OnboardResult({
   const { restaurant, owner, tables, diner_url, admin_url } = result
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8">
-      <h1 className="text-lg font-semibold">{restaurant.name} is onboarded</h1>
-      <p className="mt-1 text-sm text-muted">
+    <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <h1 className="text-display font-semibold tracking-tight">{restaurant.name} is onboarded</h1>
+      <p className="mt-1.5 text-base text-muted">
         Created as <span className="font-mono">{restaurant.uid}</span>, status{' '}
         <strong>{restaurant.status}</strong>.
       </p>
 
-      <section className="mt-6 space-y-3 rounded-card border border-line bg-surface p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
-          Hand this to the restaurant
-        </h2>
+      {/* The handover card, ranked first and visually first: the four sections used to be
+          identical boxes, so the credentials someone has to copy out looked no more important than
+          the configuration echo below them. */}
+      <section className="mt-6 space-y-3 rounded-card border-l-[3px] border-l-accent border border-accent-line bg-accent-soft p-4">
+        <h2 className="text-lg font-semibold text-ink">Hand this to the restaurant</h2>
         <Row label="Sign in at" value={admin_url ?? 'the admin panel for this deployment'} />
         <Row label="Email" value={owner.email} />
-        <p className="text-xs text-muted">
+        <p className="text-sm text-muted">
           The password is the one you typed — it is deliberately not repeated here, and the server
           never returns it. Ask them to change it from Settings after their first sign-in.
         </p>
         <Row label="Diner page" value={diner_url} />
-        <p className="text-xs text-muted">
+        <p className="text-sm text-muted">
           That is the restaurant-level QR target: it lands a diner on a table picker, and it works
           even before any table sticker is printed.
         </p>
       </section>
 
-      <section className="mt-4 space-y-3 rounded-card border border-line bg-surface p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
-          Configuration applied
-        </h2>
+      <section className="mt-4 space-y-3 rounded-card border border-line bg-surface p-4 shadow-card">
+        <h2 className="text-lg font-semibold text-ink">Configuration applied</h2>
         <Row label="Slug" value={`/r/${restaurant.slug}`} />
         <Row label="Timezone" value={restaurant.timezone} />
         <Row label="GST" value={`${(restaurant.tax_bps / 100).toString()}%`} />
@@ -61,7 +60,7 @@ export function OnboardResult({
         />
         <Row label="Payments" value={restaurant.payment_provider} />
         {restaurant.payment_provider === 'upi_static' ? (
-          <p className="text-xs text-muted">
+          <p className="text-sm text-muted">
             Static UPI cannot confirm that money arrived — a staff member marks each payment
             received, exactly as with cash. Tell the owner this before they expect orders to settle
             themselves.
@@ -69,13 +68,13 @@ export function OnboardResult({
         ) : null}
       </section>
 
-      <section className="mt-4 space-y-3 rounded-card border border-line bg-surface p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
+      <section className="mt-4 space-y-3 rounded-card border border-line bg-surface p-4 shadow-card">
+        <h2 className="text-lg font-semibold text-ink">
           {tables.length === 0 ? 'Tables' : `${tables.length} tables created`}
         </h2>
 
         {tables.length === 0 ? (
-          <p className="text-xs text-muted">
+          <p className="text-sm text-muted">
             None yet. The owner adds them from Tables, and each one gets its own QR code there.
           </p>
         ) : (
@@ -83,8 +82,8 @@ export function OnboardResult({
             {/* Its own scroll container: a QR URL is long, and letting it widen the page would
                 make the whole handover scroll sideways on a laptop. */}
             <div className="scroll-x-contain overflow-x-auto">
-              <table className="w-full min-w-[28rem] text-left text-xs">
-                <thead className="text-muted">
+              <table className="w-full min-w-[28rem] text-left text-sm">
+                <thead className="text-xs text-faint">
                   <tr>
                     <th className="py-1 pr-3 font-medium">Table</th>
                     <th className="py-1 font-medium">Scan URL</th>
@@ -92,7 +91,7 @@ export function OnboardResult({
                 </thead>
                 <tbody>
                   {tables.map((row) => (
-                    <tr key={row.uid} className="border-t border-line">
+                    <tr key={row.uid} className="border-t border-divider">
                       <td className="py-1 pr-3 font-mono">{row.label}</td>
                       <td className="py-1 font-mono break-all">{row.qr_url}</td>
                     </tr>
@@ -100,7 +99,7 @@ export function OnboardResult({
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-muted">
+            <p className="text-sm text-muted">
               Printable QR codes are on the owner&apos;s Tables screen. Each URL is a capability —
               possession of one authorises ordering at that table — so treat this list as sensitive,
               and rotate a code from Tables if one leaks.
@@ -110,9 +109,7 @@ export function OnboardResult({
       </section>
 
       <section className="mt-4 rounded-card border border-line bg-surface-sunken p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
-          What is missing
-        </h2>
+        <h2 className="text-lg font-semibold text-ink">What is missing</h2>
         <p className="mt-2 text-xs leading-relaxed text-muted">
           <strong>There is no menu yet.</strong> The diner page will render an empty one until the
           owner adds categories and items from the Menu screen. That is expected for a new
