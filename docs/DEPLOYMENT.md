@@ -168,8 +168,29 @@ curl https://api.tabley.in/api/public/v1/health/ready   # database reachable
 
 On the free plan the first of these may take ~50 seconds while the instance wakes.
 
-One thing that cannot be verified from a laptop: `TABLEX_TRUSTED_PROXIES` is set to
-`10.0.0.0/8` on the assumption that Render's ingress forwards from that range. If the CIDR
-is wrong, Gin reads the wrong entry from `X-Forwarded-For`, the client IP becomes
-attacker-controlled, and the per-IP rate limiter stops limiting — silently, and while
-appearing healthy. Check a real request's logged client IP against its true public IP.
+### The rate limiter is evadable if `TABLEX_TRUSTED_PROXIES` is wrong
+
+`config.Validate` requires the value to be set in production but cannot tell whether it is
+correct, and a wrong CIDR fails open: Gin reads the wrong entry from `X-Forwarded-For`, the
+client IP becomes attacker-controlled, every forged address lands in its own bucket, and the
+per-IP limiter never fires. Nothing logs, nothing 500s, health stays green.
+
+The HTTP log line does not carry the client IP — `ClientIP()` is only printed when a request
+is actually throttled — so this has to be tested rather than read:
+
+```bash
+seq 1 700 | xargs -P 20 -I{} sh -c 'curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "X-Forwarded-For: 203.0.113.$((RANDOM % 250 + 1))" \
+  https://api.tabley.in/api/public/v1/restaurants'
+```
+
+Concurrency is not incidental. The limiter's window is aligned to the wall-clock minute, so
+700 *sequential* requests spread over 90s straddle boundaries, reset the counter, and return
+all 200s regardless of how the proxies are configured — a false pass.
+
+Any 429s mean the forged header was ignored and the limiter holds. All 200s mean it is
+evadable. Verified passing on 2026-08-26: 342 of 700 throttled.
+
+Rerun after changing the CIDR or moving hosting platform. Note also that the limiter counts
+per instance, so more than one replica multiplies the effective limit (README, known
+limitations).
