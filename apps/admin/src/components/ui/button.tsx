@@ -4,7 +4,13 @@ import { cn, Spinner } from '@tablex/ui'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { forwardRef } from 'react'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-quiet'
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'danger'
+  | 'danger-outline'
+  | 'danger-quiet'
 export type ButtonSize = 'sm' | 'md'
 
 /**
@@ -37,6 +43,11 @@ const VARIANT: Record<ButtonVariant, string> = {
   // board of eight rows is not eight red buttons competing with the work.
   danger:
     'border border-danger bg-danger text-accent-ink shadow-card hover:border-danger-hover hover:bg-danger-hover',
+  // Outlined, for a refusal that sits beside the primary at equal size -- on the order card, where
+  // a staff member needs to see all the moves at once. `bg-surface` and not transparent: the card
+  // may be tinted, and a see-through button on a pink card loses its shape.
+  'danger-outline':
+    'border border-danger bg-surface text-danger hover:bg-danger-soft active:bg-danger-soft',
   'danger-quiet':
     'border border-transparent bg-transparent text-danger hover:border-danger-line hover:bg-danger-soft',
 }

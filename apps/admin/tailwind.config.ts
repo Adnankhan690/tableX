@@ -50,11 +50,11 @@ const config: Config = {
 
         // Order age escalation. Three steps rather than a gradient, because staff need to
         // recognise "this one is late" instantly and a continuous ramp gives no threshold to
-        // recognise. The bar carries the signal; the tint only ever sits behind a card header.
-        'age-warn': 'var(--ad-age-warn-bar)',
-        'age-warn-tint': 'var(--ad-age-warn-tint)',
-        'age-late': 'var(--ad-age-late-bar)',
-        'age-late-tint': 'var(--ad-age-late-tint)',
+        // recognise. These are card FILLS -- see the contrast note in globals.css, which is the
+        // binding constraint on the whole palette.
+        'age-warn': 'var(--ad-age-warn)',
+        'age-warn-line': 'var(--ad-age-warn-line)',
+        'age-late': 'var(--ad-age-late)',
       },
       fontFamily: { sans: ['var(--ad-font-sans)'] },
       fontSize: {

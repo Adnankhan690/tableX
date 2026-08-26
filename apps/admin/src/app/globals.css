@@ -73,18 +73,25 @@
   --ad-success-line: #a8dcbe;
 
   /**
-   * Order-age escalation.
+   * Order-age escalation, as a whole-card fill.
    *
-   * These used to fill the whole order card, which had two costs the board could not carry: every
-   * word on a late ticket sat on saturated pink, and two late tickets merged into one continuous
-   * block with no visible seam between them. Escalation now rides a 3px edge bar plus a tinted
-   * header strip, and the card body stays white -- so these tints only ever sit behind a heading,
-   * never behind a paragraph or a button, and the binding contrast constraint disappears.
+   * Deliberately the loud version: a tinted card is recognisable across a kitchen in a way a 3px
+   * edge bar is not, and being able to see at a glance which tickets are overdue is the board's
+   * job. The cost is that every word and every button on a late ticket sits on a tint, so these
+   * two values are the BINDING CONSTRAINT on the palette -- each is checked against the three
+   * things that sit on it:
+   *
+   *   on --ad-age-late (#ffd4ce):  ink 12.6:1 · muted 4.96:1 · danger 4.87:1
+   *   on --ad-age-warn (#ffeab8):  ink 14.6:1 · muted 5.75:1 · danger 5.64:1
+   *
+   * All clear 4.5:1. Darkening either fill breaks the muted and danger pairings first, so if one
+   * changes, recheck those two -- not just the headline ink ratio.
    */
-  --ad-age-warn-bar: #d98a04; /* the bar itself -- 3.1:1 against surface, a real boundary */
-  --ad-age-warn-tint: #fff8ea; /* header strip; ink on it is 17.6:1, muted 6.9:1 */
-  --ad-age-late-bar: #c9342a; /* 4.6:1 */
-  --ad-age-late-tint: #fdeeec; /* ink 17.4:1, muted 6.8:1 */
+  --ad-age-warn: #ffeab8;
+  /* The warn card's outline. Separate from the fill because a card whose border and background are
+     the same colour is the one card on the board with no visible edge. */
+  --ad-age-warn-line: #f0c169;
+  --ad-age-late: #ffd4ce;
 
   /* Focus. One ring, defined once, used by the base rule below and by any component that needs to
      draw its own. */

@@ -49,10 +49,13 @@ Defined once in `apps/admin/src/app/globals.css` and reached through Tailwind na
 outline a card and quiet enough to rule a table, and could be neither: at 1.66:1 every list became a
 stack of boxes.
 
-**Escalation rides the edge, not the face.** A late ticket used to paint its whole card, which put
-every word and every button on saturated pink and merged two late tickets into one block with no
-seam. The tint now sits behind a card header only — never behind a paragraph or a control — which
-also removes the contrast constraint that used to bind the whole palette.
+**Escalation fills the card, and that is a product decision, not a default.** The audit argued for
+moving it to a 3px edge bar so the card body could stay white; it was built that way, reviewed, and
+reversed on the owner's call — a tinted card is recognisable across a kitchen in a way an edge bar is
+not, and seeing which tickets are overdue at a glance is what the board is for. The cost is that
+`--ad-age-late` and `--ad-age-warn` sit behind text and buttons, which makes them the binding
+constraint on the palette: each is checked against ink, muted **and** danger (all ≥ 4.5:1), and
+darkening either fill breaks the muted and danger pairings before it breaks the headline ink ratio.
 
 **Opacity modifiers do not work on these tokens.** `bg-accent/40` silently produces nothing. Every
 state that looks translucent is its own solid token.
