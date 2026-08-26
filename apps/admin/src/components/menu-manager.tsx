@@ -13,11 +13,24 @@ import { cn, EmptyState, ErrorState, FoodTypeBadge, Spinner } from '@tablex/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
+import { Select, type SelectOption } from '@/components/select'
 import { api } from '@/lib/api'
 import { formatMinorForInput, parsePriceToMinor } from '@/lib/price-input'
 
 const FOOD_TYPES: readonly FoodType[] = ['veg', 'non_veg', 'egg']
 const SPICE_LEVELS: readonly SpiceLevel[] = ['mild', 'medium', 'hot']
+
+/**
+ * Spice options. "Not applicable" is first and is a real choice, not a placeholder: a naan has no
+ * heat level, and the server stores the absence rather than a zero.
+ */
+const SPICE_OPTIONS: readonly SelectOption<SpiceLevel | ''>[] = [
+  { value: '', label: 'Not applicable' },
+  ...SPICE_LEVELS.map((level) => ({
+    value: level,
+    label: level.charAt(0).toUpperCase() + level.slice(1),
+  })),
+]
 
 interface ItemDraft {
   categoryUid: string
@@ -458,26 +471,15 @@ function ItemForm({
       </fieldset>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block">
-          <span className="text-xs font-medium">Spice level (optional)</span>
-          <select
+        <div>
+          <Select
+            label="Spice level (optional)"
             value={draft.spiceLevel}
-            onChange={(event) =>
-              onChange({
-                ...draft,
-                spiceLevel: event.target.value as SpiceLevel | '',
-              })
-            }
-            className="mt-1 min-h-tap w-full rounded-card border border-line bg-bg px-2 text-sm"
-          >
-            <option value="">Not applicable</option>
-            {SPICE_LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(spiceLevel) => onChange({ ...draft, spiceLevel })}
+            options={SPICE_OPTIONS}
+            className="w-full"
+          />
+        </div>
         <label className="block">
           <span className="text-xs font-medium">Prep time, minutes (optional)</span>
           <input

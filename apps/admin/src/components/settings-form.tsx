@@ -6,6 +6,7 @@ import { ErrorState, Spinner } from '@tablex/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
+import { Select, type SelectOption } from '@/components/select'
 import { api } from '@/lib/api'
 
 /**
@@ -33,6 +34,24 @@ function percentToBps(raw: string): number | null {
   // integral again.
   return Math.round(percent * 100)
 }
+
+/**
+ * The two payment providers, each with the fact an owner actually needs at the moment of
+ * choosing (docs/DECISIONS.md D2): static UPI cannot confirm that money arrived. The longer
+ * warning below the control stays -- this is the one-line version, at the point of decision.
+ */
+const PROVIDER_OPTIONS: readonly SelectOption[] = [
+  {
+    value: 'upi_static',
+    label: 'UPI QR from your own account',
+    description: 'No fees. Payments must be confirmed by hand.',
+  },
+  {
+    value: 'razorpay',
+    label: 'Razorpay gateway',
+    description: 'Confirms payments automatically. Needs Razorpay keys.',
+  },
+]
 
 export function SettingsForm() {
   const auth = useRequireAuth()
@@ -226,18 +245,14 @@ export function SettingsForm() {
             </Card>
 
             <Card title="Payments">
-              <label className="block">
-                <span className="text-xs font-medium">Provider</span>
-                <select
-                  value={form.paymentProvider}
-                  disabled={!canEdit}
-                  onChange={(event) => setForm({ ...form, paymentProvider: event.target.value })}
-                  className="mt-1 min-h-tap w-full rounded-card border border-line bg-bg px-2 text-sm disabled:opacity-60"
-                >
-                  <option value="upi_static">UPI QR from your own account</option>
-                  <option value="razorpay">Razorpay gateway</option>
-                </select>
-              </label>
+              <Select
+                label="Provider"
+                value={form.paymentProvider}
+                disabled={!canEdit}
+                onChange={(paymentProvider) => setForm({ ...form, paymentProvider })}
+                options={PROVIDER_OPTIONS}
+                className="w-full"
+              />
 
               {/*
                 The most important copy on this page. An owner switching online payments on has to
