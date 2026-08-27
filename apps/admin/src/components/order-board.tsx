@@ -388,7 +388,12 @@ export function OrderBoard() {
         <span key={announcement.seq}>{announcement.text}</span>
       </p>
 
-      <StatsStrip />
+      {/*
+        Clicking a breakdown band selects the matching filter. `setStatusFilter` goes straight in --
+        StatsFilter is a subset of FilterValue, and a handler taking the wider union satisfies the
+        narrower parameter, so there is no cast and no circular import.
+      */}
+      <StatsStrip onFilter={setStatusFilter} />
 
       {/*
         TWO ROWS, and the split is the point: the top row decides WHICH orders, the bottom row
