@@ -99,7 +99,10 @@ const board = await page.locator('main').innerText()
 ck('the seeded order appears', board.includes(orderNumber))
 ck('table number shown prominently', /Table 5/.test(board))
 ck('customer total shown', /₹/.test(board))
-ck('columns rendered', /NEW/i.test(board) && /PREPARING/i.test(board))
+// The board is one list with a status filter rather than five columns, so the pipeline is read
+// off each card's status badge and the filter's own options -- not off column headings.
+ck('the status filter is present', (await page.getByLabel('Filter by status').count()) === 1)
+ck('cards carry their stage', /New|Accepted|Preparing|Ready|Served/.test(board))
 
 const shell = await page.locator('header').first().innerText()
 ck('shell shows restaurant and signed-in user', /Spice Garden/.test(shell) && /Rajesh/.test(shell))

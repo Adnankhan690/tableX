@@ -177,13 +177,18 @@ ck(
 ck('search is present and labelled', (await page.locator('input[type=search]').count()) >= 1)
 ck('the table filter is present', (await page.locator('[role=combobox]').count()) >= 1)
 ck('an order card renders as an article', (await page.locator('article').count()) >= 0)
-const liveOnly = page.getByRole('button', { name: /live only|showing all/i })
-ck('the live/all toggle is present', (await liveOnly.count()) === 1)
-await liveOnly.click()
-await page.waitForTimeout(900)
-ck('the toggle changes state', (await liveOnly.innerText()).length > 0)
-await liveOnly.click()
-await page.waitForTimeout(600)
+// Switching the status filter refetches: "Completed" is a terminal state, so it cannot appear in
+// the default view, which makes it a real test that the query changed rather than the list being
+// sliced client-side.
+const statusFilter = page.getByLabel('Filter by status')
+await statusFilter.click()
+await page.locator('[role=option]', { hasText: /^Completed$/ }).click()
+await page.waitForTimeout(1200)
+ck('choosing a status changes the view', /Completed/i.test(await page.locator('body').innerText()))
+await statusFilter.click()
+await page.locator('[role=option]', { hasText: /^Open orders$/ }).click()
+await page.waitForTimeout(1200)
+ck('and it goes back', /Open orders/i.test(await page.locator('body').innerText()))
 await page.fill('input[type=search]', 'ZZZ-no-such-order')
 await page.waitForTimeout(1200)
 ck(

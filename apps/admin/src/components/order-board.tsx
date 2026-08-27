@@ -1,8 +1,14 @@
 'use client'
 
 import { isApiError } from '@tablex/api-client'
-import type { OrderStatus, OrderView, TableInfo, TransitionTarget } from '@tablex/shared'
-import { requiresReason, STAFF_STATUS_LABEL, TRANSITION_VERB } from '@tablex/shared'
+import type {
+  ListOrdersQuery,
+  OrderStatus,
+  OrderView,
+  TableInfo,
+  TransitionTarget,
+} from '@tablex/shared'
+import { requiresReason, TRANSITION_VERB } from '@tablex/shared'
 import { cn, ErrorState } from '@tablex/ui'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
@@ -11,20 +17,50 @@ import { PageHeader } from '@/components/page-header'
 import { ReasonDialog } from '@/components/reason-dialog'
 import { Select } from '@/components/select'
 import { StatsStrip } from '@/components/stats-strip'
-import {
-  Count,
-  EmptyState,
-  Notice,
-  SearchInput,
-  Skeleton,
-  ToggleChip,
-  Toolbar,
-} from '@/components/ui'
+import { EmptyState, Notice, SearchInput, Skeleton, ToggleChip, Toolbar } from '@/components/ui'
 import { useAdminStream } from '@/hooks/useAdminStream'
 import { api } from '@/lib/api'
 
-/** The live board's columns, in kitchen order. */
-const COLUMNS: readonly OrderStatus[] = ['placed', 'accepted', 'preparing', 'ready', 'served']
+/**
+ * The pipeline, in kitchen order.
+ *
+ * No longer a set of columns -- it is the SORT KEY. The board is one list now, and the sequence a
+ * ticket moves through is what orders it: an order's stage still tells a staff member what happens
+ * next, so like sits with like without needing five headings to say so.
+ */
+const PIPELINE: readonly OrderStatus[] = ['placed', 'accepted', 'preparing', 'ready', 'served']
+
+/**
+ * What the status filter offers.
+ *
+ * Server-side, not a client-side slice of a page: `live` and repeated `status` are both real query
+ * parameters (types.RequestListOrders), so asking for one stage fetches that stage rather than
+ * paging through everything and hiding most of it.
+ *
+ * The default is `live` -- every non-terminal state. That is the shift's work: nothing completed,
+ * cancelled or rejected, because none of those need anyone to do anything.
+ */
+const FILTERS = [
+  { value: 'open', label: 'Open orders', statuses: PIPELINE, live: true },
+  { value: 'placed', label: 'New', statuses: ['placed'] },
+  { value: 'accepted', label: 'Accepted', statuses: ['accepted'] },
+  { value: 'preparing', label: 'Preparing', statuses: ['preparing'] },
+  { value: 'ready', label: 'Ready', statuses: ['ready'] },
+  { value: 'served', label: 'Served', statuses: ['served'] },
+  { value: 'completed', label: 'Completed', statuses: ['completed'] },
+  { value: 'closed', label: 'Cancelled or rejected', statuses: ['cancelled', 'rejected'] },
+  { value: 'all', label: 'All orders', statuses: [] },
+] as const satisfies readonly {
+  value: string
+  label: string
+  statuses: readonly OrderStatus[]
+  live?: boolean
+}[]
+
+/** How many orders one request may return when the filter is not the live shorthand. */
+const PAGE_SIZE = 50
+
+type FilterValue = (typeof FILTERS)[number]['value']
 
 /** A pending transition that is waiting on a reason from the dialog. */
 interface PendingReason {
@@ -53,7 +89,7 @@ export function OrderBoard() {
   const [notice, setNotice] = useState<{ tone: 'accent' | 'danger'; text: string } | null>(null)
   const [pending, setPending] = useState<PendingReason | null>(null)
 
-  const [showClosed, setShowClosed] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<FilterValue>('open')
   const [tableFilter, setTableFilter] = useState('')
   const [search, setSearch] = useState('')
   const [unpaidOnly, setUnpaidOnly] = useState(false)
@@ -73,10 +109,19 @@ export function OrderBoard() {
   const load = useCallback(() => {
     getToken().then((token) => {
       if (!token) return
+      const selected = FILTERS.find((f) => f.value === statusFilter) ?? FILTERS[0]
+      // `live` is the server's own shorthand for every non-terminal state, so the default view is
+      // one flag rather than a list of five. Everything else asks for its statuses by name, and
+      // "All orders" asks for nothing and takes a page.
+      const scope: ListOrdersQuery =
+        'live' in selected && selected.live
+          ? { live: true }
+          : selected.statuses.length > 0
+            ? { status: [...selected.statuses], per_page: PAGE_SIZE }
+            : { per_page: PAGE_SIZE }
       api
         .listOrders(token, {
-          // The kitchen's only real question, and the default view.
-          ...(showClosed ? { per_page: 50 } : { live: true }),
+          ...scope,
           ...(tableFilter ? { table_uid: tableFilter } : {}),
           ...(search.trim() ? { search: search.trim() } : {}),
           ...(unpaidOnly ? { payment_status: 'pending' as const } : {}),
@@ -87,7 +132,7 @@ export function OrderBoard() {
         })
         .catch(setError)
     })
-  }, [getToken, showClosed, tableFilter, search, unpaidOnly])
+  }, [getToken, statusFilter, tableFilter, search, unpaidOnly])
 
   useEffect(() => {
     load()
@@ -159,18 +204,59 @@ export function OrderBoard() {
     [getToken, load],
   )
 
-  const grouped = useMemo(() => {
-    const buckets = new Map<OrderStatus, OrderView[]>()
-    for (const status of COLUMNS) buckets.set(status, [])
-    const closed: OrderView[] = []
-
-    for (const order of orders ?? []) {
-      const bucket = buckets.get(order.status)
-      if (bucket) bucket.push(order)
-      else closed.push(order)
+  /**
+   * The list, sorted by where each ticket is in the pipeline and then by how long it has waited.
+   *
+   * This is what replaced five columns. The columns encoded the stage by POSITION, which cost a
+   * whole axis of layout and broke apart below xl; a status badge on the card says the same thing,
+   * and sorting by stage keeps like with like so the list still reads as a workflow. Within a
+   * stage, oldest first: the ticket that has waited longest is the one that needs attention.
+   */
+  const sorted = useMemo(() => {
+    const rank = (status: OrderStatus) => {
+      const index = PIPELINE.indexOf(status)
+      // Terminal states sort after every live one, so an "All orders" view still opens on work.
+      return index === -1 ? PIPELINE.length : index
     }
-    return { buckets, closed }
+    return [...(orders ?? [])].sort((a, b) => {
+      const byStage = rank(a.status) - rank(b.status)
+      if (byStage !== 0) return byStage
+      return Date.parse(a.placed_at) - Date.parse(b.placed_at)
+    })
   }, [orders])
+
+  /**
+   * How many of the loaded orders sit in each stage.
+   *
+   * Shown on the filter's own options, which is where the five column headings' counts went: the
+   * dropdown doubles as the summary of what is on the board.
+   */
+  const counts = useMemo(() => {
+    const tally = new Map<OrderStatus, number>()
+    for (const order of orders ?? []) tally.set(order.status, (tally.get(order.status) ?? 0) + 1)
+    return tally
+  }, [orders])
+
+  const filterOptions = useMemo(
+    () =>
+      FILTERS.map((filter) => {
+        // A count is only honest for the view currently loaded -- asking for "New" fetches only
+        // placed orders, so it cannot also say how many are Ready. Counts therefore appear on the
+        // option only while the loaded set actually covers that stage.
+        const covered =
+          statusFilter === 'all' ||
+          (statusFilter === 'open' && PIPELINE.includes(filter.statuses[0] as OrderStatus))
+        const total = filter.statuses.reduce((n, status) => n + (counts.get(status) ?? 0), 0)
+        return {
+          value: filter.value,
+          label:
+            covered && filter.value !== 'open' && filter.value !== 'all'
+              ? `${filter.label} · ${total}`
+              : filter.label,
+        }
+      }),
+    [counts, statusFilter],
+  )
 
   /**
    * The table filter's options.
@@ -198,7 +284,13 @@ export function OrderBoard() {
     <>
       <PageHeader
         title="Orders"
-        subtitle={showClosed ? 'Every order, newest first' : 'Live orders, today'}
+        subtitle={
+          orders === null
+            ? undefined
+            : `${FILTERS.find((f) => f.value === statusFilter)?.label ?? 'Orders'} · ${
+                orders.length
+              } on the board`
+        }
         meta={
           <span className="flex items-center gap-1.5 text-xs text-muted">
             <span
@@ -219,12 +311,21 @@ export function OrderBoard() {
       <StatsStrip />
 
       <Toolbar>
+        {/* The status filter comes first: it decides what the list IS, where the other three
+            narrow it. */}
+        <Select
+          value={statusFilter}
+          onChange={(value) => setStatusFilter(value as FilterValue)}
+          options={filterOptions}
+          ariaLabel="Filter by status"
+          className="min-w-[12rem]"
+        />
         <SearchInput
           value={search}
           onValueChange={setSearch}
           placeholder="Order number or customer"
           label="Search orders"
-          className="min-w-[14rem]"
+          className="min-w-[12rem]"
         />
         <Select
           value={tableFilter}
@@ -235,9 +336,6 @@ export function OrderBoard() {
         />
         <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
           Unpaid only
-        </ToggleChip>
-        <ToggleChip active={showClosed} onClick={() => setShowClosed((v) => !v)}>
-          {showClosed ? 'Showing all' : 'Live only'}
         </ToggleChip>
       </Toolbar>
 
@@ -256,26 +354,31 @@ export function OrderBoard() {
             onRetry={load}
           />
         ) : orders === null ? (
-          /* Skeletons shaped like the board rather than a centred spinner: the layout does not
-             jump when the first refresh lands, and on a board that refetches every few seconds
-             that is the difference between a calm screen and a flickering one. */
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {COLUMNS.map((status) => (
-              <div key={status} className="space-y-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-32 w-full" />
-              </div>
+          /* Skeletons shaped like the list rather than a centred spinner: the layout does not jump
+             when the first refresh lands, and on a board that refetches every few seconds that is
+             the difference between a calm screen and a flickering one. */
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-44 w-full" />
             ))}
           </div>
-        ) : orders.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <EmptyState
             // Calm, not alarming. An empty board during a quiet hour is the normal state, and
             // copy that reads like a failure would train staff to distrust it.
-            title={showClosed ? 'No orders match these filters' : 'No live orders'}
+            title={
+              search.trim() !== '' || tableFilter !== '' || unpaidOnly
+                ? 'No orders match these filters'
+                : statusFilter === 'open'
+                  ? 'No open orders'
+                  : 'Nothing here'
+            }
             description={
-              showClosed
-                ? 'Clear the search or the table filter to see the rest.'
-                : 'New orders appear here the moment a diner places one.'
+              search.trim() !== '' || tableFilter !== '' || unpaidOnly
+                ? 'Clear the search, the table or the unpaid filter to see the rest.'
+                : statusFilter === 'open'
+                  ? 'New orders appear here the moment a diner places one.'
+                  : 'Try a different status from the filter above.'
             }
             icon={
               <>
@@ -284,18 +387,18 @@ export function OrderBoard() {
               </>
             }
           />
-        ) : showClosed ? (
+        ) : (
           /*
-            "Showing all" gets its own layout rather than reusing the live grid.
-            The pipeline columns encode what to do next, which is meaningless for orders that are
-            already finished -- and the grid put a stranded "SERVED 0" header over blank canvas.
-            A flat newest-first list is what someone looking up a past order actually wants.
+            ONE LIST, not five columns.
+
+            The grid grows with the viewport instead of being one column per stage, which is what
+            broke below xl: five columns wrapped into a 2-up zigzag that put a stage heading under
+            the previous stage's cards. Stage now lives on the card, as a badge, and in the sort --
+            so the same information survives at every width, and a tablet in portrait gets a
+            single readable column instead of a scrambled grid.
           */
-          <div className="mx-auto grid max-w-3xl gap-2">
-            <p className="text-xs text-muted">
-              {orders.length} {orders.length === 1 ? 'order' : 'orders'}, newest first
-            </p>
-            {orders.map((order) => (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {sorted.map((order) => (
               <OrderCard
                 key={order.uid}
                 order={order}
@@ -304,47 +407,6 @@ export function OrderBoard() {
                 onTransition={(target) => transition(order, target)}
               />
             ))}
-          </div>
-        ) : (
-          /*
-            THE PIPELINE MUST STAY MONOTONIC.
-
-            Five columns at xl, and below that ONE full-width column per stage, stacked in pipeline
-            order. The old `md:grid-cols-2 xl:grid-cols-5` wrapped into a 2-up zigzag at the 820px
-            tablet target, which put the PREPARING heading directly under NEW's cards -- so a staff
-            member scanning down the tablet read a stage header as a continuation of the previous
-            stage, and grid row-equalising left a 360px void beside a short column. The board's one
-            job is to encode what happens next by position; a zigzag destroys exactly that.
-          */
-          <div className="grid gap-x-3 gap-y-5 xl:grid-cols-5">
-            {COLUMNS.map((status) => {
-              const bucket = grouped.buckets.get(status) ?? []
-              return (
-                <section key={status} className="min-w-0">
-                  {/* The count sits WITH its label, not pushed to the far edge of a 270px-wide
-                      column where it read as belonging to the next stage along. */}
-                  <h2 className="sticky top-[3.75rem] z-10 mb-2 flex items-center gap-2 bg-bg py-1 text-xs font-semibold uppercase tracking-wide text-muted xl:static">
-                    {STAFF_STATUS_LABEL[status]}
-                    <Count value={bucket.length} />
-                  </h2>
-                  {bucket.length === 0 ? (
-                    <EmptyState compact title="Nothing here" className="bg-surface" />
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                      {bucket.map((order) => (
-                        <OrderCard
-                          key={order.uid}
-                          order={order}
-                          now={now}
-                          pending={busy?.uid === order.uid ? busy.target : null}
-                          onTransition={(target) => transition(order, target)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )
-            })}
           </div>
         )}
       </main>
