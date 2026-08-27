@@ -133,7 +133,7 @@ export function OrderCard({
         <span className="min-w-0">
           {/* Order number and table are both large: staff match a ticket to a table by eye, and
               call the number across the kitchen. */}
-          <span className="block text-lg font-bold leading-tight [font-variant-numeric:tabular-nums]">
+          <span className="figures block text-lg font-bold leading-tight">
             {order.order_number}
           </span>
           <span className="block truncate text-base font-semibold leading-tight">
@@ -145,7 +145,7 @@ export function OrderCard({
           <span className="flex items-center gap-1.5">
             <span
               className={cn(
-                'text-sm [font-variant-numeric:tabular-nums]',
+                'figures text-sm',
                 tone === 'late' ? 'font-semibold text-danger' : 'text-muted',
               )}
             >

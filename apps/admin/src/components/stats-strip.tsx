@@ -402,7 +402,7 @@ function Cell({
       </dt>
       <dd
         className={cn(
-          'mt-1 truncate text-metric font-semibold [font-variant-numeric:tabular-nums]',
+          'figures mt-1 truncate text-metric font-semibold',
           tone === 'accent' ? 'text-accent' : tone === 'warning' ? 'text-warning' : 'text-ink',
         )}
       >
