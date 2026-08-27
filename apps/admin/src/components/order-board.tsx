@@ -9,8 +9,8 @@ import type {
   TransitionTarget,
 } from '@tablex/shared'
 import { requiresReason, TRANSITION_VERB } from '@tablex/shared'
-import { cn, ErrorState } from '@tablex/ui'
-import { Bell, BellOff, Inbox } from 'lucide-react'
+import { ErrorState } from '@tablex/ui'
+import { Inbox } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { OrderCard } from '@/components/order-card'
@@ -199,14 +199,20 @@ export function OrderBoard() {
     })
   }, [getToken])
 
-  const { live } = useAdminStream(auth?.accessToken ?? null, load)
+  /*
+    Not destructured any more. `useAdminStream` still reports whether a socket is open, and the
+    board still refetches either way -- but the live/polling indicator that consumed it has been
+    removed from the header, so there is nothing to render it into. The hook is called for its
+    effect, not its value.
+  */
+  useAdminStream(auth?.accessToken ?? null, load)
 
   /**
    * Fed `queue`, not `orders` -- see the note in the hook. `queue` is the whole open set
    * whatever chip is selected, so a staff member filtered to Ready still hears a new order
    * land in a stage they are not looking at.
    */
-  const chime = useNewOrderChime(queue)
+  const { announcement } = useNewOrderChime(queue)
 
   /** Applies a transition, or opens the reason dialog when the server will demand one. */
   const transition = useCallback(
@@ -329,13 +335,30 @@ export function OrderBoard() {
 
   return (
     <>
+      {/*
+        HIDDEN ON PHONES ONLY, and there are two elements here because of it.
+
+        Below `sm` the band was a sticky 65px spelling out the word the navigation already has
+        marked `aria-current="page"` -- a tenth of a phone viewport spent saying where you are to
+        someone who just tapped to get here. From `sm` up there is room for it and it stays.
+
+        `hidden sm:flex` goes on PageHeader's own className rather than on a wrapper div: the header
+        is `position: sticky`, and a wrapper would become its containing block and cap it at its own
+        height, which stops it sticking at all. `cn` resolves `hidden` against the base `flex`.
+
+        The `sr-only sm:hidden` h1 covers the gap below `sm`, where the visible one is display:none
+        and therefore out of the accessibility tree. Exactly one h1 is exposed at any width: this
+        one on a phone, PageHeader's from `sm` up. A document needs a heading, and "the nav says so"
+        is a visual argument rather than a structural one.
+      */}
+      <h1 className="sr-only sm:hidden">Orders</h1>
       <PageHeader
+        className="hidden sm:flex"
         title="Orders"
         /*
           SHOWN ONLY WHEN THE CHIPS DO NOT ALREADY SAY IT -- the same rule the status Select below
-          follows, for the same reason. With Open orders selected this line read "Open orders · 8 on
-          the board" while the lit chip two rows down read "Open orders 8": the same two facts,
-          twice, costing a line of a phone screen before the first ticket.
+          follows. With Open orders selected this read "Open orders · 8 on the board" while the lit
+          chip two rows down read "Open orders 8": the same two facts, twice.
 
           BADGED, not QUICK_FILTERS, is the test: Completed deliberately has no count on its chip
           (see the note there), so its total is only ever stated here.
@@ -346,76 +369,6 @@ export function OrderBoard() {
             : `${FILTERS.find((f) => f.value === statusFilter)?.label ?? 'Orders'} · ${
                 orders.length
               } on the board`
-        }
-        meta={
-          /* Both halves answer the same question -- is this board reaching me -- so they sit
-             together rather than the sound control living off in the toolbar with the filters. */
-          <span className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs text-muted">
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  live ? 'animate-pulse-slow bg-success' : 'bg-muted',
-                )}
-              />
-              {/* Staff need to know whether to trust this board second-by-second. Polling is still
-                  correct, just slower, and saying which mode it is in avoids a staff member
-                  assuming a stale board is an empty one.
-
-                  Two lengths rather than one: "Refreshing every 5s" is 121px, which is most of the
-                  space a 320px phone has left after the title, and it was single-handedly wrapping
-                  this whole row onto a second line. The short form keeps the distinction -- which
-                  is the part that matters -- at a width that fits. */}
-              <span className="sm:hidden">{live ? 'Live' : 'Polling'}</span>
-              <span className="hidden sm:inline">{live ? 'Live' : 'Refreshing every 5s'}</span>
-            </span>
-
-            {/*
-              THE SOUND TOGGLE, and it says which of three states it is in rather than two.
-
-              `blocked` is the state that matters and the reason this is not a bare icon: sound can
-              be switched on and still be inaudible, because the browser will not start an
-              AudioContext until someone has interacted with the page (see lib/chime.ts). A staff
-              member who thinks the board will call out to them and is wrong stops watching it,
-              which is worse than never having offered sound. So a blocked toggle turns warning and
-              says so in words, and any tap anywhere fixes it.
-            */}
-            <button
-              type="button"
-              onClick={chime.toggle}
-              aria-pressed={chime.enabled}
-              title={
-                chime.enabled
-                  ? 'Chimes and says the table when a new order arrives. Tap to turn off.'
-                  : 'Silent. Tap to chime and hear the table when a new order arrives.'
-              }
-              className={cn(
-                'flex min-h-tap items-center gap-1.5 rounded-control border px-2.5 text-xs font-medium transition-colors',
-                chime.enabled && chime.blocked
-                  ? 'border-warning-line bg-warning-soft text-warning'
-                  : chime.enabled
-                    ? 'border-accent-line bg-accent-soft text-accent'
-                    : 'border-line bg-surface text-muted hover:bg-surface-sunken hover:text-ink',
-              )}
-            >
-              {chime.enabled ? (
-                <Bell aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
-              ) : (
-                <BellOff aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
-              )}
-              {chime.enabled && chime.blocked ? (
-                // Stays visible at every width: it is an instruction, and an icon cannot give one.
-                // The row may wrap on a phone while this shows, which is the right trade for a
-                // state where sound looks on and is not.
-                'Tap anywhere to allow sound'
-              ) : (
-                // `sr-only` and not `hidden`: the label IS this button's accessible name, so
-                // hiding it outright would leave a screen reader with a bare icon.
-                <span className="sr-only sm:not-sr-only">Sound</span>
-              )}
-            </button>
-          </span>
         }
       />
 
@@ -432,7 +385,7 @@ export function OrderBoard() {
         announcements rather than one unchanged string (see the hook).
       */}
       <p aria-live="polite" aria-atomic="true" className="sr-only">
-        <span key={chime.announcement.seq}>{chime.announcement.text}</span>
+        <span key={announcement.seq}>{announcement.text}</span>
       </p>
 
       <StatsStrip />
