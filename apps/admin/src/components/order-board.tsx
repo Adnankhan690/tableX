@@ -10,7 +10,7 @@ import type {
 } from '@tablex/shared'
 import { requiresReason, TRANSITION_VERB } from '@tablex/shared'
 import { cn, ErrorState } from '@tablex/ui'
-import { Inbox } from 'lucide-react'
+import { Bell, BellOff, Inbox } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { OrderCard } from '@/components/order-card'
@@ -20,6 +20,7 @@ import { Select } from '@/components/select'
 import { StatsStrip } from '@/components/stats-strip'
 import { EmptyState, Notice, SearchInput, Skeleton, ToggleChip, Toolbar } from '@/components/ui'
 import { useAdminStream } from '@/hooks/useAdminStream'
+import { useNewOrderChime } from '@/hooks/useNewOrderChime'
 import { api } from '@/lib/api'
 
 /**
@@ -200,6 +201,13 @@ export function OrderBoard() {
 
   const { live } = useAdminStream(auth?.accessToken ?? null, load)
 
+  /**
+   * Fed `queue`, not `orders` -- see the note in the hook. `queue` is the whole open set
+   * whatever chip is selected, so a staff member filtered to Ready still hears a new order
+   * land in a stage they are not looking at.
+   */
+  const chime = useNewOrderChime(queue)
+
   /** Applies a transition, or opens the reason dialog when the server will demand one. */
   const transition = useCallback(
     (order: OrderView, target: TransitionTarget, reason?: string) => {
@@ -331,21 +339,77 @@ export function OrderBoard() {
               } on the board`
         }
         meta={
-          <span className="flex items-center gap-1.5 text-xs text-muted">
-            <span
-              aria-hidden="true"
+          /* Both halves answer the same question -- is this board reaching me -- so they sit
+             together rather than the sound control living off in the toolbar with the filters. */
+          <span className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 text-xs text-muted">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  live ? 'animate-pulse-slow bg-success' : 'bg-muted',
+                )}
+              />
+              {/* Staff need to know whether to trust this board second-by-second. Polling is still
+                  correct, just slower, and saying which mode it is in avoids a staff member
+                  assuming a stale board is an empty one. */}
+              {live ? 'Live' : 'Refreshing every 5s'}
+            </span>
+
+            {/*
+              THE SOUND TOGGLE, and it says which of three states it is in rather than two.
+
+              `blocked` is the state that matters and the reason this is not a bare icon: sound can
+              be switched on and still be inaudible, because the browser will not start an
+              AudioContext until someone has interacted with the page (see lib/chime.ts). A staff
+              member who thinks the board will call out to them and is wrong stops watching it,
+              which is worse than never having offered sound. So a blocked toggle turns warning and
+              says so in words, and any tap anywhere fixes it.
+            */}
+            <button
+              type="button"
+              onClick={chime.toggle}
+              aria-pressed={chime.enabled}
+              title={
+                chime.enabled
+                  ? 'Chimes and says the table when a new order arrives. Tap to turn off.'
+                  : 'Silent. Tap to chime and hear the table when a new order arrives.'
+              }
               className={cn(
-                'h-1.5 w-1.5 rounded-full',
-                live ? 'animate-pulse-slow bg-success' : 'bg-muted',
+                'flex min-h-tap items-center gap-1.5 rounded-control border px-2.5 text-xs font-medium transition-colors',
+                chime.enabled && chime.blocked
+                  ? 'border-warning-line bg-warning-soft text-warning'
+                  : chime.enabled
+                    ? 'border-accent-line bg-accent-soft text-accent'
+                    : 'border-line bg-surface text-muted hover:bg-surface-sunken hover:text-ink',
               )}
-            />
-            {/* Staff need to know whether to trust this board second-by-second. Polling is still
-                correct, just slower, and saying which mode it is in avoids a staff member
-                assuming a stale board is an empty one. */}
-            {live ? 'Live' : 'Refreshing every 5s'}
+            >
+              {chime.enabled ? (
+                <Bell aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
+              ) : (
+                <BellOff aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
+              )}
+              {chime.enabled && chime.blocked ? 'Tap anywhere to allow sound' : 'Sound'}
+            </button>
           </span>
         }
       />
+
+      {/*
+        THE ARRIVAL ANNOUNCEMENT, in words, for anyone the sound cannot reach.
+
+        Both audio signals -- the chime and the spoken line -- are useless to a deaf or
+        hard-of-hearing staff member and to a screen reader. This carries the same sentence on the
+        same event, and it updates whether or not sound is switched on, because it is the only
+        arrival signal that does not depend on hearing.
+
+        `polite` and not `assertive`: it must not interrupt a staff member mid-sentence while they
+        are reading a ticket. Keyed on `seq` so two arrivals on the same table are two
+        announcements rather than one unchanged string (see the hook).
+      */}
+      <p aria-live="polite" aria-atomic="true" className="sr-only">
+        <span key={chime.announcement.seq}>{chime.announcement.text}</span>
+      </p>
 
       <StatsStrip />
 
