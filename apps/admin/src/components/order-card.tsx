@@ -9,6 +9,7 @@ import {
   TRANSITION_VERB,
 } from '@tablex/shared'
 import { cn, FoodTypeBadge, Money, StatusBadge } from '@tablex/ui'
+import { ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { useId, useState } from 'react'
 import { Button } from '@/components/ui'
@@ -150,23 +151,14 @@ export function OrderCard({
             >
               {formatElapsed(waited)}
             </span>
-            <svg
+            <ChevronDown
               aria-hidden="true"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
               className={cn(
                 'h-4 w-4 text-muted transition-transform duration-300 motion-reduce:transition-none',
                 expanded ? 'rotate-180' : '',
               )}
-            >
-              <path
-                d="M6 8l4 4 4-4"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+              strokeWidth={2}
+            />
           </span>
         </span>
       </button>

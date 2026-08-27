@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@tablex/ui'
+import { CircleAlert, CircleCheck, Info, type LucideIcon, TriangleAlert } from 'lucide-react'
 import type { HTMLAttributes, ReactNode } from 'react'
 
 export type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
@@ -58,34 +59,12 @@ const NOTICE: Record<Tone, string> = {
   danger: 'border-danger-line bg-danger-soft text-ink',
 }
 
-const ICON: Record<Tone, ReactNode> = {
-  neutral: <circle cx="10" cy="10" r="7" strokeWidth="1.75" />,
-  accent: (
-    <>
-      <circle cx="10" cy="10" r="7.25" strokeWidth="1.75" />
-      <path d="M10 9v4.5M10 6.5v.01" strokeWidth="1.75" strokeLinecap="round" />
-    </>
-  ),
-  success: (
-    <path
-      d="M4.5 10.5l3.5 3.5 7.5-8"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  ),
-  warning: (
-    <>
-      <path d="M10 3.5l7 12.5H3z" strokeWidth="1.75" strokeLinejoin="round" />
-      <path d="M10 8v3.5M10 13.5v.01" strokeWidth="1.75" strokeLinecap="round" />
-    </>
-  ),
-  danger: (
-    <>
-      <circle cx="10" cy="10" r="7.25" strokeWidth="1.75" />
-      <path d="M10 6.5v4.5M10 13.5v.01" strokeWidth="1.75" strokeLinecap="round" />
-    </>
-  ),
+const ICON: Record<Tone, LucideIcon> = {
+  neutral: Info,
+  accent: Info,
+  success: CircleCheck,
+  warning: TriangleAlert,
+  danger: CircleAlert,
 }
 
 export interface NoticeProps {
@@ -108,6 +87,7 @@ export interface NoticeProps {
  * role="status" paragraph, so a failure looked exactly like a success.
  */
 export function Notice({ tone = 'neutral', title, children, action, className }: NoticeProps) {
+  const ToneIcon = ICON[tone]
   const iconTint =
     tone === 'danger'
       ? 'text-danger'
@@ -128,15 +108,11 @@ export function Notice({ tone = 'neutral', title, children, action, className }:
         className,
       )}
     >
-      <svg
+      <ToneIcon
         aria-hidden="true"
-        viewBox="0 0 20 20"
-        fill="none"
-        stroke="currentColor"
+        strokeWidth={1.75}
         className={cn('mt-0.5 h-4 w-4 shrink-0', iconTint)}
-      >
-        {ICON[tone]}
-      </svg>
+      />
       <div className="min-w-0 flex-1">
         {title ? <p className="font-semibold">{title}</p> : null}
         {children ? <div className={cn(title ? 'mt-0.5 text-muted' : '')}>{children}</div> : null}
@@ -151,8 +127,8 @@ export interface EmptyStateProps {
   /** Say what to do next, not just that there is nothing. */
   description?: ReactNode
   action?: ReactNode
-  /** Inline SVG at 20px, drawn in a sunken disc. */
-  icon?: ReactNode
+  /** A lucide icon, shown at 20px in a sunken disc. */
+  icon?: LucideIcon
   className?: string
   /** For an empty column on the board, where a full-height panel would blow the layout apart. */
   compact?: boolean
@@ -163,7 +139,7 @@ export function EmptyState({
   title,
   description,
   action,
-  icon,
+  icon: Icon,
   compact = false,
   className,
 }: EmptyStateProps) {
@@ -175,17 +151,9 @@ export function EmptyState({
         className,
       )}
     >
-      {icon && !compact ? (
+      {Icon && !compact ? (
         <span className="mb-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-surface-sunken text-muted">
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            className="h-5 w-5"
-          >
-            {icon}
-          </svg>
+          <Icon aria-hidden="true" className="h-5 w-5" strokeWidth={1.5} />
         </span>
       ) : null}
       <p className={cn('font-medium text-ink', compact ? 'text-sm' : 'text-base')}>{title}</p>

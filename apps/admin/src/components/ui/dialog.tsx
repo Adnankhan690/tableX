@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@tablex/ui'
+import { X } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef } from 'react'
 import { Button } from './button'
 
@@ -95,15 +96,7 @@ export function Dialog({
           className="-mr-1.5 -mt-1"
           aria-label="Close"
         >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            className="h-4 w-4"
-          >
-            <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" strokeWidth="1.75" strokeLinecap="round" />
-          </svg>
+          <X aria-hidden="true" className="h-4 w-4" />
         </Button>
       </div>
 

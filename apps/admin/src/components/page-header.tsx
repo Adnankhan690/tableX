@@ -1,4 +1,5 @@
 import { cn } from '@tablex/ui'
+import { ChevronLeft } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
@@ -44,20 +45,7 @@ export function PageHeader({ title, subtitle, actions, meta, back, className }: 
             href={back.href}
             className="-ml-1 mb-0.5 inline-flex items-center gap-1 rounded-control px-1 py-0.5 text-xs font-medium text-muted transition-colors hover:bg-surface-sunken hover:text-ink"
           >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              className="h-3.5 w-3.5"
-            >
-              <path
-                d="M11.5 5l-5 5 5 5"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
             {back.label}
           </Link>
         ) : null}

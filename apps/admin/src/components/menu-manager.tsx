@@ -10,6 +10,7 @@ import type {
 } from '@tablex/shared'
 import { FOOD_TYPE_LABEL } from '@tablex/shared'
 import { cn, ErrorState, FoodTypeBadge } from '@tablex/ui'
+import { ChevronDown, UtensilsCrossed } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
@@ -386,20 +387,7 @@ export function MenuManager() {
                 </Button>
               ) : null
             }
-            icon={
-              <>
-                <path
-                  d="M5 3.5v13M5 3.5a2.5 2.5 0 0 1 2.5 2.5v2.5A2.5 2.5 0 0 1 5 11"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M13.5 3.5v13M12 3.5h3a1.75 1.75 0 0 1 0 6.5h-3"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </>
-            }
+            icon={UtensilsCrossed}
           />
         ) : visible.length === 0 ? (
           <EmptyState
@@ -431,23 +419,14 @@ export function MenuManager() {
                         <Badge tone="neutral">{category.status}</Badge>
                       ) : null}
                     </span>
-                    <svg
+                    <ChevronDown
                       aria-hidden="true"
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      stroke="currentColor"
                       className={cn(
                         'h-4 w-4 shrink-0 text-muted transition-transform',
                         isCollapsed ? '' : 'rotate-180',
                       )}
-                    >
-                      <path
-                        d="M6 8l4 4 4-4"
-                        strokeWidth="1.75"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                      strokeWidth={2}
+                    />
                   </button>
                 </h2>
 

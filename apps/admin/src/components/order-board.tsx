@@ -10,6 +10,7 @@ import type {
 } from '@tablex/shared'
 import { requiresReason, TRANSITION_VERB } from '@tablex/shared'
 import { cn, ErrorState } from '@tablex/ui'
+import { Inbox } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { OrderCard } from '@/components/order-card'
@@ -380,12 +381,7 @@ export function OrderBoard() {
                   ? 'New orders appear here the moment a diner places one.'
                   : 'Try a different status from the filter above.'
             }
-            icon={
-              <>
-                <rect x="3" y="4" width="14" height="13" rx="2" strokeWidth="1.5" />
-                <path d="M7 9h6M7 12.5h4" strokeWidth="1.5" strokeLinecap="round" />
-              </>
-            }
+            icon={Inbox}
           />
         ) : (
           /*

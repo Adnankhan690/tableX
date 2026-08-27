@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@tablex/ui'
+import { Search, X } from 'lucide-react'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 
 /**
@@ -80,16 +81,11 @@ export function SearchInput({
 }: SearchInputProps) {
   return (
     <div className={cn('relative flex min-w-0 flex-1 items-center', className)} {...rest}>
-      <svg
+      <Search
         aria-hidden="true"
-        viewBox="0 0 20 20"
-        fill="none"
-        stroke="currentColor"
         className="pointer-events-none absolute left-3 h-4 w-4 text-faint"
-      >
-        <circle cx="9" cy="9" r="5.5" strokeWidth="1.75" />
-        <path d="M13.5 13.5l3 3" strokeWidth="1.75" strokeLinecap="round" />
-      </svg>
+        strokeWidth={1.75}
+      />
       <input
         type="search"
         value={value}
@@ -111,15 +107,7 @@ export function SearchInput({
           aria-label="Clear search"
           className="absolute right-1.5 inline-flex h-8 w-8 items-center justify-center rounded-control text-muted transition-colors hover:bg-surface-sunken hover:text-ink"
         >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            className="h-4 w-4"
-          >
-            <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" strokeWidth="1.75" strokeLinecap="round" />
-          </svg>
+          <X aria-hidden="true" className="h-4 w-4" />
         </button>
       ) : null}
     </div>

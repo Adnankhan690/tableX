@@ -1,5 +1,6 @@
 'use client'
 
+import { CircleAlert } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui'
 
@@ -29,17 +30,7 @@ export default function Error({
         aria-hidden="true"
         className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-danger-soft text-danger"
       >
-        {/* The heading names the state; the glyph is decoration. */}
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 20 20"
-          fill="none"
-          stroke="currentColor"
-          className="h-5 w-5"
-        >
-          <circle cx="10" cy="10" r="7.25" strokeWidth="1.75" />
-          <path d="M10 6.5v4.5M10 13.5v.01" strokeWidth="1.75" strokeLinecap="round" />
-        </svg>
+        <CircleAlert aria-hidden="true" className="h-5 w-5" strokeWidth={1.75} />
       </span>
       <div>
         <h1 className="text-display font-semibold">Something went wrong</h1>

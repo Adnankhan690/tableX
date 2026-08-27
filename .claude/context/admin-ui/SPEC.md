@@ -73,6 +73,18 @@ Named sizes, so a component picks a role rather than a number: `micro` 11px (col
 (figures), `display` 24 (auth screens). Money and counts carry `[font-variant-numeric:tabular-nums]`
 so a column does not jitter as the digits change.
 
+## Icons
+
+`lucide-react`, at 14–18px with `strokeWidth` 1.5–2 depending on size — lucide's 2px default is
+drawn for 24px and reads heavy next to 12px text. One icon system, used everywhere: nav, filters,
+notices, empty states, chevrons, the stats strip. The two brand marks (the rail monogram, the login
+wordmark) stay hand-drawn, because a logo is not an icon.
+
+This is a **deliberate exception** to the rule in `docs/CONTRIBUTING.md` that these apps ship no
+icon library. That rule is written for the diner app, where PRD §7 makes payload a product
+requirement; this panel is authenticated and held open for a shift. Same argument as the webfont.
+Nothing else gets added without making it again.
+
 ## Primitives
 
 In `apps/admin/src/components/ui/`. Admin-local on purpose: `packages/ui` holds only what is
@@ -84,6 +96,9 @@ present-tense label) · `IconButton` (label required) · `Card` / `CardHeader` /
 the control) · `Badge` / `Count` · `Notice` (tone drives the aria role) · `EmptyState` · `Skeleton` ·
 `Dialog` (native `<dialog>`, named and described) · `Toolbar` / `ToggleChip` / `SearchInput`.
 
+Icons are passed as *components*, not markup: `EmptyState` and `Notice` take a `LucideIcon`, so a
+caller names an icon rather than drawing one and every disc, tint and stroke width stays consistent.
+
 Two conventions worth stating:
 
 **Disabled is a token swap, never an opacity.** `disabled:opacity-40` was on 19 controls, and it
@@ -94,6 +109,29 @@ muted ink and keeps the text readable.
 **Never `outline-none` on an input.** Tailwind compiles it to a transparent 2px outline in the
 utilities layer, which outranks the `:focus-visible` rule in `@layer base` and silently deletes the
 focus ring. Six inputs did that, on the one screen where a stray keystroke changes a price.
+
+## The stats strip
+
+Worth its own note, because it is the surface that most easily degrades into a list of numbers.
+Three rules hold it up:
+
+1. **A hairline cell grid, made of gaps.** The container is `bg-divider` with `gap-px`, and each
+   cell paints its own `bg-surface` — so the gaps *are* the rules. That survives wrapping at any
+   column count (8 → 4 → 2), where a per-cell `border-l` draws a stray line at the start of every
+   wrapped row.
+2. **Every figure states what it means.** Eight bare numbers make the reader do the arithmetic — is
+   3 live a lot? is ₹1,470 unpaid bad? Each cell carries one context line: a share of today, a
+   definition of what the server actually sums (`Collected` = paid orders only; `On open orders` =
+   pending payment on non-terminal ones), or a comparison to a real threshold. Nothing here needed
+   an API change.
+3. **Targets come from the product, not from taste.** "Avg. to accept" is measured against
+   `AGE_WARN_SECONDS` — the same constant at which an order card starts tinting — and turns green
+   or amber against it. Reusing the board's own escalation threshold is what makes it a target
+   rather than a decorated number.
+
+The one micro-visualisation is the composition bar under `Placed`, and it is there because placed
+*is* exactly live + completed + cancelled. Anything else would be a sparkline of data this endpoint
+does not return.
 
 ## Layout
 

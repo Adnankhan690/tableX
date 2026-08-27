@@ -11,6 +11,7 @@ import {
   TRANSITION_VERB,
 } from '@tablex/shared'
 import { cn, ErrorState, FoodTypeBadge, Money, Spinner, StatusBadge } from '@tablex/ui'
+import { Phone } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
@@ -435,19 +436,7 @@ export function OrderDetail({ orderUid }: { orderUid: string }) {
                   href={`tel:${order.customer_phone}`}
                   className="inline-flex min-h-tap items-center gap-1.5 text-base font-medium text-accent hover:underline"
                 >
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    stroke="currentColor"
-                    className="h-4 w-4"
-                  >
-                    <path
-                      d="M5 3.5h3l1.5 3.5-2 1.5a8 8 0 0 0 4 4l1.5-2 3.5 1.5v3a1.5 1.5 0 0 1-1.7 1.5A13 13 0 0 1 3.5 5.2 1.5 1.5 0 0 1 5 3.5z"
-                      strokeWidth="1.5"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <Phone aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
                   {order.customer_phone}
                 </a>
               ) : null}

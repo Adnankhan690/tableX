@@ -3,6 +3,7 @@
 import { isApiError } from '@tablex/api-client'
 import type { TableInfo, TableQR } from '@tablex/shared'
 import { Base64Image, cn, ErrorState } from '@tablex/ui'
+import { Printer, QrCode, Table2 } from 'lucide-react'
 import { useCallback, useEffect, useId, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
@@ -185,18 +186,7 @@ export function TablesManager() {
           tables && tables.length > 0 ? (
             <Button
               onClick={() => setPrinting(true)}
-              icon={
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  stroke="currentColor"
-                  className="h-4 w-4"
-                >
-                  <path d="M6 7V3.5h8V7M6 15.5h8V18H6z" strokeWidth="1.5" strokeLinejoin="round" />
-                  <rect x="3.5" y="7" width="13" height="8.5" rx="1.5" strokeWidth="1.5" />
-                </svg>
-              }
+              icon={<Printer aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />}
             >
               Print QR sheet
             </Button>
@@ -230,12 +220,7 @@ export function TablesManager() {
             <EmptyState
               title="No tables yet"
               description="Add your floor to start taking orders. Each table gets its own QR code."
-              icon={
-                <>
-                  <rect x="3" y="4" width="14" height="6" rx="1.5" strokeWidth="1.5" />
-                  <path d="M6.5 10v6M13.5 10v6" strokeWidth="1.5" strokeLinecap="round" />
-                </>
-              }
+              icon={Table2}
             />
           ) : (
             /* The grid grows with the viewport instead of being capped inside a two-thirds column:
@@ -279,32 +264,7 @@ export function TablesManager() {
                           aria-pressed={selected}
                           onClick={() => (selected ? setQr(null) : showQR(table))}
                           icon={
-                            <svg
-                              aria-hidden="true"
-                              viewBox="0 0 20 20"
-                              fill="none"
-                              stroke="currentColor"
-                              className="h-4 w-4"
-                            >
-                              <rect x="3" y="3" width="5.5" height="5.5" rx="1" strokeWidth="1.5" />
-                              <rect
-                                x="11.5"
-                                y="3"
-                                width="5.5"
-                                height="5.5"
-                                rx="1"
-                                strokeWidth="1.5"
-                              />
-                              <rect
-                                x="3"
-                                y="11.5"
-                                width="5.5"
-                                height="5.5"
-                                rx="1"
-                                strokeWidth="1.5"
-                              />
-                              <path d="M11.5 11.5h2v2h-2zM15 15h2v2h-2z" strokeWidth="1.5" />
-                            </svg>
+                            <QrCode aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
                           }
                         >
                           {selected ? 'Hide QR' : 'Show QR'}

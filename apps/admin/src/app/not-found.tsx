@@ -1,3 +1,4 @@
+import { SearchX } from 'lucide-react'
 import Link from 'next/link'
 
 /**
@@ -11,17 +12,7 @@ export default function NotFound() {
         aria-hidden="true"
         className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-surface-sunken text-muted"
       >
-        {/* The heading names the state; the glyph is decoration. */}
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 20 20"
-          fill="none"
-          stroke="currentColor"
-          className="h-5 w-5"
-        >
-          <circle cx="9" cy="9" r="5.75" strokeWidth="1.75" />
-          <path d="M13.5 13.5l3.5 3.5" strokeWidth="1.75" strokeLinecap="round" />
-        </svg>
+        <SearchX aria-hidden="true" className="h-5 w-5" strokeWidth={1.75} />
       </span>
       <div>
         <h1 className="text-display font-semibold">Page not found</h1>

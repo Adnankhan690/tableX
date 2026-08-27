@@ -1,65 +1,27 @@
 'use client'
 
 import { cn } from '@tablex/ui'
+import {
+  ClipboardList,
+  type LucideIcon,
+  Settings,
+  Table2,
+  Users,
+  UtensilsCrossed,
+} from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useAuth } from '@/components/auth-provider'
 import { Button } from '@/components/ui'
 
-/** Inline SVG only -- no icon library ships here (see package.json). */
-const ICONS: Record<string, ReactNode> = {
-  orders: (
-    <>
-      <rect x="3.5" y="4" width="17" height="16" rx="2.5" strokeWidth="1.75" />
-      <path d="M8 9h8M8 13h8M8 17h4" strokeWidth="1.75" strokeLinecap="round" />
-    </>
-  ),
-  menu: (
-    <>
-      <path
-        d="M6 4v16M6 4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-      />
-      <path d="M16 4v16M14 4h4a2 2 0 0 1 0 8h-4" strokeWidth="1.75" strokeLinecap="round" />
-    </>
-  ),
-  tables: (
-    <>
-      <rect x="3.5" y="4.5" width="17" height="7" rx="1.5" strokeWidth="1.75" />
-      <path d="M7 11.5V19M17 11.5V19" strokeWidth="1.75" strokeLinecap="round" />
-    </>
-  ),
-  settings: (
-    <>
-      <circle cx="12" cy="12" r="3" strokeWidth="1.75" />
-      <path
-        d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-      />
-    </>
-  ),
-  staff: (
-    <>
-      <circle cx="9" cy="8" r="3.5" strokeWidth="1.75" />
-      <path
-        d="M3 20a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M18 20a5 5 0 0 0-2-4"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-      />
-    </>
-  ),
-}
-
-const NAV = [
-  { href: '/orders', label: 'Orders', icon: 'orders' },
-  { href: '/menu', label: 'Menu', icon: 'menu' },
-  { href: '/tables', label: 'Tables', icon: 'tables' },
-  { href: '/settings', label: 'Settings', icon: 'settings' },
-  { href: '/staff', label: 'Staff', icon: 'staff' },
-] as const
+const NAV: readonly { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/orders', label: 'Orders', icon: ClipboardList },
+  { href: '/menu', label: 'Menu', icon: UtensilsCrossed },
+  { href: '/tables', label: 'Tables', icon: Table2 },
+  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/staff', label: 'Staff', icon: Users },
+]
 
 /** The restaurant's initials, as a stand-in for a logo nobody has uploaded. */
 function initials(name: string): string {
@@ -119,6 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           {NAV.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
+            const Icon = item.icon
             return (
               <Link
                 key={item.href}
@@ -132,15 +95,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                     : 'text-muted hover:bg-surface-sunken hover:text-ink',
                 )}
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  className="h-[18px] w-[18px] shrink-0"
+                <Icon
                   aria-hidden="true"
-                >
-                  {ICONS[item.icon]}
-                </svg>
+                  className="h-[18px] w-[18px] shrink-0"
+                  strokeWidth={1.75}
+                />
                 {item.label}
               </Link>
             )

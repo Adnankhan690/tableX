@@ -136,7 +136,10 @@ const stats = await page.locator('body').innerText()
 // eight labels where it contradicted the filtered board below it.
 ck('the strip says what period it covers', /Today/i.test(stats))
 ck('placed figure present', /Placed/i.test(stats))
-ck('avg-to-accept tile present', /Avg. to accept/i.test(stats))
+ck('avg-to-accept figure present', /Avg. to accept/i.test(stats))
+// Each figure now carries a line of context derived from the others -- a share, a definition, or
+// the board's own acceptance target -- so the strip states what its numbers mean.
+ck('figures carry context', /% of today/.test(stats) && /On open orders/.test(stats))
 ck('unpaid tile present', /Unpaid/i.test(stats))
 await page.screenshot({ path: `${SHOT}/a2-board.png` })
 
