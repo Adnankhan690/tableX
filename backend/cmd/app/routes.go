@@ -92,6 +92,9 @@ func (a *App) addAdminRoutes(engine *gin.Engine) {
 	{
 		open.POST("/auth/login", a.controllers.Auth.Login)
 		open.POST("/auth/refresh", a.controllers.Auth.Refresh)
+		open.POST("/auth/forgot-password", a.controllers.Auth.ForgotPassword)
+		open.POST("/auth/verify-reset-code", a.controllers.Auth.VerifyResetCode)
+		open.POST("/auth/reset-password", a.controllers.Auth.ResetPassword)
 	}
 
 	admin := engine.Group(AdminAPIV1, a.middlewares.StaffAuth())

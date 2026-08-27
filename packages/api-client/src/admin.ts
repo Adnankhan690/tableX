@@ -9,6 +9,7 @@ import type {
   CreateMenuItemRequest,
   CreateStaffRequest,
   CreateTableRequest,
+  ForgotPasswordRequest,
   ListOrdersQuery,
   MarkPaymentFailedRequest,
   OrderListResponse,
@@ -16,6 +17,7 @@ import type {
   OrderView,
   PaymentView,
   RefreshTokenResponse,
+  ResetPasswordRequest,
   RestaurantSettings,
   StaffListResponse,
   StaffLoginRequest,
@@ -29,6 +31,7 @@ import type {
   UpdateRestaurantRequest,
   UpdateStaffRequest,
   UpdateTableRequest,
+  VerifyResetCodeRequest,
 } from '@tablex/shared'
 import { HttpClient, type HttpClientConfig } from './http'
 
@@ -52,6 +55,18 @@ export class AdminApi {
 
   login(body: StaffLoginRequest): Promise<StaffLoginResponse> {
     return this.http.request(`${ADMIN}/auth/login`, { method: 'POST', body })
+  }
+
+  forgotPassword(body: ForgotPasswordRequest): Promise<void> {
+    return this.http.request(`${ADMIN}/auth/forgot-password`, { method: 'POST', body })
+  }
+
+  verifyResetCode(body: VerifyResetCodeRequest): Promise<void> {
+    return this.http.request(`${ADMIN}/auth/verify-reset-code`, { method: 'POST', body })
+  }
+
+  resetPassword(body: ResetPasswordRequest): Promise<void> {
+    return this.http.request(`${ADMIN}/auth/reset-password`, { method: 'POST', body })
   }
 
   /**

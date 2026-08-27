@@ -66,3 +66,21 @@ type RequestChangePassword struct {
 type ResponseStaffList struct {
 	Staff []StaffMember `json:"staff"`
 }
+
+// RequestForgotPassword initiates the reset flow.
+type RequestForgotPassword struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// RequestVerifyResetCode validates the 6-digit code.
+type RequestVerifyResetCode struct {
+	Email string `json:"email" binding:"required,email"`
+	Code  string `json:"code" binding:"required,len=6"`
+}
+
+// RequestResetPassword updates the password using the code.
+type RequestResetPassword struct {
+	Email       string `json:"email" binding:"required,email"`
+	Code        string `json:"code" binding:"required,len=6"`
+	NewPassword string `json:"new_password" binding:"required,min=8,max=128"`
+}
