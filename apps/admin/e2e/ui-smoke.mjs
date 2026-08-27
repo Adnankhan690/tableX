@@ -170,13 +170,37 @@ console.log('=== 4. Orders board controls ===')
 await page.goto(`${APP}/orders`, { waitUntil: 'networkidle' })
 await page.waitForTimeout(1000)
 const board = await page.locator('body').innerText()
-ck(
-  'the five kitchen columns are present',
-  ['NEW', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED'].every((c) => board.toUpperCase().includes(c)),
-)
+// One list with a status filter, not five columns. The stage lives on each card's badge and in the
+// filter's options, so that is what this asserts on -- the old five-column check survived the
+// rewrite and kept passing only because the badges happen to contain those words, which made it a
+// test of nothing.
+ck('the status filter is present', (await page.getByLabel('Filter by status').count()) === 1)
+ck('the board opens on open orders', /Open orders/i.test(board))
 ck('search is present and labelled', (await page.locator('input[type=search]').count()) >= 1)
 ck('the table filter is present', (await page.locator('[role=combobox]').count()) >= 1)
 ck('an order card renders as an article', (await page.locator('article').count()) >= 0)
+// The figures collapse, and the choice is remembered. Both halves matter: a collapse that forgets
+// itself reopens on the next navigation, which undoes the user's decision for them.
+const figuresToggle = page.locator('section[aria-label="Today\'s figures"] button[aria-expanded]')
+ck('the figures start expanded', (await figuresToggle.getAttribute('aria-expanded')) === 'true')
+await figuresToggle.click()
+await page.waitForTimeout(500)
+ck('the figures collapse', (await figuresToggle.getAttribute('aria-expanded')) === 'false')
+ck(
+  'and the two actionable figures stay in the header',
+  /live/i.test(await figuresToggle.innerText()) && /unpaid/i.test(await figuresToggle.innerText()),
+)
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(1500)
+ck(
+  'the collapsed choice survives a reload',
+  (await page
+    .locator('section[aria-label="Today\'s figures"] button[aria-expanded]')
+    .getAttribute('aria-expanded')) === 'false',
+)
+await page.locator('section[aria-label="Today\'s figures"] button[aria-expanded]').click()
+await page.waitForTimeout(500)
+
 // Switching the status filter refetches: "Completed" is a terminal state, so it cannot appear in
 // the default view, which makes it a real test that the query changed rather than the list being
 // sliced client-side.

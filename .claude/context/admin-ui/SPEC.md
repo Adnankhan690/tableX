@@ -133,6 +133,30 @@ The one micro-visualisation is the composition bar under `Placed`, and it is the
 *is* exactly live + completed + cancelled. Anything else would be a sparkline of data this endpoint
 does not return.
 
+It **collapses**, on the same CSS mechanism as the order card, and the choice is remembered in
+`localStorage` — the strip remounts on every navigation, so a collapse that forgot itself would
+reopen the moment someone looked at the menu and came back. Read it after mount, never in the
+initial state, or the server markup and the first client render disagree. Collapsed, the header
+keeps `live` and `unpaid`: the two figures a staff member would notice from the doorway, so
+reclaiming the space never blinds anyone.
+
+## Animating to auto height
+
+Two surfaces expand — the order card's ticket lines and the stats strip — and both use the same
+thing, with **no JavaScript in the animation path**:
+
+```
+grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none
+open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+  └── inner wrapper: min-h-0
+```
+
+A grid row interpolating `0fr → 1fr` reaches the content's own height, which `height: auto` cannot
+do — so there is no measuring, no `ResizeObserver`, and nothing for a board that re-renders once a
+second to fight with. `min-h-0` on the inner wrapper is load-bearing: without it the child's
+min-content height holds the row open and nothing moves. Verified by measurement rather than by
+eye: the card's region walks 0 → 43 → 82 → 95 → 98px, the strip's 107 → 50 → 17 → 3 → 0.
+
 ## Layout
 
 - The rail is `sticky h-dvh` at `lg` and a top bar below it. It was `md`, so the 224px rail was
