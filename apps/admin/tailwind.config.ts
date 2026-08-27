@@ -57,7 +57,12 @@ const config: Config = {
         'age-late': 'var(--ad-age-late)',
         'age-late-line': 'var(--ad-age-late-line)',
       },
-      fontFamily: { sans: ['var(--ad-font-sans)'] },
+      // A matched pair -- see layout.tsx. `font-mono` is not for code here; it is the
+      // display-figure tier, and the `.figures` utility in globals.css is how it is applied.
+      fontFamily: {
+        sans: ['var(--ad-font-sans)'],
+        mono: ['var(--ad-font-mono)'],
+      },
       fontSize: {
         // A named scale, so a component picks a role rather than a number. Line heights are set
         // here to keep vertical rhythm out of the call sites.

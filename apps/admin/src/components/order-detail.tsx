@@ -345,10 +345,7 @@ export function OrderDetail({ orderUid }: { orderUid: string }) {
               ) : null}
               <div className="flex items-baseline justify-between border-t border-line pt-2">
                 <span className="text-base font-semibold">Total</span>
-                <Money
-                  money={order.totals.total}
-                  className="text-metric font-semibold [font-variant-numeric:tabular-nums]"
-                />
+                <Money money={order.totals.total} className="figures text-metric font-semibold" />
               </div>
             </div>
           </Card>
@@ -366,7 +363,7 @@ export function OrderDetail({ orderUid }: { orderUid: string }) {
                 </Badge>
               }
             />
-            <p className="text-metric font-semibold [font-variant-numeric:tabular-nums]">
+            <p className="figures text-metric font-semibold">
               <Money money={order.totals.total} />
             </p>
 

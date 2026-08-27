@@ -106,11 +106,17 @@
      draw its own. */
   --ad-focus: #0b57d0;
 
-  /* next/font injects the family; the fallback stack matters on the first paint and if the font
-     request fails, so it is a real stack rather than a bare sans-serif. */
+  /* next/font injects the families; the fallback stacks matter on the first paint and if a font
+     request fails, so each is a real stack rather than a bare sans-serif/monospace.
+
+     Two faces, not one, and they are a matched pair -- see the note in layout.tsx. The sans is
+     everything you read as language; the mono is the display-figure tier only (`.figures` below). */
   --ad-font-sans:
     var(--font-admin-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, sans-serif;
+  --ad-font-mono:
+    var(--font-admin-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
 
   /* Bridge to @tablex/ui, which reads its own token names. Mapped rather than duplicated so each
      colour has one definition. */
@@ -146,11 +152,12 @@
     font-family: var(--ad-font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Inter's contextual alternates give a single-storey 'a' at small sizes in some renderers;
-       ss01 keeps the double-storey form, which is what makes a dense table legible. */
-    font-feature-settings:
-      "cv05" 1,
-      "ss01" 1;
+    /* No font-feature-settings here on purpose. This used to carry `"cv05" 1, "ss01" 1` with a
+       comment claiming ss01 held Inter's double-storey 'a' -- Inter's 'a' is double-storey by
+       default and no renderer swaps it, so the stated reason was never true, and those axis tags
+       are Inter's own numbering that Geist would silently ignore anyway. The legibility problems
+       they were reaching for -- figures shifting width, 0/O and 1/l colliding in a called-out
+       order number -- are solved properly by `.figures` below. */
   }
 
   /* This panel is driven at speed during service, often by keyboard on a laptop behind the
@@ -180,6 +187,27 @@
 }
 
 @layer utilities {
+  /**
+   * The display-figure tier.
+   *
+   * A deliberate two-tier rule, so this does not turn into "some numbers are mono and some are
+   * not" by accident:
+   *
+   *   `.figures` (mono)      -- a number read on its own, at a glance or down a column: the order
+   *                             number called across the kitchen, the age clock, a stats-strip
+   *                             metric, the Total. Mono makes the column align by construction and
+   *                             makes 0/O and 1/l unmistakable at arm's length on a counter tablet.
+   *   `tabular-nums` (sans)  -- a number read inside a sentence or a dense line-item row, where a
+   *                             mono face would fight the prose around it. Left as it was.
+   *
+   * Safe to mix in one line because the two faces are metrically identical (see layout.tsx): the
+   * baseline and line box do not move.
+   */
+  .figures {
+    font-family: var(--ad-font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
   /**
    * Wide content -- the order board's column rail, the QR sheet -- scrolls inside its own
    * container. The page body must never scroll sideways: on a tablet in portrait that turns every
