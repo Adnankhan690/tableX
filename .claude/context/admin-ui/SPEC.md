@@ -42,20 +42,22 @@ Defined once in `apps/admin/src/app/globals.css` and reached through Tailwind na
 | `--ad-line-strong` | `#bcc7d6` | the edge of a control, always paired with a field fill |
 | `--ad-accent` | `#0b57d0` | white on it is 5.6:1, so a filled button carries its label at AA |
 | `--ad-danger` / `--ad-warning` / `--ad-success` | `#b4231b` / `#8a4b00` / `#0a6b3c` | 6.4:1 / 6.9:1 / 5.9:1 — each with a `-soft` fill and a `-line` edge |
-| `--ad-age-warn-bar` / `--ad-age-late-bar` | `#d98a04` / `#c9342a` | the escalation bar on an order card |
-| `--ad-age-warn-tint` / `--ad-age-late-tint` | `#fff8ea` / `#fdeeec` | the card's header strip only |
+| `--ad-age-warn` / `--ad-age-late` | `#ffeecb` / `#ffdcd7` | the top of an order card's escalation gradient |
+| `--ad-age-warn-line` / `--ad-age-late-line` | `#f0c98d` / `#efa79d` | that card's outline |
 
 **Three weights of line, not one.** The previous single `--ad-line` had to be crisp enough to
 outline a card and quiet enough to rule a table, and could be neither: at 1.66:1 every list became a
 stack of boxes.
 
-**Escalation fills the card, and that is a product decision, not a default.** The audit argued for
-moving it to a 3px edge bar so the card body could stay white; it was built that way, reviewed, and
-reversed on the owner's call — a tinted card is recognisable across a kitchen in a way an edge bar is
-not, and seeing which tickets are overdue at a glance is what the board is for. The cost is that
-`--ad-age-late` and `--ad-age-warn` sit behind text and buttons, which makes them the binding
-constraint on the palette: each is checked against ink, muted **and** danger (all ≥ 4.5:1), and
-darkening either fill breaks the muted and danger pairings before it breaks the headline ink ratio.
+**Escalation tints the card, as a gradient, and that is a product decision, not a default.** The
+audit argued for a 3px edge bar so the card body could stay white; it was built that way, reviewed,
+and reversed on the owner's call — a tinted card is recognisable across a kitchen in a way an edge
+bar is not. A *flat* tint then failed for a different reason: white outlined buttons read as holes
+punched in the card and the blue primary clashed with the pink. So the tint holds through the top
+half — order number, status, clock — and fades to the card surface by the bottom, where the controls
+live. These two values remain the binding constraint on the palette: each is measured against ink,
+muted **and** danger at the strong end of the gradient (late 7.4 / 5.3 / 5.2; warn 8.2 / 5.8 / 5.7),
+and darkening either fill breaks the muted and danger pairings before the headline ink ratio.
 
 **Opacity modifiers do not work on these tokens.** `bg-accent/40` silently produces nothing. Every
 state that looks translucent is its own solid token.

@@ -48,13 +48,14 @@ const config: Config = {
         'success-soft': 'var(--ad-success-soft)',
         'success-line': 'var(--ad-success-line)',
 
-        // Order age escalation. Three steps rather than a gradient, because staff need to
-        // recognise "this one is late" instantly and a continuous ramp gives no threshold to
-        // recognise. These are card FILLS -- see the contrast note in globals.css, which is the
-        // binding constraint on the whole palette.
+        // Order age escalation. Three discrete steps rather than a continuous ramp, because staff
+        // need to recognise "this one is late" instantly and a gradient of urgency gives no
+        // threshold to recognise. Each is the TOP of a card gradient that fades to the surface --
+        // see the contrast note in globals.css, which is the binding constraint on the palette.
         'age-warn': 'var(--ad-age-warn)',
         'age-warn-line': 'var(--ad-age-warn-line)',
         'age-late': 'var(--ad-age-late)',
+        'age-late-line': 'var(--ad-age-late-line)',
       },
       fontFamily: { sans: ['var(--ad-font-sans)'] },
       fontSize: {

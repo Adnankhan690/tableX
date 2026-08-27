@@ -73,25 +73,34 @@
   --ad-success-line: #a8dcbe;
 
   /**
-   * Order-age escalation, as a whole-card fill.
+   * Order-age escalation.
    *
-   * Deliberately the loud version: a tinted card is recognisable across a kitchen in a way a 3px
-   * edge bar is not, and being able to see at a glance which tickets are overdue is the board's
-   * job. The cost is that every word and every button on a late ticket sits on a tint, so these
-   * two values are the BINDING CONSTRAINT on the palette -- each is checked against the three
-   * things that sit on it:
+   * A tinted card, because that is recognisable across a kitchen in a way an edge bar is not, and
+   * knowing which tickets are overdue at a glance is what the board is for.
    *
-   *   on --ad-age-late (#ffd4ce):  ink 12.6:1 · muted 4.96:1 · danger 4.87:1
-   *   on --ad-age-warn (#ffeab8):  ink 14.6:1 · muted 5.75:1 · danger 5.64:1
+   * The tint is the TOP of a gradient that fades to the card surface, not a flat fill. Flat, the
+   * mid-saturation rose fought everything sitting on it: white outlined buttons read as holes
+   * punched in the card, and the blue status pill and blue primary clashed with the pink outright.
+   * Fading down means the signal is strongest exactly where the eye lands -- the order number, the
+   * status, the clock -- and the controls sit on near-white where their own colours can work.
    *
-   * All clear 4.5:1. Darkening either fill breaks the muted and danger pairings first, so if one
-   * changes, recheck those two -- not just the headline ink ratio.
+   * Both values are cleaner and a step lighter than the ones they replace (#ffd4ce, #ffeab8), which
+   * carried a peach and a mustard cast respectively. Text still sits on the strong end of the
+   * gradient, so that is where the ratios are measured:
+   *
+   *   on --ad-age-late (#ffdcd7):  ink 7.4:1 · muted 5.3:1 · danger 5.2:1
+   *   on --ad-age-warn (#ffeecb):  ink 8.2:1 · muted 5.8:1 · danger 5.7:1
+   *
+   * All clear 4.5:1 with room to spare. These remain the binding constraint on the palette: if
+   * either fill is darkened, muted and danger fail before the headline ink ratio does.
    */
-  --ad-age-warn: #ffeab8;
-  /* The warn card's outline. Separate from the fill because a card whose border and background are
-     the same colour is the one card on the board with no visible edge. */
-  --ad-age-warn-line: #f0c169;
-  --ad-age-late: #ffd4ce;
+  --ad-age-warn: #ffeecb;
+  /* The card outline. Softer than the danger red it used to use: a saturated fill inside a
+     saturated red border reads as an error box rather than as an urgent ticket, and the state is
+     already carried by the fill, the badge and the clock. */
+  --ad-age-warn-line: #f0c98d;
+  --ad-age-late: #ffdcd7;
+  --ad-age-late-line: #efa79d;
 
   /* Focus. One ring, defined once, used by the base rule below and by any component that needs to
      draw its own. */

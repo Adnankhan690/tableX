@@ -94,17 +94,27 @@ export function OrderCard({
 
       The tinted card is the escalation signal, and it is deliberately the loud version: a
       whole-card tint is recognisable across a kitchen in a way an edge bar is not, and knowing
-      which tickets are overdue at a glance is what the board is for. The cost is that every word
-      and button here sits on a tint, so --ad-age-late/-warn are checked against ink, muted AND
-      danger in globals.css -- they are the binding constraint on the palette, not decoration.
+      which tickets are overdue at a glance is what the board is for.
+
+      It is a gradient, not a flat fill. The tint holds through the top half -- the order number,
+      the status pill, the clock -- and fades to the card surface by the bottom, so the buttons sit
+      on near-white instead of on pink, where a white outlined button read as a hole punched in the
+      card and the blue primary clashed with the tint. See globals.css: those two tints are the
+      binding contrast constraint on the whole palette.
     */
     <article
       data-age-tone={tone}
       data-expanded={expanded || undefined}
       className={cn(
         'rounded-card border bg-surface shadow-card transition-colors',
-        tone === 'late' ? 'border-danger bg-age-late' : '',
-        tone === 'warn' ? 'border-age-warn-line bg-age-warn' : '',
+        // `via` at the default 50% is what holds the tint through the top half before it fades;
+        // a two-stop gradient would start washing out at the meta line.
+        tone === 'late'
+          ? 'border-age-late-line bg-gradient-to-b from-age-late via-age-late to-surface'
+          : '',
+        tone === 'warn'
+          ? 'border-age-warn-line bg-gradient-to-b from-age-warn via-age-warn to-surface'
+          : '',
         tone === 'calm' ? 'border-line' : '',
       )}
     >
