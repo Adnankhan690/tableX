@@ -2,11 +2,22 @@
 
 import { isApiError } from '@tablex/api-client'
 import type { StaffMember, StaffRole } from '@tablex/shared'
-import { cn, ErrorState, Spinner } from '@tablex/ui'
+import { cn, ErrorState } from '@tablex/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
 import { Select, type SelectOption } from '@/components/select'
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  CardSection,
+  Field,
+  Input,
+  Notice,
+  Skeleton,
+} from '@/components/ui'
 import { api } from '@/lib/api'
 
 const ROLES: readonly StaffRole[] = ['owner', 'manager', 'staff']
@@ -43,8 +54,15 @@ export function StaffManager() {
 
   const [staff, setStaff] = useState<StaffMember[] | null>(null)
   const [error, setError] = useState<unknown>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
+  /**
+   * Which row is mid-request, not merely whether one is.
+   *
+   * A page-wide boolean disabled all three role selects, all three status buttons, Create account
+   * and Update password at once, so changing one person's role greyed out the whole page. `'new'`
+   * and `'password'` cover the two panels that are not a row.
+   */
+  const [pendingUid, setPendingUid] = useState<string | null>(null)
 
   const [draft, setDraft] = useState({
     name: '',
@@ -79,29 +97,34 @@ export function StaffManager() {
   }, [load])
 
   const run = useCallback(
-    (work: (token: string) => Promise<unknown>, failure: string, after?: () => void) => {
-      setBusy(true)
+    (
+      key: string,
+      work: (token: string) => Promise<unknown>,
+      failure: string,
+      after?: () => void,
+    ) => {
+      setPendingUid(key)
       setNotice(null)
       getToken().then((token) => {
         if (!token) {
-          setBusy(false)
+          setPendingUid(null)
           return
         }
         work(token)
           .then(() => {
-            setBusy(false)
+            setPendingUid(null)
             after?.()
             load()
           })
           .catch((err: unknown) => {
-            setBusy(false)
+            setPendingUid(null)
             /**
              * The server refuses to demote or deactivate the last active owner -- that would lock
              * everyone out of staff management with no way back short of database access. Its
              * message is surfaced as-is rather than duplicated as a client-side rule, so there is
              * one place that knows the owner count.
              */
-            setNotice(isApiError(err) ? err.message : failure)
+            setNotice({ tone: 'danger', text: isApiError(err) ? err.message : failure })
           })
       })
     },
@@ -114,30 +137,30 @@ export function StaffManager() {
     <>
       <PageHeader
         title="Staff"
-        subtitle={isOwner ? undefined : 'Only owners can add or change staff'}
-        right={
+        subtitle={
+          isOwner
+            ? `${staff?.length ?? 0} ${staff?.length === 1 ? 'account' : 'accounts'}`
+            : 'Only owners can add or change staff'
+        }
+        actions={
           isOwner ? (
-            <button
-              type="button"
+            <Button
+              variant={showAdd ? 'secondary' : 'primary'}
               onClick={() => setShowAdd((v) => !v)}
-              className="min-h-tap rounded-card bg-accent px-3 text-sm font-semibold text-accent-ink"
             >
-              {showAdd ? 'Cancel' : 'Add staff'}
-            </button>
+              {showAdd ? 'Close' : 'Add staff'}
+            </Button>
           ) : null
         }
       />
 
       {notice !== null ? (
-        <p
-          role="status"
-          className="border-b border-line bg-accent-soft px-4 py-2 text-sm text-accent"
-        >
-          {notice}
-        </p>
+        <div className="border-b border-line bg-surface px-4 py-2.5">
+          <Notice tone={notice.tone}>{notice.text}</Notice>
+        </div>
       ) : null}
 
-      <main className="grid gap-4 p-4 lg:grid-cols-3">
+      <main className="mx-auto grid max-w-6xl gap-4 p-4 lg:grid-cols-3">
         <section className="lg:col-span-2">
           {error !== null ? (
             <ErrorState
@@ -145,100 +168,162 @@ export function StaffManager() {
               onRetry={load}
             />
           ) : staff === null ? (
-            <div className="flex items-center justify-center gap-2 py-20 text-muted">
-              <Spinner /> Loading
-            </div>
-          ) : (
-            <ul className="space-y-2">
-              {staff.map((member) => (
-                <li
-                  key={member.uid}
-                  className={cn(
-                    'flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface p-3',
-                    member.status !== 'active' && 'opacity-60',
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      {member.name}
-                      {member.uid === auth.staff.uid ? (
-                        <span className="ml-2 text-xs text-muted">(you)</span>
-                      ) : null}
-                    </p>
-                    <p className="truncate text-xs text-muted">{member.email}</p>
+            <Card flush>
+              {[0, 1, 2].map((i) => (
+                <CardSection key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-9 w-9 rounded-full" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="h-2.5 w-48" />
                   </div>
-
-                  {isOwner ? (
-                    <Select
-                      value={member.role}
-                      disabled={busy}
-                      onChange={(role) =>
-                        run(
-                          (token) => api.updateStaff(token, member.uid, { role }),
-                          'Could not change the role.',
-                        )
-                      }
-                      options={ROLE_OPTIONS}
-                      ariaLabel={`Role for ${member.name}`}
-                      className="w-[8.5rem] shrink-0"
-                    />
-                  ) : (
-                    <span className="rounded bg-surface-sunken px-2 py-0.5 text-xs">
-                      {ROLE_LABEL[member.role]}
-                    </span>
-                  )}
-
-                  {isOwner ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        run(
-                          (token) =>
-                            api.updateStaff(token, member.uid, {
-                              status: member.status === 'active' ? 'inactive' : 'active',
-                            }),
-                          'Could not change the account status.',
-                        )
-                      }
-                      className={cn(
-                        'min-h-tap shrink-0 rounded-card border px-3 text-xs font-medium disabled:opacity-40',
-                        member.status === 'active' ? 'border-danger text-danger' : 'border-line',
-                      )}
-                    >
-                      {member.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                    </button>
-                  ) : null}
-                </li>
+                  <Skeleton className="h-tap w-32" />
+                </CardSection>
               ))}
-            </ul>
+            </Card>
+          ) : (
+            /* One ruled list, not three floating cards. Three people are one list; rendering each
+               as its own bordered box made the page read as three unrelated objects. */
+            <Card flush>
+              <ul>
+                {staff.map((member) => {
+                  const self = member.uid === auth.staff.uid
+                  const rowBusy = pendingUid === member.uid
+                  return (
+                    <li
+                      key={member.uid}
+                      className="flex flex-wrap items-center gap-3 border-t border-divider px-4 py-3 first:border-t-0"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                          member.status === 'active'
+                            ? 'bg-accent-soft text-accent'
+                            : 'bg-surface-sunken text-muted',
+                        )}
+                      >
+                        {member.name.slice(0, 1).toUpperCase()}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-2 text-base font-medium">
+                          <span className="truncate">{member.name}</span>
+                          {self ? <Badge tone="accent">You</Badge> : null}
+                          {member.status !== 'active' ? (
+                            <Badge tone="neutral">Deactivated</Badge>
+                          ) : null}
+                        </p>
+                        <p className="truncate text-sm text-muted">{member.email}</p>
+                      </div>
+
+                      {isOwner ? (
+                        <Select
+                          value={member.role}
+                          disabled={rowBusy || self}
+                          onChange={(role) =>
+                            run(
+                              member.uid,
+                              (token) => api.updateStaff(token, member.uid, { role }),
+                              'Could not change the role.',
+                              () =>
+                                setNotice({
+                                  tone: 'success',
+                                  // Silence used to be the only feedback for a role change, which
+                                  // is the one action here that grants access.
+                                  text: `${member.name} is now ${ROLE_LABEL[role].toLowerCase()}.`,
+                                }),
+                            )
+                          }
+                          options={ROLE_OPTIONS}
+                          ariaLabel={`Role for ${member.name}`}
+                          className="w-[9rem] shrink-0"
+                        />
+                      ) : (
+                        <Badge tone="neutral">{ROLE_LABEL[member.role]}</Badge>
+                      )}
+
+                      {isOwner ? (
+                        <Button
+                          size="sm"
+                          variant={member.status === 'active' ? 'danger-quiet' : 'secondary'}
+                          // Disabled on your own row with the reason on the control, rather than
+                          // letting a manager discover it from a server error: locking yourself out
+                          // of staff management needs database access to undo.
+                          disabled={rowBusy || self}
+                          title={self ? 'You cannot deactivate your own account' : undefined}
+                          loading={rowBusy}
+                          onClick={() =>
+                            run(
+                              member.uid,
+                              (token) =>
+                                api.updateStaff(token, member.uid, {
+                                  status: member.status === 'active' ? 'inactive' : 'active',
+                                }),
+                              'Could not change the account status.',
+                              () =>
+                                setNotice({
+                                  tone: 'success',
+                                  text:
+                                    member.status === 'active'
+                                      ? `${member.name} can no longer sign in.`
+                                      : `${member.name} can sign in again.`,
+                                }),
+                            )
+                          }
+                        >
+                          {member.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                        </Button>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            </Card>
           )}
         </section>
 
         <aside className="space-y-4">
           {isOwner && showAdd ? (
-            <div className="space-y-3 rounded-card border border-line bg-surface p-4">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
-                New staff
-              </h2>
-              <Input
-                label="Name"
-                value={draft.name}
-                onChange={(v) => setDraft({ ...draft, name: v })}
+            <Card className="space-y-3">
+              <CardHeader
+                title="New staff"
+                description="They can sign in as soon as you create it."
               />
-              <Input
-                label="Email"
-                type="email"
-                value={draft.email}
-                onChange={(v) => setDraft({ ...draft, email: v })}
-              />
-              <Input
+              <Field label="Name">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    value={draft.name}
+                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Email">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    type="email"
+                    autoComplete="off"
+                    value={draft.email}
+                    onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field
                 label="Password"
-                type="password"
-                value={draft.password}
-                onChange={(v) => setDraft({ ...draft, password: v })}
                 hint="At least 8 characters. Share it with them directly and ask them to change it."
-              />
+              >
+                {({ id, describedBy }) => (
+                  <Input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="password"
+                    autoComplete="new-password"
+                    value={draft.password}
+                    onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+                  />
+                )}
+              </Field>
               <div>
                 <Select
                   label="Role"
@@ -249,15 +334,19 @@ export function StaffManager() {
                 />
                 {/* Repeats the selected option's description under the closed control, so the
                     grant is still on screen when the list is shut. */}
-                <span className="mt-1 block text-xs text-muted">
+                <span className="mt-1.5 block text-xs text-muted">
                   {ROLE_DESCRIPTION[draft.role]}
                 </span>
               </div>
-              <button
-                type="button"
-                disabled={busy || draft.password.length < 8 || draft.email.trim() === ''}
+              <Button
+                variant="primary"
+                block
+                disabled={draft.password.length < 8 || draft.email.trim() === ''}
+                loading={pendingUid === 'new'}
+                loadingLabel="Creating…"
                 onClick={() =>
                   run(
+                    'new',
                     (token) =>
                       api.createStaff(token, {
                         name: draft.name.trim(),
@@ -267,45 +356,51 @@ export function StaffManager() {
                       }),
                     'Could not add the staff member.',
                     () => {
-                      setDraft({
-                        name: '',
-                        email: '',
-                        password: '',
-                        role: 'staff',
-                      })
+                      setDraft({ name: '', email: '', password: '', role: 'staff' })
                       setShowAdd(false)
+                      setNotice({ tone: 'success', text: 'Account created.' })
                     },
                   )
                 }
-                className="min-h-tap w-full rounded-card bg-accent text-sm font-semibold text-accent-ink disabled:opacity-40"
               >
                 Create account
-              </button>
-            </div>
+              </Button>
+            </Card>
           ) : null}
 
-          <div className="space-y-3 rounded-card border border-line bg-surface p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">
-              Change your password
-            </h2>
-            <Input
-              label="Current password"
-              type="password"
-              value={pw.current}
-              onChange={(v) => setPw({ ...pw, current: v })}
-            />
-            <Input
-              label="New password"
-              type="password"
-              value={pw.next}
-              onChange={(v) => setPw({ ...pw, next: v })}
-              hint="At least 8 characters."
-            />
-            <button
-              type="button"
-              disabled={busy || pw.next.length < 8 || pw.current === ''}
+          <Card className="space-y-3">
+            <CardHeader title="Your password" description="Changing it does not sign you out." />
+            <Field label="Current password">
+              {({ id }) => (
+                <Input
+                  id={id}
+                  type="password"
+                  autoComplete="current-password"
+                  value={pw.current}
+                  onChange={(e) => setPw({ ...pw, current: e.target.value })}
+                />
+              )}
+            </Field>
+            <Field label="New password" hint="At least 8 characters.">
+              {({ id, describedBy }) => (
+                <Input
+                  id={id}
+                  aria-describedby={describedBy}
+                  type="password"
+                  autoComplete="new-password"
+                  value={pw.next}
+                  onChange={(e) => setPw({ ...pw, next: e.target.value })}
+                />
+              )}
+            </Field>
+            <Button
+              block
+              disabled={pw.next.length < 8 || pw.current === ''}
+              loading={pendingUid === 'password'}
+              loadingLabel="Updating…"
               onClick={() =>
                 run(
+                  'password',
                   (token) =>
                     api.changePassword(token, {
                       current_password: pw.current,
@@ -314,45 +409,16 @@ export function StaffManager() {
                   'Could not change your password.',
                   () => {
                     setPw({ current: '', next: '' })
-                    setNotice('Password changed.')
+                    setNotice({ tone: 'success', text: 'Password changed.' })
                   },
                 )
               }
-              className="min-h-tap w-full rounded-card border border-line text-sm font-semibold disabled:opacity-40"
             >
               Update password
-            </button>
-          </div>
+            </Button>
+          </Card>
         </aside>
       </main>
     </>
-  )
-}
-
-function Input({
-  label,
-  value,
-  onChange,
-  type = 'text',
-  hint,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  type?: 'text' | 'email' | 'password'
-  hint?: string
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium">{label}</span>
-      <input
-        type={type}
-        value={value}
-        autoComplete={type === 'password' ? 'new-password' : undefined}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 min-h-tap w-full rounded-card border border-line bg-bg px-3 text-sm outline-none focus:border-accent"
-      />
-      {hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}
-    </label>
   )
 }

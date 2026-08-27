@@ -121,7 +121,12 @@ has no `SELECT … FOR UPDATE`, which is exactly the mechanism under test.
   state-management library; PRD §7 makes payload a product requirement, and the enforcement is
   omission. Icons are inline SVG.
 - `apps/admin` — authenticated, dense, cool palette deliberately unlike the diner app so nobody
-  confuses the two on one tablet ([D11](./DECISIONS.md)).
+  confuses the two on one tablet ([D11](./DECISIONS.md)). Unlike the diner app it *does* carry two
+  dependencies the payload rule above forbids there: `lucide-react` for icons and a `next/font`
+  webfont. The rule is a diner rule — that app is public and mobile-first, this one is opened once
+  at the start of a shift and held open — but it stays a deliberate exception, not an invitation:
+  nothing else gets added without the same argument. Its design system is documented in
+  `.claude/context/admin-ui/SPEC.md`.
 
 Both apps run TypeScript strict with `noUncheckedIndexedAccess`. Handle the `undefined`; do not
 reach for `!`.

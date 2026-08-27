@@ -66,7 +66,19 @@ const placed = await (
   })
 ).json()
 const orderNumber = placed.data.order.order_number
+const orderUid = placed.data.order.uid
 console.log(`(seeded order ${orderNumber} on table 5)`)
+
+/**
+ * The seeded order's card, found by UID rather than by its number.
+ *
+ * Order numbers restart daily (A-001…), so a database carrying more than one day of orders can
+ * have two open tickets called A-002 -- and `.first()` then picks whichever the board's sort puts
+ * on top, which is the wrong one as often as not. The uid is on the card's own "Open order" link,
+ * so this is exact without the card having to expose anything for the test's benefit.
+ */
+const seededCard = () =>
+  page.locator('article').filter({ has: page.locator(`a[href="/orders/${orderUid}"]`) })
 
 console.log('=== 1. Login ===')
 await page.goto('http://localhost:3001/login', { waitUntil: 'networkidle' })
@@ -99,7 +111,10 @@ const board = await page.locator('main').innerText()
 ck('the seeded order appears', board.includes(orderNumber))
 ck('table number shown prominently', /Table 5/.test(board))
 ck('customer total shown', /₹/.test(board))
-ck('columns rendered', /NEW/i.test(board) && /PREPARING/i.test(board))
+// The board is one list with a status filter rather than five columns, so the pipeline is read
+// off each card's status badge and the filter's own options -- not off column headings.
+ck('the status filter is present', (await page.getByLabel('Filter by status').count()) === 1)
+ck('cards carry their stage', /New|Accepted|Preparing|Ready|Served/.test(board))
 
 const shell = await page.locator('header').first().innerText()
 ck('shell shows restaurant and signed-in user', /Spice Garden/.test(shell) && /Rajesh/.test(shell))
@@ -117,13 +132,19 @@ ck(
 
 console.log('=== 3. Stats strip (PRD 3 metrics) ===')
 const stats = await page.locator('body').innerText()
-ck('placed-today tile present', /Placed today/i.test(stats))
-ck('avg-to-accept tile present', /Avg. to accept/i.test(stats))
+// The strip states its scope once, in its own caption, rather than repeating "today" in three of
+// eight labels where it contradicted the filtered board below it.
+ck('the strip says what period it covers', /Today/i.test(stats))
+ck('placed figure present', /Placed/i.test(stats))
+ck('avg-to-accept figure present', /Avg. to accept/i.test(stats))
+// Each figure now carries a line of context derived from the others -- a share, a definition, or
+// the board's own acceptance target -- so the strip states what its numbers mean.
+ck('figures carry context', /% of today/.test(stats) && /On open orders/.test(stats))
 ck('unpaid tile present', /Unpaid/i.test(stats))
 await page.screenshot({ path: `${SHOT}/a2-board.png` })
 
 console.log('=== 4. Server-driven action buttons (D1) ===')
-const card = page.locator('article', { hasText: orderNumber }).first()
+const card = seededCard()
 const buttons = await card.locator('button').allInnerTexts()
 ck('Accept offered on a new order', buttons.includes('Accept'), buttons.join('|'))
 ck('Reject offered on a new order', buttons.includes('Reject'), buttons.join('|'))
@@ -153,7 +174,7 @@ for (const [label, expect] of [
   ['Mark ready', 'READY'],
   ['Mark served', 'SERVED'],
 ]) {
-  const target = page.locator('article', { hasText: orderNumber }).first()
+  const target = seededCard()
   await target.locator(`button:has-text("${label}")`).click()
   await page.waitForTimeout(900)
   const text = await page.locator('main').innerText()
@@ -162,11 +183,7 @@ for (const [label, expect] of [
 await page.screenshot({ path: `${SHOT}/a4-board-served.png` })
 
 console.log('=== 7. Order detail and payment settlement (D2) ===')
-await page
-  .locator('article', { hasText: orderNumber })
-  .first()
-  .locator('a:has-text("Open order")')
-  .click()
+await page.locator(`a[href="/orders/${orderUid}"]`).click()
 await page.waitForURL(/\/orders\/ord_/, { timeout: 10000 })
 await page.waitForSelector('text=Payment', { timeout: 10000 })
 const detail = await page.locator('main').innerText()
@@ -206,28 +223,34 @@ await page.waitForURL('**/menu')
 await page.waitForSelector('text=Starters', { timeout: 10000 })
 const menuText = await page.locator('main').innerText()
 ck('categories listed', /Starters/.test(menuText) && /Beverages/.test(menuText))
-ck('sold-out dish flagged', /Sold out — restore/.test(menuText))
+// Sold out is a STATE badge on the row now, and the action that undoes it is a positive one --
+// the danger tint used to land on the button rather than on the row it described, making the only
+// red things on the page the two dishes that were already dealt with.
+ck('sold-out dish flagged', /Sold out/.test(menuText))
+ck('the dish can be put back on sale', /Back on sale/.test(menuText))
 
 // The one-tap availability toggle, which every role can use.
 const firstToggle = page.locator('button:has-text("Mark sold out")').first()
 await firstToggle.click()
 await page.waitForTimeout(900)
-ck(
-  'availability toggled',
-  (await page.locator('button:has-text("Sold out — restore")').count()) >= 3,
-)
-await page.locator('button:has-text("Sold out — restore")').first().click()
+ck('availability toggled', (await page.locator('button:has-text("Back on sale")').count()) >= 3)
+await page.locator('button:has-text("Back on sale")').first().click()
 await page.waitForTimeout(900)
 await page.screenshot({ path: `${SHOT}/a7-menu.png` })
 
 console.log('=== 9. Food type is required on a new dish (PRD 6.2) ===')
 await page.locator('button:has-text("+ Add a dish to")').first().click()
 await page.waitForSelector('text=Food type', { timeout: 5000 })
-await page.fill('input[placeholder="249.50"]', '199.50')
-await page.locator('label:has-text("Dish name") input').fill('Test Soup')
+// exact: true, deliberately. Every menu row carries an aria-label of "Price of <dish> in rupees",
+// so a loose match lands on a live price field and commits a real change on blur.
+await page.getByLabel('Price', { exact: true }).fill('199.50')
+await page.getByLabel('Dish name').fill('Test Soup')
 await page.click('button:has-text("Add dish")')
-await page.waitForSelector('[role=status]', { timeout: 5000 })
-const foodWarn = await page.locator('[role=status]').innerText()
+// A failure announces itself with role=alert now, not role=status -- a rejected save that reads
+// like a confirmation is one nobody acts on. Asserted through data-tone, which is a machine value
+// rather than copy that will be translated (PRD 7).
+await page.waitForSelector('[data-tone=danger]', { timeout: 5000 })
+const foodWarn = await page.locator('[data-tone=danger]').first().innerText()
 ck(
   'a dish without a food type is refused',
   /veg, non-veg or contains egg/i.test(foodWarn),
@@ -235,11 +258,11 @@ ck(
 )
 
 console.log('=== 10. Price input rejects three decimals (D7) ===')
-await page.fill('input[placeholder="249.50"]', '199.555')
+await page.getByLabel('Price', { exact: true }).fill('199.555')
 await page.locator('button:has-text("Veg")').first().click()
 await page.click('button:has-text("Add dish")')
 await page.waitForTimeout(400)
-const priceWarn = await page.locator('[role=status]').innerText()
+const priceWarn = await page.locator('[data-tone=danger]').first().innerText()
 ck('three decimal places rejected, not rounded', /two decimal places/i.test(priceWarn), priceWarn)
 
 console.log('=== 11. Tables and QR (D4) ===')
@@ -247,11 +270,14 @@ await page.click('a[href="/tables"]')
 await page.waitForURL('**/tables')
 await page.waitForSelector('text=Table 1', { timeout: 10000 })
 const tablesText = await page.locator('main').innerText()
-ck('all tables listed', (await page.locator('li:has-text("Table")').count()) >= 8)
+ck('all tables listed', (await page.locator('li button', { hasText: /^Show QR$/ }).count()) >= 8)
 ck('bulk add available', /Add a numbered range/.test(tablesText))
-// An exact match: 'has-text("QR")' also matches the header's "Print QR sheet" button, which
-// would open the whole print sheet instead of one table's code.
-await page.locator('li button', { hasText: /^QR$/ }).first().click()
+// Scoped to a row: the header's "Print QR sheet" button would open the whole sheet instead of one
+// table's code. Rotate no longer sits on the card -- it lives inside this panel now.
+await page
+  .locator('li button', { hasText: /^Show QR$/ })
+  .first()
+  .click()
 await page.waitForSelector('aside img[alt^="QR code"]', { timeout: 10000 })
 ck('QR image rendered', await page.locator('aside img[alt^="QR code"]').first().isVisible())
 const qrUrl = await page.locator('aside').innerText()
@@ -264,7 +290,7 @@ await page.click('a[href="/settings"]')
 await page.waitForURL('**/settings')
 await page.waitForSelector('text=Payments', { timeout: 10000 })
 const settingsText = await page.locator('main').innerText()
-ck('tax shown as a percentage', /GST \(%\)/.test(settingsText))
+ck('tax shown as a percentage', /GST/.test(settingsText) && /%/.test(settingsText))
 ck(
   'manual-confirmation limitation stated plainly',
   /confirmed by hand|invisible to this system/i.test(settingsText),
@@ -289,7 +315,7 @@ ck(
   'owner sees the add-staff control',
   (await page.locator('button:has-text("Add staff")').count()) === 1,
 )
-ck('change-password form present', /Change your password/i.test(staffText))
+ck('change-password form present', /Your password/i.test(staffText))
 await page.screenshot({ path: `${SHOT}/a10-staff.png` })
 
 console.log('=== 14. A floor-staff account sees less ===')

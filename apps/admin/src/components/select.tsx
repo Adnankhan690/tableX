@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@tablex/ui'
+import { Check, ChevronDown } from 'lucide-react'
 import {
   type CSSProperties,
   type KeyboardEvent,
@@ -366,11 +367,14 @@ export function Select<T extends string = string>({
         onClick={() => (open ? setOpen(false) : openWith(selectedIndex))}
         onKeyDown={onKeyDown}
         className={cn(
-          'flex min-h-tap items-center justify-between gap-2 rounded-card border bg-bg px-3 text-sm',
+          // The same fill, radius and edge as Input and SearchInput: a select IS a field, and the
+          // toolbar reads as two kinds of control -- filled fields you type or pick in, white pills
+          // you toggle -- only if all three fields agree.
+          'flex min-h-tap items-center justify-between gap-2 rounded-control border bg-field px-3 text-base',
           'text-left transition-colors',
           // The open trigger takes the accent border the focused input does, so the pair reads as
           // one control rather than a panel floating next to an inert button.
-          open ? 'border-accent' : 'border-line hover:border-muted',
+          open ? 'border-accent' : 'border-line-strong hover:border-muted',
           disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
           className,
         )}
@@ -437,7 +441,13 @@ export function Select<T extends string = string>({
                       {/* Reserved width whether or not the tick shows, so labels line up and the
                           list does not shift by 1.25rem as the selection moves. */}
                       <span className="flex w-4 shrink-0 justify-center">
-                        {isSelected ? <Check /> : null}
+                        {isSelected ? (
+                          <Check
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5 text-accent"
+                            strokeWidth={2.5}
+                          />
+                        ) : null}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className={cn('block truncate', isSelected ? 'font-semibold' : '')}>
@@ -463,31 +473,13 @@ export function Select<T extends string = string>({
 
 function Chevron({ open }: { open: boolean }) {
   return (
-    <svg
+    <ChevronDown
       aria-hidden="true"
-      viewBox="0 0 20 20"
+      strokeWidth={2}
       className={cn(
         'h-4 w-4 shrink-0 text-muted transition-transform',
         open ? '-rotate-180' : 'rotate-0',
       )}
-      fill="none"
-      stroke="currentColor"
-    >
-      <path d="M6 8l4 4 4-4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function Check() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 20 20"
-      className="h-3.5 w-3.5 text-accent"
-      fill="none"
-      stroke="currentColor"
-    >
-      <path d="M4 10.5l4 4 8-9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    />
   )
 }

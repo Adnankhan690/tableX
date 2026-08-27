@@ -2,11 +2,12 @@
 
 import { isApiError } from '@tablex/api-client'
 import type { RestaurantSettings, UpdateRestaurantRequest } from '@tablex/shared'
-import { ErrorState, Spinner } from '@tablex/ui'
+import { ErrorState } from '@tablex/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
 import { Select, type SelectOption } from '@/components/select'
+import { Button, Card, Field, Input, Notice, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
 
 /**
@@ -59,7 +60,14 @@ export function SettingsForm() {
 
   const [settings, setSettings] = useState<RestaurantSettings | null>(null)
   const [error, setError] = useState<unknown>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
+  /**
+   * Validation errors keyed by field.
+   *
+   * They used to be one banner string at the top of a 2,400px page: "GST must be between 0 and 30"
+   * left the manager to work out which of eight numeric inputs it meant.
+   */
+  const [fieldErrors, setFieldErrors] = useState<{ tax?: string; service?: string }>({})
   const [busy, setBusy] = useState(false)
 
   const [form, setForm] = useState({
@@ -110,12 +118,16 @@ export function SettingsForm() {
     const taxBps = percentToBps(form.taxPercent)
     const serviceBps = percentToBps(form.servicePercent)
 
+    const errors: { tax?: string; service?: string } = {}
     if (taxBps === null) {
-      setNotice('Tax must be a percentage between 0 and 100, with at most two decimals.')
-      return
+      errors.tax = 'A percentage between 0 and 100, with at most two decimals.'
     }
     if (serviceBps === null) {
-      setNotice('Service charge must be a percentage between 0 and 100.')
+      errors.service = 'A percentage between 0 and 100.'
+    }
+    setFieldErrors(errors)
+    if (taxBps === null || serviceBps === null) {
+      setNotice({ tone: 'danger', text: 'Two fields need fixing before this can be saved.' })
       return
     }
 
@@ -144,11 +156,11 @@ export function SettingsForm() {
         .then((result) => {
           setSettings(result)
           setBusy(false)
-          setNotice('Saved.')
+          setNotice({ tone: 'success', text: 'Settings saved.' })
         })
         .catch((err: unknown) => {
           setBusy(false)
-          setNotice(isApiError(err) ? err.message : 'Could not save.')
+          setNotice({ tone: 'danger', text: isApiError(err) ? err.message : 'Could not save.' })
         })
     })
   }, [form, getToken])
@@ -159,210 +171,311 @@ export function SettingsForm() {
   // one the app has not seen before would stop a restaurant taking payment.
   const vpaLooksOdd = form.upiVpa.trim() !== '' && !/^[^\s@]+@[^\s@]+$/.test(form.upiVpa.trim())
 
+  /** Nothing to save until something changed -- and a Save that is always live teaches nothing. */
+  const dirty =
+    settings !== null &&
+    (form.name !== settings.name ||
+      form.description !== (settings.description ?? '') ||
+      form.address !== (settings.address ?? '') ||
+      form.phone !== (settings.phone ?? '') ||
+      form.gstNumber !== (settings.gst_number ?? '') ||
+      form.upiVpa !== (settings.upi_vpa ?? '') ||
+      form.upiPayeeName !== (settings.upi_payee_name ?? '') ||
+      form.paymentProvider !== settings.payment_provider ||
+      percentToBps(form.taxPercent) !== settings.tax_bps ||
+      percentToBps(form.servicePercent) !== settings.service_charge_bps)
+
   return (
     <>
-      <PageHeader title="Settings" subtitle={canEdit ? undefined : 'Read only'} />
+      <PageHeader
+        title="Settings"
+        subtitle={canEdit ? 'How this restaurant bills and takes payment' : 'Read only'}
+      />
 
       {notice !== null ? (
-        <p
-          role="status"
-          className="border-b border-line bg-accent-soft px-4 py-2 text-sm text-accent"
-        >
-          {notice}
-        </p>
+        <div className="border-b border-line bg-surface px-4 py-2.5">
+          <Notice tone={notice.tone}>{notice.text}</Notice>
+        </div>
       ) : null}
 
-      <main className="p-4">
+      <main className="p-4 pb-24">
         {error !== null ? (
           <ErrorState
             message={isApiError(error) ? error.message : 'Could not load settings.'}
             onRetry={load}
           />
         ) : settings === null ? (
-          <div className="flex items-center justify-center gap-2 py-20 text-muted">
-            <Spinner /> Loading
+          <div className="mx-auto max-w-4xl space-y-4">
+            {[0, 1, 2].map((i) => (
+              <Card key={i} className="space-y-3">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-tap w-full" />
+                <Skeleton className="h-tap w-full" />
+              </Card>
+            ))}
           </div>
         ) : (
-          <div className="grid max-w-3xl gap-4">
-            <Card title="Restaurant">
-              <Field
-                label="Name"
-                value={form.name}
-                onChange={(v) => setForm({ ...form, name: v })}
-                disabled={!canEdit}
-              />
-              <Field
-                label="Description"
-                value={form.description}
-                onChange={(v) => setForm({ ...form, description: v })}
-                disabled={!canEdit}
-              />
-              <Field
-                label="Address"
-                value={form.address}
-                onChange={(v) => setForm({ ...form, address: v })}
-                disabled={!canEdit}
-              />
-              <Field
-                label="Phone"
-                value={form.phone}
-                onChange={(v) => setForm({ ...form, phone: v })}
-                disabled={!canEdit}
-              />
-              <p className="text-xs text-muted">
-                Timezone: <strong>{settings.timezone}</strong>. Daily order numbers and the
-                dashboard&apos;s figures roll over at midnight in this zone.
-              </p>
-            </Card>
-
-            <Card title="Tax">
+          /*
+            A two-column layout on a wide screen: the form used to be a 768px column on a 2,560px
+            content area, with more than half the screen empty and every field -- including a
+            two-character percentage -- stretched to full width. The left column names the section
+            and says why it matters, the right holds the controls, which is also what gives a long
+            settings page scannable structure.
+          */
+          <div className="mx-auto max-w-4xl divide-y divide-divider">
+            <Section
+              title="Restaurant"
+              description="What diners see at the top of the menu and on their receipt."
+            >
+              <Field label="Name">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    value={form.name}
+                    disabled={!canEdit}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Description" optional>
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    value={form.description}
+                    disabled={!canEdit}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Address">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    value={form.address}
+                    disabled={!canEdit}
+                    onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  />
+                )}
+              </Field>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field
-                  label="GST (%)"
-                  value={form.taxPercent}
-                  onChange={(v) => setForm({ ...form, taxPercent: v })}
-                  disabled={!canEdit}
-                  numeric
-                />
-                <Field
-                  label="Service charge (%)"
-                  value={form.servicePercent}
-                  onChange={(v) => setForm({ ...form, servicePercent: v })}
-                  disabled={!canEdit}
-                  numeric
-                />
+                <Field label="Phone">
+                  {({ id }) => (
+                    <Input
+                      id={id}
+                      value={form.phone}
+                      disabled={!canEdit}
+                      inputMode="tel"
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    />
+                  )}
+                </Field>
+                <Field label="Timezone" hint="Set when the restaurant was onboarded.">
+                  {({ id, describedBy }) => (
+                    <Input
+                      id={id}
+                      aria-describedby={describedBy}
+                      value={settings.timezone}
+                      disabled
+                    />
+                  )}
+                </Field>
               </div>
-              <Field
-                label="GST number"
-                value={form.gstNumber}
-                onChange={(v) => setForm({ ...form, gstNumber: v })}
-                disabled={!canEdit}
-              />
               <p className="text-xs text-muted">
-                Applied to every new order. Orders already placed keep the rate they were priced at,
-                so changing this never alters an existing bill.
+                Daily order numbers and the dashboard&apos;s figures roll over at midnight in this
+                zone.
               </p>
-            </Card>
+            </Section>
 
-            <Card title="Payments">
+            <Section
+              title="Tax"
+              description="Applied to every new order. Orders already placed keep the rate they were priced at, so changing this never alters an existing bill."
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                {/* Sized to their content: a two-character percentage in a 700px box invites the
+                    manager to wonder what else belongs in it. */}
+                <Field label="GST" error={fieldErrors.tax} hint="Percentage of the subtotal.">
+                  {({ id, describedBy, invalid }) => (
+                    <Input
+                      id={id}
+                      aria-describedby={describedBy}
+                      aria-invalid={invalid}
+                      value={form.taxPercent}
+                      disabled={!canEdit}
+                      inputMode="decimal"
+                      numeric
+                      suffix="%"
+                      className="max-w-[9rem]"
+                      onChange={(e) => setForm({ ...form, taxPercent: e.target.value })}
+                    />
+                  )}
+                </Field>
+                <Field
+                  label="Service charge"
+                  error={fieldErrors.service}
+                  hint="Leave at 0 if you do not charge one."
+                >
+                  {({ id, describedBy, invalid }) => (
+                    <Input
+                      id={id}
+                      aria-describedby={describedBy}
+                      aria-invalid={invalid}
+                      value={form.servicePercent}
+                      disabled={!canEdit}
+                      inputMode="decimal"
+                      numeric
+                      suffix="%"
+                      className="max-w-[9rem]"
+                      onChange={(e) => setForm({ ...form, servicePercent: e.target.value })}
+                    />
+                  )}
+                </Field>
+              </div>
+              <Field label="GST number" optional>
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    value={form.gstNumber}
+                    disabled={!canEdit}
+                    className="max-w-md"
+                    onChange={(e) => setForm({ ...form, gstNumber: e.target.value })}
+                  />
+                )}
+              </Field>
+            </Section>
+
+            <Section
+              title="Payments"
+              description="How a diner pays, and whether this system can tell that they did."
+            >
               <Select
                 label="Provider"
                 value={form.paymentProvider}
                 disabled={!canEdit}
                 onChange={(paymentProvider) => setForm({ ...form, paymentProvider })}
                 options={PROVIDER_OPTIONS}
-                className="w-full"
+                className="w-full max-w-md"
               />
 
               {/*
-                The most important copy on this page. An owner switching online payments on has to
-                understand that static UPI cannot confirm a transfer -- otherwise they will expect
-                orders to settle themselves, and unpaid orders will pile up unnoticed
-                (docs/DECISIONS.md D2).
+                The most important copy on this page, and now weighted like it. An owner switching
+                online payments on has to understand that static UPI cannot confirm a transfer --
+                otherwise they will expect orders to settle themselves, and unpaid orders will pile
+                up unnoticed (docs/DECISIONS.md D2). It used to be 12px muted text in a grey box.
               */}
               {form.paymentProvider === 'upi_static' ? (
-                <div className="rounded-card border border-line bg-surface-sunken p-3 text-xs leading-relaxed">
-                  <p className="font-semibold">Payments need to be confirmed by hand.</p>
-                  <p className="mt-1 text-muted">
+                <Notice tone="warning" title="Payments need to be confirmed by hand.">
+                  <p>
                     A UPI transfer into your own bank account is invisible to this system — there is
                     no way for us to detect it. Diners will see &ldquo;awaiting confirmation&rdquo;
                     and a staff member has to tap <strong>Mark as paid</strong> once the money
                     arrives, exactly as you would with cash.
                   </p>
-                  <p className="mt-1 text-muted">
+                  <p className="mt-1.5">
                     Every payment carries a reference that appears in your bank notification, so you
                     can match them up. If you want payments confirmed automatically, use the
                     Razorpay gateway instead.
                   </p>
-                </div>
+                </Notice>
               ) : (
-                <p className="rounded-card border border-line bg-surface-sunken p-3 text-xs text-muted">
-                  Razorpay confirms payments automatically. It only works once the gateway
-                  credentials are configured on the server; until then payments fall back to a UPI
-                  QR from your own account.
-                </p>
+                <Notice tone="accent" title="Razorpay confirms payments automatically.">
+                  It only works once the gateway credentials are configured on the server; until
+                  then payments fall back to a UPI QR from your own account.
+                </Notice>
               )}
 
               <Field
                 label="UPI ID (VPA)"
-                value={form.upiVpa}
-                onChange={(v) => setForm({ ...form, upiVpa: v })}
-                disabled={!canEdit}
-                placeholder="restaurant@okhdfcbank"
-              />
-              {vpaLooksOdd ? (
-                <p className="text-xs text-danger">
-                  That does not look like a UPI ID — they are usually name@bank. Double-check it
-                  before saving; a wrong one sends diners&apos; money elsewhere.
-                </p>
-              ) : null}
-              <Field
-                label="Payee name shown in the diner's UPI app"
-                value={form.upiPayeeName}
-                onChange={(v) => setForm({ ...form, upiPayeeName: v })}
-                disabled={!canEdit}
-              />
-            </Card>
-
-            {canEdit ? (
-              <div>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={save}
-                  className="min-h-tap rounded-card bg-accent px-5 text-sm font-semibold text-accent-ink disabled:opacity-40"
-                >
-                  {busy ? 'Saving…' : 'Save settings'}
-                </button>
-              </div>
-            ) : (
-              <p className="text-xs text-muted">
-                Only owners and managers can change these. The server enforces this regardless of
-                what this screen shows.
-              </p>
-            )}
+                error={
+                  vpaLooksOdd
+                    ? 'That does not look like a UPI ID — they are usually name@bank. A wrong one sends diners’ money elsewhere.'
+                    : undefined
+                }
+              >
+                {({ id, describedBy, invalid }) => (
+                  <Input
+                    id={id}
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid}
+                    value={form.upiVpa}
+                    disabled={!canEdit}
+                    className="max-w-md"
+                    placeholder="restaurant@okhdfcbank"
+                    onChange={(e) => setForm({ ...form, upiVpa: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Payee name" hint="Shown in the diner's UPI app when they pay.">
+                {({ id, describedBy }) => (
+                  <Input
+                    id={id}
+                    aria-describedby={describedBy}
+                    value={form.upiPayeeName}
+                    disabled={!canEdit}
+                    className="max-w-md"
+                    onChange={(e) => setForm({ ...form, upiPayeeName: e.target.value })}
+                  />
+                )}
+              </Field>
+            </Section>
           </div>
         )}
       </main>
+
+      {/*
+        The save bar is pinned, because the form is taller than any screen it runs on: "Save
+        settings" used to be the last element of a 2,470px scroll, so the manager had to scroll past
+        everything to commit a one-character change to the phone number. It also states whether
+        there is anything to save, which the old always-enabled button did not.
+      */}
+      {canEdit && settings !== null ? (
+        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-line bg-surface px-4 py-3">
+          <p className="text-sm text-muted">
+            {dirty ? 'Unsaved changes' : 'Everything here is saved.'}
+          </p>
+          <Button
+            variant="primary"
+            disabled={!dirty}
+            loading={busy}
+            loadingLabel="Saving…"
+            onClick={save}
+          >
+            Save settings
+          </Button>
+        </div>
+      ) : settings !== null ? (
+        <div className="border-t border-line bg-surface px-4 py-3">
+          <p className="text-sm text-muted">
+            Only owners and managers can change these. The server enforces this regardless of what
+            this screen shows.
+          </p>
+        </div>
+      ) : null}
     </>
   )
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="space-y-3 rounded-card border border-line bg-surface p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
-      {children}
-    </section>
-  )
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  disabled,
-  placeholder,
-  numeric,
+/**
+ * One group of settings: what it is on the left, the controls on the right.
+ *
+ * Ruled, not boxed. Three bordered cards in a column read as three unrelated objects; a ruled
+ * section reads as one form with parts, which is what it is.
+ */
+function Section({
+  title,
+  description,
+  children,
 }: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  disabled?: boolean
-  placeholder?: string
-  numeric?: boolean
+  title: string
+  description: string
+  children: React.ReactNode
 }) {
   return (
-    <label className="block">
-      <span className="text-xs font-medium">{label}</span>
-      <input
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        inputMode={numeric ? 'decimal' : 'text'}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 min-h-tap w-full rounded-card border border-line bg-bg px-3 text-sm outline-none focus:border-accent disabled:opacity-60"
-      />
-    </label>
+    <section className="grid gap-4 py-6 first:pt-0 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8">
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        <p className="mt-1 text-sm text-muted">{description}</p>
+      </div>
+      <div className="min-w-0 space-y-3">{children}</div>
+    </section>
   )
 }
