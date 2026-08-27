@@ -390,78 +390,101 @@ export function Select<T extends string = string>({
             <div
               ref={panelRef}
               style={panelStyle}
-              // The scroll container, and the box whose geometry matters: the listbox inside it is
-              // as tall as its content. Named so a test can measure the right one.
+              /*
+                THE FRAME, NOT THE SCROLLER. The two used to be one element, and a rounded box that
+                scrolls itself is exactly where a scrollbar escapes: the gutter is laid out in the
+                border box as a rectangle, so its square top and bottom ends poked out past
+                `rounded-card`. Splitting them puts `overflow-hidden` and the radius on this
+                element, which clips whatever the inner one draws -- scrollbar included.
+
+                The shadow stays out here too. On the scroller it would be clipped by that same
+                `overflow-hidden` and the panel would lose its elevation.
+
+                Geometry still belongs to this box -- `panelStyle` positions it and caps its height
+                -- so `data-select-panel` stays here. `flex flex-col` is what lets the child below
+                be capped by that max-height.
+              */
               data-select-panel={open ? 'open' : undefined}
               // Invisible until measured, rather than absent: mounting on the first frame lets the
               // scroll-into-view effect find the selected option before the panel is seen.
               className={cn(
-                'fixed z-50 overflow-y-auto overscroll-contain rounded-card border border-line',
-                'bg-surface py-1 shadow-[0_8px_24px_rgb(15_23_42_/_0.12)]',
+                'fixed z-50 flex flex-col overflow-hidden rounded-card border border-line',
+                'bg-surface shadow-[0_8px_24px_rgb(15_23_42_/_0.12)]',
                 position ? 'opacity-100' : 'opacity-0',
               )}
             >
-              <div role="listbox" id={listboxId} aria-labelledby={label ? labelId : undefined}>
-                {options.map((option, index) => {
-                  const isSelected = option.value === value
-                  const isActive = index === activeIndex
-                  return (
-                    /* An option is not a keyboard target here. In the select-only combobox pattern
+              {/*
+                THE SCROLLER. `min-h-0` is what lets a flex child shrink below its content height so
+                the parent's max-height actually caps it -- without it the list forces the panel
+                taller and nothing scrolls at all. Default `flex: 0 1 auto` keeps a short list
+                sized to its content rather than stretched to the cap.
+
+                `scrollIntoView({ block: 'nearest' })` in the effect above needs no change: it walks
+                up to the nearest scroll container, which is now this element.
+              */}
+              <div className="scrollbar-slim min-h-0 overflow-y-auto overscroll-contain py-1">
+                <div role="listbox" id={listboxId} aria-labelledby={label ? labelId : undefined}>
+                  {options.map((option, index) => {
+                    const isSelected = option.value === value
+                    const isActive = index === activeIndex
+                    return (
+                      /* An option is not a keyboard target here. In the select-only combobox pattern
                        the trigger keeps focus and drives the list through aria-activedescendant,
                        so the keyboard handler lives there and one on this node could never fire. */
-                    // biome-ignore lint/a11y/useKeyWithClickEvents: see above
-                    <div
-                      key={option.value}
-                      id={optionId(index)}
-                      role="option"
-                      // Not reachable by Tab, by design; present so the node is programmatically
-                      // focusable, which is what scrollIntoView and assistive tech expect of an
-                      // option that aria-activedescendant can point at.
-                      tabIndex={-1}
-                      aria-selected={isSelected}
-                      aria-disabled={option.disabled || undefined}
-                      data-value={option.value}
-                      data-active={isActive || undefined}
-                      data-selected={isSelected || undefined}
-                      // Pointer, not mouse: one handler covers touch and pen, so a tablet gets the
-                      // same highlight-then-commit behaviour as a laptop.
-                      onPointerMove={() => {
-                        if (!option.disabled && index !== activeIndex) setActiveIndex(index)
-                      }}
-                      // Keeps focus on the trigger. Without this the press blurs it, and the
-                      // combobox loses the focus that aria-activedescendant is reported against.
-                      onPointerDown={(event) => event.preventDefault()}
-                      onClick={() => commit(index)}
-                      className={cn(
-                        'flex min-h-tap cursor-pointer items-center gap-2 px-3 py-1.5 text-sm',
-                        isActive ? 'bg-accent-soft' : '',
-                        option.disabled ? 'cursor-not-allowed opacity-50' : '',
-                      )}
-                    >
-                      {/* Reserved width whether or not the tick shows, so labels line up and the
+                      // biome-ignore lint/a11y/useKeyWithClickEvents: see above
+                      <div
+                        key={option.value}
+                        id={optionId(index)}
+                        role="option"
+                        // Not reachable by Tab, by design; present so the node is programmatically
+                        // focusable, which is what scrollIntoView and assistive tech expect of an
+                        // option that aria-activedescendant can point at.
+                        tabIndex={-1}
+                        aria-selected={isSelected}
+                        aria-disabled={option.disabled || undefined}
+                        data-value={option.value}
+                        data-active={isActive || undefined}
+                        data-selected={isSelected || undefined}
+                        // Pointer, not mouse: one handler covers touch and pen, so a tablet gets the
+                        // same highlight-then-commit behaviour as a laptop.
+                        onPointerMove={() => {
+                          if (!option.disabled && index !== activeIndex) setActiveIndex(index)
+                        }}
+                        // Keeps focus on the trigger. Without this the press blurs it, and the
+                        // combobox loses the focus that aria-activedescendant is reported against.
+                        onPointerDown={(event) => event.preventDefault()}
+                        onClick={() => commit(index)}
+                        className={cn(
+                          'flex min-h-tap cursor-pointer items-center gap-2 px-3 py-1.5 text-sm',
+                          isActive ? 'bg-accent-soft' : '',
+                          option.disabled ? 'cursor-not-allowed opacity-50' : '',
+                        )}
+                      >
+                        {/* Reserved width whether or not the tick shows, so labels line up and the
                           list does not shift by 1.25rem as the selection moves. */}
-                      <span className="flex w-4 shrink-0 justify-center">
-                        {isSelected ? (
-                          <Check
-                            aria-hidden="true"
-                            className="h-3.5 w-3.5 text-accent"
-                            strokeWidth={2.5}
-                          />
-                        ) : null}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className={cn('block truncate', isSelected ? 'font-semibold' : '')}>
-                          {option.label}
+                        <span className="flex w-4 shrink-0 justify-center">
+                          {isSelected ? (
+                            <Check
+                              aria-hidden="true"
+                              className="h-3.5 w-3.5 text-accent"
+                              strokeWidth={2.5}
+                            />
+                          ) : null}
                         </span>
-                        {option.description ? (
-                          <span className="mt-0.5 block text-xs text-muted">
-                            {option.description}
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block truncate', isSelected ? 'font-semibold' : '')}>
+                            {option.label}
                           </span>
-                        ) : null}
-                      </span>
-                    </div>
-                  )
-                })}
+                          {option.description ? (
+                            <span className="mt-0.5 block text-xs text-muted">
+                              {option.description}
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>,
             document.body,
