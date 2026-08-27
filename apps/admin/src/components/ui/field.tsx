@@ -1,8 +1,9 @@
 'use client'
 
 import { cn } from '@tablex/ui'
+import { Check, Copy, Eye, EyeOff } from 'lucide-react'
 import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { forwardRef, useId } from 'react'
+import { forwardRef, useEffect, useId, useRef, useState } from 'react'
 
 /**
  * The shared shape of every text control.
@@ -132,3 +133,145 @@ export const Textarea = forwardRef<
     />
   )
 })
+
+/**
+ * A password field with a reveal toggle.
+ *
+ * Its own component rather than an `Input` affix: `prefix`/`suffix` above are static
+ * `aria-hidden` strings, and this has to be a real focusable control with a name that changes.
+ *
+ * WHAT THE TOGGLE IS AND IS NOT FOR. It exists so someone can check what they typed on a phone
+ * keyboard, which is the actual cause of failed sign-ins. It is not a security feature in either
+ * direction: masking never protected the password from anything but the person standing behind you,
+ * and this panel runs on tablets in shared spaces -- so revealed text stays revealed until the
+ * staff member hides it again, rather than being cleverly auto-hidden on a timer they cannot
+ * predict.
+ */
+export interface PasswordInputProps
+  extends Omit<InputProps, 'type' | 'prefix' | 'suffix' | 'numeric'> {
+  /**
+   * Adds a copy-to-clipboard button beside the reveal toggle.
+   *
+   * Only for a password being HANDED OVER -- the onboarding flow's temporary owner password, whose
+   * whole purpose is to be passed to someone else. Not for a credential being entered: there is
+   * nothing to copy out of a field you are typing into, and a clipboard is readable by every other
+   * app on the device, so the affordance should exist exactly where the workflow needs it.
+   */
+  copyable?: boolean
+}
+
+export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
+  function PasswordInput({ className, copyable = false, value, ...rest }, ref) {
+    const [revealed, setRevealed] = useState(false)
+    const [copied, setCopied] = useState(false)
+    const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const inputRef = useRef<HTMLInputElement | null>(null)
+
+    useEffect(
+      () => () => {
+        if (copiedTimer.current !== null) clearTimeout(copiedTimer.current)
+      },
+      [],
+    )
+
+    const text = typeof value === 'string' ? value : ''
+
+    const copy = () => {
+      const done = () => {
+        setCopied(true)
+        if (copiedTimer.current !== null) clearTimeout(copiedTimer.current)
+        copiedTimer.current = setTimeout(() => setCopied(false), 1600)
+      }
+      /*
+        `navigator.clipboard` needs a secure context, so it is simply absent over plain http on a
+        LAN address -- which is exactly how someone runs this panel while setting a restaurant up.
+        The fallback selects the field's text so Ctrl-C still works, which is a real degradation
+        rather than a dead button. Revealing it first: selecting masked text copies the value fine
+        but shows the user nothing, and a manual copy they cannot see is a manual copy they will
+        not trust.
+      */
+      const fallback = () => {
+        setRevealed(true)
+        inputRef.current?.select()
+      }
+      if (!navigator.clipboard?.writeText) {
+        fallback()
+        return
+      }
+      navigator.clipboard.writeText(text).then(done, fallback)
+    }
+
+    return (
+      <div className="relative flex min-w-0 items-stretch">
+        <Input
+          ref={(node) => {
+            inputRef.current = node
+            if (typeof ref === 'function') ref(node)
+            else if (ref) ref.current = node
+          }}
+          value={value}
+          // Swapping `type` is the standard mechanism and keeps `autoComplete` working, so a password
+          // manager still fills and saves the field.
+          type={revealed ? 'text' : 'password'}
+          // Room for the buttons, so a long password does not run underneath them.
+          className={cn(copyable ? 'pr-[5.5rem]' : 'pr-11', className)}
+          {...rest}
+        />
+        {/* Both follow the input in DOM order, so Tab reaches the field first -- which is the
+            order someone expects -- and copy before reveal, matching their left-to-right order. */}
+        <div className="absolute inset-y-0 right-0 flex items-stretch">
+          {copyable ? (
+            <button
+              type="button"
+              onClick={copy}
+              // Nothing to put on a clipboard yet, and a button that silently does nothing is worse
+              // than one that is visibly unavailable.
+              disabled={text === ''}
+              aria-label={copied ? 'Password copied' : 'Copy password'}
+              className="flex w-11 items-center justify-center text-muted transition-colors hover:text-ink disabled:text-faint"
+            >
+              {copied ? (
+                <Check aria-hidden="true" className="h-4 w-4 text-success" strokeWidth={2.5} />
+              ) : (
+                <Copy aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
+              )}
+            </button>
+          ) : null}
+          <button
+            /*
+              `type="button"` IS LOAD-BEARING on both of these. A bare <button> inside a <form>
+              defaults to `type="submit"`, so without it, revealing or copying the password would
+              submit the form it sits in.
+            */
+            type="button"
+            onClick={() => setRevealed((current) => !current)}
+            /*
+              The NAME changes rather than carrying `aria-pressed`. Both would be redundant, and a
+              button whose accessible name states the action it will perform is the pattern
+              screen-reader users actually encounter on this control.
+            */
+            aria-label={revealed ? 'Hide password' : 'Show password'}
+            className="flex w-11 items-center justify-center rounded-r-control text-muted transition-colors hover:text-ink"
+          >
+            {revealed ? (
+              <EyeOff aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
+            ) : (
+              <Eye aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
+            )}
+          </button>
+        </div>
+        {/*
+          Spoken, because a tick appearing in a corner is not feedback for everyone. Rendered only
+          when there is a copy button: a non-copyable field was emitting an empty polite live region
+          into every sign-in and staff form, which is dead weight now and a thing that announces
+          something unintended later.
+        */}
+        {copyable ? (
+          <span aria-live="polite" className="sr-only">
+            {copied ? 'Password copied to clipboard' : ''}
+          </span>
+        ) : null}
+      </div>
+    )
+  },
+)

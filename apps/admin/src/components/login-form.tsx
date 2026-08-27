@@ -4,7 +4,7 @@ import { isApiError } from '@tablex/api-client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
-import { Button, Field, Input, Notice } from '@/components/ui'
+import { Button, Field, Input, Notice, PasswordInput } from '@/components/ui'
 
 export function LoginForm() {
   const router = useRouter()
@@ -107,9 +107,8 @@ export function LoginForm() {
             </Field>
             <Field label="Password">
               {({ id }) => (
-                <Input
+                <PasswordInput
                   id={id}
-                  type="password"
                   autoComplete="current-password"
                   required
                   value={password}

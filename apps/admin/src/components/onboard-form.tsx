@@ -2,12 +2,13 @@
 
 import { isApiError } from '@tablex/api-client'
 import type { OnboardRestaurantRequest, OnboardRestaurantResponse } from '@tablex/shared'
-import { useMemo, useState } from 'react'
+import { type ChangeEvent, useMemo, useState } from 'react'
 import {
   Button,
   CardHeader,
   Input,
   Notice,
+  PasswordInput,
   Card as UICard,
   Field as UIField,
 } from '@/components/ui'
@@ -304,6 +305,8 @@ export function OnboardForm() {
             autoComplete="off"
             required
           />
+          {/* Copyable, unlike the platform token above: the paragraph below literally says to hand
+              this one over, so getting it onto a clipboard is the task rather than a convenience. */}
           <Field
             label="Temporary password"
             value={form.ownerPassword}
@@ -311,6 +314,7 @@ export function OnboardForm() {
             type="password"
             autoComplete="new-password"
             required
+            copyable
             placeholder="at least 8 characters"
           />
           <p className="text-xs text-muted">
@@ -418,6 +422,7 @@ function Field({
   numeric,
   required,
   autoComplete,
+  copyable,
 }: {
   label: string
   value: string
@@ -427,22 +432,36 @@ function Field({
   numeric?: boolean
   required?: boolean
   autoComplete?: string
+  /** Only meaningful with `type="password"`; see the note on PasswordInputProps. */
+  copyable?: boolean
 }) {
   return (
     <UIField label={label} optional={!required}>
-      {({ id }) => (
-        <Input
-          id={id}
-          type={type ?? 'text'}
-          value={value}
-          required={required}
-          placeholder={placeholder}
-          autoComplete={autoComplete}
-          inputMode={numeric ? 'decimal' : undefined}
-          numeric={numeric}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
+      {({ id }) => {
+        const shared = {
+          id,
+          value,
+          required,
+          placeholder,
+          autoComplete,
+          onChange: (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
+        }
+        /*
+          A password routes to the shared PasswordInput so this page gets the same reveal toggle as
+          sign-in and the Staff page. Worth stating because this `Field` is local to onboarding and
+          looks like it could drift: the CONTROL is shared, only this wrapper is not.
+        */
+        return type === 'password' ? (
+          <PasswordInput {...shared} copyable={copyable} />
+        ) : (
+          <Input
+            {...shared}
+            type={type ?? 'text'}
+            inputMode={numeric ? 'decimal' : undefined}
+            numeric={numeric}
+          />
+        )
+      }}
     </UIField>
   )
 }

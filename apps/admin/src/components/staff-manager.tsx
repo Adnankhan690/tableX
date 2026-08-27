@@ -16,6 +16,7 @@ import {
   Field,
   Input,
   Notice,
+  PasswordInput,
   Skeleton,
 } from '@/components/ui'
 import { api } from '@/lib/api'
@@ -314,10 +315,9 @@ export function StaffManager() {
                 hint="At least 8 characters. Share it with them directly and ask them to change it."
               >
                 {({ id, describedBy }) => (
-                  <Input
+                  <PasswordInput
                     id={id}
                     aria-describedby={describedBy}
-                    type="password"
                     autoComplete="new-password"
                     value={draft.password}
                     onChange={(e) => setDraft({ ...draft, password: e.target.value })}
@@ -372,9 +372,8 @@ export function StaffManager() {
             <CardHeader title="Your password" description="Changing it does not sign you out." />
             <Field label="Current password">
               {({ id }) => (
-                <Input
+                <PasswordInput
                   id={id}
-                  type="password"
                   autoComplete="current-password"
                   value={pw.current}
                   onChange={(e) => setPw({ ...pw, current: e.target.value })}
@@ -383,10 +382,9 @@ export function StaffManager() {
             </Field>
             <Field label="New password" hint="At least 8 characters.">
               {({ id, describedBy }) => (
-                <Input
+                <PasswordInput
                   id={id}
                   aria-describedby={describedBy}
-                  type="password"
                   autoComplete="new-password"
                   value={pw.next}
                   onChange={(e) => setPw({ ...pw, next: e.target.value })}
