@@ -65,6 +65,24 @@ interface ItemDraft {
   prepTime: string
 }
 
+/**
+ * The collapse motion, asymmetric on purpose, and declared here so the section and its arrow
+ * cannot drift apart.
+ *
+ * Both directions used to be `duration-300 ease-out`, i.e. identical -- and opening still read as
+ * noticeably faster than closing. The cause is the curve, not the clock: `ease-out` front-loads,
+ * putting roughly 44% of the travel into the first fifth of the time. Closing reads as graceful
+ * because that profile ENDS slowly; opening reads as abrupt because it starts fast and dumps a
+ * section of dishes into view before the eye can follow it.
+ *
+ * So opening gets `ease-in-out` (cubic-bezier(0.4, 0, 0.2, 1)) -- a soft start, a steady middle, a
+ * soft stop -- and 420ms rather than 300. Closing keeps the curve that already felt right.
+ *
+ * TO TUNE: these two lines are the only knobs. Raise the 420ms if opening still feels hurried.
+ */
+const OPEN_MOTION = 'duration-[420ms] ease-in-out'
+const CLOSE_MOTION = 'duration-300 ease-out'
+
 const emptyDraft = (categoryUid: string): ItemDraft => ({
   categoryUid,
   name: '',
@@ -422,16 +440,54 @@ export function MenuManager() {
                     <ChevronDown
                       aria-hidden="true"
                       className={cn(
+                        // Same motion spec as the panel below, both directions. It was on
+                        // Tailwind's default 150ms, so the arrow used to finish turning while the
+                        // section was still opening.
                         'h-4 w-4 shrink-0 text-muted transition-transform',
-                        isCollapsed ? '' : 'rotate-180',
+                        'motion-reduce:transition-none',
+                        isCollapsed ? `${CLOSE_MOTION}` : `rotate-180 ${OPEN_MOTION}`,
                       )}
                       strokeWidth={2}
                     />
                   </button>
                 </h2>
 
-                {!isCollapsed ? (
-                  <div id={listId}>
+                {/*
+                  THE COLLAPSE IS PURE CSS, and it is the same idiom as order-card.tsx and
+                  stats-strip.tsx rather than a third way of doing the same thing.
+
+                  A grid whose single row goes from `0fr` to `1fr` transitions to the content's own
+                  height, which `height: auto` cannot do -- so there is no measuring, no
+                  ResizeObserver and no layout thrash on a page that is 8,500px tall at production
+                  scale. `overflow-hidden` clips during the transition and the inner `min-h-0` is
+                  what lets the row actually reach zero; without it the child's min-content height
+                  holds the section open.
+
+                  It replaced `{!isCollapsed ? ... : null}`, which snapped. Keeping the content
+                  mounted costs nothing in the common case: categories are expanded by DEFAULT
+                  (`collapsed[uid] === true` is the collapsed test), so every dish is already in the
+                  DOM until someone chooses to fold a section away.
+
+                  `inert` when collapsed, which the two older usages do not do and this one needs:
+                  a folded category still contains price fields and "Mark sold out" buttons, and
+                  without it a keyboard user tabs into controls they cannot see. It also takes the
+                  hidden rows out of the accessibility tree, so `aria-expanded` on the toggle stops
+                  disagreeing with what a screen reader can reach.
+                */}
+                <div
+                  id={listId}
+                  role="region"
+                  aria-label={`Dishes in ${category.name}`}
+                  inert={isCollapsed}
+                  className={cn(
+                    'grid overflow-hidden transition-[grid-template-rows]',
+                    'motion-reduce:transition-none',
+                    isCollapsed
+                      ? `grid-rows-[0fr] ${CLOSE_MOTION}`
+                      : `grid-rows-[1fr] ${OPEN_MOTION}`,
+                  )}
+                >
+                  <div className="min-h-0">
                     <ul>
                       {category.items.map((item) => (
                         <li
@@ -440,9 +496,18 @@ export function MenuManager() {
                             An explicit grid, not a flex row with one greedy gap: at 1440 the old
                             row put ~700px of empty space between a dish's description and its
                             price, so the two halves of one row read as unrelated columns.
+
+                            IT STACKS BELOW sm, and this is not cosmetic. The row's fixed furniture
+                            -- 32px of padding, the 14px food-type mark, a 96px price field, a
+                            ~107px button and three 12px gaps -- comes to roughly 285px before the
+                            dish name gets anything at all. On a 360px phone that left the name
+                            about 75px ("Chicken ...", "Murgh M..."), and on a sold-out row the
+                            "Sold out" badge took most of what remained, collapsing the name to a
+                            single letter. Four columns is a desktop shape; a phone gets two rows.
                           */
                           className={cn(
-                            'grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 border-t border-divider px-4 py-2',
+                            'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-divider px-4 py-2',
+                            'sm:grid-cols-[auto_minmax(0,1fr)_auto]',
                             !item.is_available ? 'bg-surface-sunken' : '',
                           )}
                         >
@@ -453,18 +518,28 @@ export function MenuManager() {
                               {/* Sold out is a STATE on the row, so the red no longer lands on the
                                   button that undoes it -- the only red on the page used to be the
                                   two rows that were already handled. */}
-                              {!item.is_available ? <Badge tone="danger">Sold out</Badge> : null}
+                              {!item.is_available ? (
+                                <Badge tone="danger" className="shrink-0">
+                                  Sold out
+                                </Badge>
+                              ) : null}
                             </p>
                             {item.description ? (
                               <p className="truncate text-sm text-muted">{item.description}</p>
                             ) : null}
                           </div>
 
-                          {/* No wrapping <label>: the field is named by the aria-label below, which
-                              names it per dish ("Price of Butter Chicken in rupees") rather than
-                              repeating the word "Price" 93 times down the page. */}
-                          {canEdit ? (
-                            <div className="flex shrink-0 items-center gap-1">
+                          {/*
+                            Price and action are ONE grid child, so they move to the second row
+                            together instead of the button wrapping away from the field it applies
+                            to. Right-aligned: below sm this puts the action at the edge the thumb
+                            reaches, and at sm+ the column is auto-width so it has no effect.
+                          */}
+                          <div className="col-start-2 flex items-center justify-end gap-2 sm:col-start-3">
+                            {/* No wrapping <label>: the field is named by the aria-label below,
+                                which names it per dish ("Price of Butter Chicken in rupees")
+                                rather than repeating the word "Price" 93 times down the page. */}
+                            {canEdit ? (
                               <Input
                                 defaultValue={formatMinorForInput(item.price.minor)}
                                 inputMode="decimal"
@@ -476,23 +551,23 @@ export function MenuManager() {
                                 onBlur={(event) => updatePrice(item, event.target.value)}
                                 className="w-24"
                               />
-                            </div>
-                          ) : (
-                            <span className="shrink-0 text-base [font-variant-numeric:tabular-nums]">
-                              {item.price.display}
-                            </span>
-                          )}
+                            ) : (
+                              <span className="figures shrink-0 text-base">
+                                {item.price.display}
+                              </span>
+                            )}
 
-                          <Button
-                            size="sm"
-                            variant={item.is_available ? 'secondary' : 'primary'}
-                            disabled={pending !== null && pending !== item.uid}
-                            loading={pending === item.uid}
-                            aria-pressed={!item.is_available}
-                            onClick={() => toggleAvailability(item)}
-                          >
-                            {item.is_available ? 'Mark sold out' : 'Back on sale'}
-                          </Button>
+                            <Button
+                              size="sm"
+                              variant={item.is_available ? 'secondary' : 'primary'}
+                              disabled={pending !== null && pending !== item.uid}
+                              loading={pending === item.uid}
+                              aria-pressed={!item.is_available}
+                              onClick={() => toggleAvailability(item)}
+                            >
+                              {item.is_available ? 'Mark sold out' : 'Back on sale'}
+                            </Button>
+                          </div>
                         </li>
                       ))}
                       {category.items.length === 0 ? (
@@ -523,7 +598,7 @@ export function MenuManager() {
                       )
                     ) : null}
                   </div>
-                ) : null}
+                </div>
               </Card>
             )
           })
