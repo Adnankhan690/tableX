@@ -218,6 +218,55 @@
     overscroll-behavior-x: contain;
   }
 
+  /**
+   * A slim scrollbar for anything that scrolls inside the layout rather than as the page: the
+   * select dropdown's option list, the order board's chip rail.
+   *
+   * TWO MECHANISMS, AND ONLY ONE OF THEM RUNS ON ANY GIVEN BROWSER. Worth stating plainly, because
+   * the obvious reading -- that the standard properties cover Firefox and the -webkit- rules cover
+   * Chrome and Safari -- is wrong and leads to tuning the block that is being ignored:
+   *
+   *  - Chrome 121+, Firefox and Safari 18.2+ honour `scrollbar-width`/`scrollbar-color`, and per
+   *    spec a non-`auto` value on either makes them IGNORE the ::-webkit-scrollbar pseudo-elements
+   *    completely. Measured, not assumed: with both blocks present Chrome reserves no gutter at all
+   *    (offsetWidth - clientWidth = 0), which is the standard thin scrollbar, not the 10px one
+   *    declared below. On macOS this keeps the native overlay behaviour, so the bar fades in on
+   *    scroll rather than permanently occupying a channel.
+   *  - Older Chrome and Safari ignore the standard properties and fall back to the -webkit- rules,
+   *    where the thumb is 4px of colour inset inside a 10px gutter: `border: 3px solid transparent`
+   *    plus `background-clip: content-box`, since a scrollbar thumb has no padding property.
+   *
+   * So the -webkit- block is a fallback for older engines, not the primary path. Both give a slim
+   * rounded thumb in the panel's own palette; neither is what stops a scrollbar escaping a rounded
+   * corner -- that is the frame/scroller split in select.tsx, and it is structural.
+   */
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ad-line-strong) transparent;
+  }
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  /* Transparent, not a tinted track: a grey channel running the full height reads as a border on
+     one side of the panel. */
+  .scrollbar-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background-color: var(--ad-line-strong);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ad-muted);
+  }
+  /* The square where a vertical and a horizontal bar meet, which defaults to a grey block. */
+  .scrollbar-slim::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
   /* Hides the scrollbar without disabling the scroll. Used only on the board's column rail, where
      the columns themselves are the affordance and a 15px grey bar under a live board is noise. */
   .scrollbar-none {

@@ -1,9 +1,10 @@
 'use client'
 
 import type { OrderView } from '@tablex/shared'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as announce from '@/lib/announce'
 import * as chime from '@/lib/chime'
+import { readChimeEnabled } from '@/lib/chime-preference'
 import { arrivalPhrase, scanForArrivals } from '@/lib/new-arrivals'
 
 /**
@@ -15,25 +16,12 @@ import { arrivalPhrase, scanForArrivals } from '@/lib/new-arrivals'
  */
 const SPEAK_DELAY_MS = 520
 
-/**
- * Per-device, like the stats strip's collapse state: which tablet wants sound is a property of
- * where it sits in the building, not of who signed in. The kitchen tablet wants it; the manager's
- * laptop in the back office does not.
- *
- * `.v1` suffix per the convention in lib/auth.ts -- a future shape change reads a new key and gets
- * the default rather than misparsing this one.
- */
-const MUTE_KEY = 'tablex.admin.chime-muted.v1'
-
 export interface NewOrderChime {
-  /** Whether sound is switched on for this device. */
-  enabled: boolean
-  toggle: () => void
   /**
-   * True when sound is on but the browser has not let us make any: no user gesture yet, or no Web
-   * Audio at all. Surfaced so the board can say so -- see the autoplay note in lib/chime.ts.
+   * NO TOGGLE HERE ANY MORE. The control is a row on Settings (components/sound-setting.tsx); this
+   * hook only reads the preference and plays. The board reads it fresh on mount, which is enough
+   * because changing it on Settings and returning to the board remounts this.
    */
-  blocked: boolean
   /**
    * The last arrival as a sentence, for the board's live region.
    *
@@ -74,7 +62,6 @@ export function useNewOrderChime(orders: OrderView[] | null): NewOrderChime {
    *    the operating system and never hear again. Off is the honest default; the toggle is visible.
    */
   const [enabled, setEnabled] = useState(false)
-  const [blocked, setBlocked] = useState(false)
   const [announcement, setAnnouncement] = useState<Announcement>({ text: '', seq: 0 })
 
   /**
@@ -96,12 +83,9 @@ export function useNewOrderChime(orders: OrderView[] | null): NewOrderChime {
   /** Pending spoken line, so unmounting the board silences it mid-sentence. */
   const speakTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Read after mount, never in the initialiser: see the note on readChimeEnabled.
   useEffect(() => {
-    try {
-      if (window.localStorage.getItem(MUTE_KEY) === '0') setEnabled(true)
-    } catch {
-      /* Private mode or storage disabled. Off stands; this is a preference, not data. */
-    }
+    setEnabled(readChimeEnabled())
   }, [])
 
   /**
@@ -119,11 +103,9 @@ export function useNewOrderChime(orders: OrderView[] | null): NewOrderChime {
       // Safari gates speech on a gesture too, and unlike an AudioContext there is no state to
       // read -- the first utterance just does nothing. Spend the gesture on both.
       announce.unlock()
-      // Awaited, not polled on a timer: see the note on chime.unlock.
-      void chime.unlock().then((ready) => setBlocked(!ready))
+      void chime.unlock()
     }
 
-    setBlocked(chime.state() !== 'ready')
     window.addEventListener('pointerdown', onGesture, { capture: true, once: true })
     window.addEventListener('keydown', onGesture, { capture: true, once: true })
     return () => {
@@ -156,11 +138,10 @@ export function useNewOrderChime(orders: OrderView[] | null): NewOrderChime {
 
     if (!enabled) return
 
-    if (!chime.play()) {
-      setBlocked(chime.state() !== 'ready')
-      // The chime is the attention-getter; without it the words arrive into a room that was not
-      // listening. Say them anyway -- half a signal beats none.
-    }
+    // The chime is the attention-getter; if the browser refused it the words still arrive, into a
+    // room that was not listening. Half a signal beats none. Nothing on the board reports the
+    // refusal any more -- the Settings row is where that shows, since that is where the control is.
+    chime.play()
 
     // Cleared on unmount below, so a line cannot outlive the board that asked for it.
     if (speakTimer.current !== null) clearTimeout(speakTimer.current)
@@ -181,38 +162,5 @@ export function useNewOrderChime(orders: OrderView[] | null): NewOrderChime {
    * unlock, the storage write and the preview timer all ran twice, producing two overlapping
    * chimes. An updater must be a pure function of the previous state; the side effects belong here.
    */
-  const toggle = useCallback(() => {
-    const next = !enabled
-    setEnabled(next)
-
-    try {
-      window.localStorage.setItem(MUTE_KEY, next ? '0' : '1')
-    } catch {
-      /* See above -- failing to remember it must not stop it taking effect for this shift. */
-    }
-
-    if (!next) {
-      announce.stop()
-      setBlocked(false)
-      return
-    }
-
-    /**
-     * This click is the gesture, so it is the one reliable chance to start the audio context.
-     *
-     * Awaited rather than checked on a later tick: `resume()` settles on the audio thread, and the
-     * previous version read the context state from a `setTimeout(0)` that raced it -- reporting
-     * "blocked" and staying silent on a device where sound in fact worked.
-     */
-    void chime.playPreview().then((ok) => {
-      setBlocked(!ok)
-      if (!ok) return
-      // Confirms both halves of what was just switched on, and proves the voice works before a
-      // real order depends on it.
-      void announce.unlock()
-      speakTimer.current = setTimeout(() => announce.speak('Sound on'), SPEAK_DELAY_MS)
-    })
-  }, [enabled])
-
-  return { enabled, toggle, blocked, announcement }
+  return { announcement }
 }

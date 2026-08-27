@@ -67,7 +67,9 @@ export function ToggleChip({
         // Fully rounded, and that is a system rule rather than a flourish: a chip is a filter you
         // toggle, an input is a box you type in. Giving the two different silhouettes means the
         // toolbar reads as two kinds of control at a glance instead of one row of similar rectangles.
-        'inline-flex min-h-tap shrink-0 items-center gap-2 rounded-full border pl-3.5 text-sm font-medium',
+        'inline-flex shrink-0 items-center gap-2 rounded-full border font-medium',
+        // Compact below `sm` -- see the tap-token note in tailwind.config.ts.
+        'min-h-tap-sm pl-3 text-xs sm:min-h-tap sm:pl-3.5 sm:text-sm',
         'transition-colors duration-100',
         // Tighter on the right when a badge is present, so the badge sits inside the pill rather
         // than looking bolted on.

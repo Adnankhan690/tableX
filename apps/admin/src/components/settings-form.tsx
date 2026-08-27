@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { PageHeader } from '@/components/page-header'
 import { Select, type SelectOption } from '@/components/select'
+import { SoundSetting } from '@/components/sound-setting'
 import { Button, Card, Field, Input, Notice, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
 
@@ -419,6 +420,28 @@ export function SettingsForm() {
             </Section>
           </div>
         )}
+        {/*
+          OUTSIDE THE BRANCH ABOVE, deliberately. Everything else on this page is restaurant-wide
+          and comes from the settings request; this is a per-device preference held in localStorage,
+          so it stays reachable when that request is loading or has failed. Nothing about whether
+          this tablet chimes depends on the server answering.
+
+          Not gated by `canEdit` either -- turning the sound on for the screen in front of you is
+          not an owner-level change to the restaurant.
+        */}
+        <div className="mx-auto mt-6 max-w-4xl border-t border-divider pt-6 first:mt-0 first:border-0 first:pt-0">
+          <section className="grid gap-4 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold">Sound</h2>
+              <p className="mt-1 text-sm text-muted">
+                Whether this screen chimes and says the table when a new order arrives.
+              </p>
+            </div>
+            <div className="min-w-0">
+              <SoundSetting />
+            </div>
+          </section>
+        </div>
       </main>
 
       {/*

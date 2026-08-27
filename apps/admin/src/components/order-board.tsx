@@ -9,9 +9,9 @@ import type {
   TransitionTarget,
 } from '@tablex/shared'
 import { requiresReason, TRANSITION_VERB } from '@tablex/shared'
-import { cn, ErrorState } from '@tablex/ui'
-import { Bell, BellOff, Inbox } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ErrorState } from '@tablex/ui'
+import { Inbox } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { OrderCard } from '@/components/order-card'
 import { PageHeader } from '@/components/page-header'
@@ -22,6 +22,7 @@ import { EmptyState, Notice, SearchInput, Skeleton, ToggleChip, Toolbar } from '
 import { useAdminStream } from '@/hooks/useAdminStream'
 import { useNewOrderChime } from '@/hooks/useNewOrderChime'
 import { api } from '@/lib/api'
+import { scanForArrivals } from '@/lib/new-arrivals'
 
 /**
  * The pipeline, in kitchen order.
@@ -58,6 +59,14 @@ const FILTERS = [
   statuses: readonly OrderStatus[]
   live?: boolean
 }[]
+
+/**
+ * How long a ticket stays marked as newly arrived.
+ *
+ * Comfortably longer than the 220ms entrance: the mark only has to outlive the animation, and
+ * clearing it early would abort the keyframe mid-slide.
+ */
+const ARRIVAL_MARK_MS = 700
 
 /** How many orders one request may return when the filter is not the live shorthand. */
 const PAGE_SIZE = 50
@@ -139,6 +148,29 @@ export function OrderBoard() {
    * Held here rather than inside each card: one interval for the whole board instead of one per
    * order, which on a busy night is the difference between one timer and forty.
    */
+  /**
+   * The tickets currently playing their entrance, by UID.
+   *
+   * Held here rather than inside OrderCard because a card MOUNTING is not an order ARRIVING, and
+   * conflating the two is the obvious way to get this wrong: switching the status filter remounts
+   * every card on the board, and an order moving stage can mount a card that has been open twenty
+   * minutes. Only the board knows which UIDs are new to it.
+   */
+  const [arrived, setArrived] = useState<ReadonlySet<string>>(() => new Set())
+  /** Every UID this board has rendered. Grow-only, for the reason given in lib/new-arrivals.ts. */
+  const rendered = useRef<Set<string>>(new Set())
+  /** False until the first list lands: a shift's opening twelve tickets did not just arrive. */
+  const primed = useRef(false)
+  /** Pending un-mark timers, cleared on unmount so none fires into a dead component. */
+  const arrivalTimers = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  useEffect(
+    () => () => {
+      for (const timer of arrivalTimers.current) clearTimeout(timer)
+    },
+    [],
+  )
+
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -166,6 +198,37 @@ export function OrderBoard() {
           ...(unpaidOnly ? { payment_status: 'pending' as const } : {}),
         })
         .then((result) => {
+          /*
+            MARKED HERE, NOT IN AN EFFECT, and the placement is the whole reason the entrance looks
+            right. An effect runs AFTER the commit that renders the list, so the card would mount
+            un-marked and pick up the animation class one frame later -- a visible hitch. Doing it
+            in the fetch callback puts this setState in the same batch as `setOrders`, so the card's
+            very first commit already carries the class and the animation starts from mount.
+
+            `scanForArrivals` is the same tested function the chime uses, against the RENDERED list
+            rather than the open set: audio should fire for a new order whatever the filter, but
+            only a card actually on screen has an entrance to play.
+          */
+          const scan = scanForArrivals(rendered.current, result.orders, primed.current)
+          for (const uid of scan.unseen) rendered.current.add(uid)
+          primed.current = true
+
+          if (scan.arrived.length > 0) {
+            const fresh = scan.arrived.map((order) => order.uid)
+            setArrived((previous) => new Set([...previous, ...fresh]))
+            // Cleared well after the 220ms animation, never during it: removing the class mid-flight
+            // aborts the keyframe and snaps the card to its final position.
+            arrivalTimers.current.push(
+              setTimeout(() => {
+                setArrived((previous) => {
+                  const next = new Set(previous)
+                  for (const uid of fresh) next.delete(uid)
+                  return next
+                })
+              }, ARRIVAL_MARK_MS),
+            )
+          }
+
           setOrders(result.orders)
           setError(null)
           if (selected.value === 'open') {
@@ -199,14 +262,20 @@ export function OrderBoard() {
     })
   }, [getToken])
 
-  const { live } = useAdminStream(auth?.accessToken ?? null, load)
+  /*
+    Not destructured any more. `useAdminStream` still reports whether a socket is open, and the
+    board still refetches either way -- but the live/polling indicator that consumed it has been
+    removed from the header, so there is nothing to render it into. The hook is called for its
+    effect, not its value.
+  */
+  useAdminStream(auth?.accessToken ?? null, load)
 
   /**
    * Fed `queue`, not `orders` -- see the note in the hook. `queue` is the whole open set
    * whatever chip is selected, so a staff member filtered to Ready still hears a new order
    * land in a stage they are not looking at.
    */
-  const chime = useNewOrderChime(queue)
+  const { announcement } = useNewOrderChime(queue)
 
   /** Applies a transition, or opens the reason dialog when the server will demand one. */
   const transition = useCallback(
@@ -329,69 +398,40 @@ export function OrderBoard() {
 
   return (
     <>
+      {/*
+        HIDDEN ON PHONES ONLY, and there are two elements here because of it.
+
+        Below `sm` the band was a sticky 65px spelling out the word the navigation already has
+        marked `aria-current="page"` -- a tenth of a phone viewport spent saying where you are to
+        someone who just tapped to get here. From `sm` up there is room for it and it stays.
+
+        `hidden sm:flex` goes on PageHeader's own className rather than on a wrapper div: the header
+        is `position: sticky`, and a wrapper would become its containing block and cap it at its own
+        height, which stops it sticking at all. `cn` resolves `hidden` against the base `flex`.
+
+        The `sr-only sm:hidden` h1 covers the gap below `sm`, where the visible one is display:none
+        and therefore out of the accessibility tree. Exactly one h1 is exposed at any width: this
+        one on a phone, PageHeader's from `sm` up. A document needs a heading, and "the nav says so"
+        is a visual argument rather than a structural one.
+      */}
+      <h1 className="sr-only sm:hidden">Orders</h1>
       <PageHeader
+        className="hidden sm:flex"
         title="Orders"
+        /*
+          SHOWN ONLY WHEN THE CHIPS DO NOT ALREADY SAY IT -- the same rule the status Select below
+          follows. With Open orders selected this read "Open orders · 8 on the board" while the lit
+          chip two rows down read "Open orders 8": the same two facts, twice.
+
+          BADGED, not QUICK_FILTERS, is the test: Completed deliberately has no count on its chip
+          (see the note there), so its total is only ever stated here.
+        */
         subtitle={
-          orders === null
+          orders === null || BADGED.includes(statusFilter)
             ? undefined
             : `${FILTERS.find((f) => f.value === statusFilter)?.label ?? 'Orders'} · ${
                 orders.length
               } on the board`
-        }
-        meta={
-          /* Both halves answer the same question -- is this board reaching me -- so they sit
-             together rather than the sound control living off in the toolbar with the filters. */
-          <span className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs text-muted">
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  live ? 'animate-pulse-slow bg-success' : 'bg-muted',
-                )}
-              />
-              {/* Staff need to know whether to trust this board second-by-second. Polling is still
-                  correct, just slower, and saying which mode it is in avoids a staff member
-                  assuming a stale board is an empty one. */}
-              {live ? 'Live' : 'Refreshing every 5s'}
-            </span>
-
-            {/*
-              THE SOUND TOGGLE, and it says which of three states it is in rather than two.
-
-              `blocked` is the state that matters and the reason this is not a bare icon: sound can
-              be switched on and still be inaudible, because the browser will not start an
-              AudioContext until someone has interacted with the page (see lib/chime.ts). A staff
-              member who thinks the board will call out to them and is wrong stops watching it,
-              which is worse than never having offered sound. So a blocked toggle turns warning and
-              says so in words, and any tap anywhere fixes it.
-            */}
-            <button
-              type="button"
-              onClick={chime.toggle}
-              aria-pressed={chime.enabled}
-              title={
-                chime.enabled
-                  ? 'Chimes and says the table when a new order arrives. Tap to turn off.'
-                  : 'Silent. Tap to chime and hear the table when a new order arrives.'
-              }
-              className={cn(
-                'flex min-h-tap items-center gap-1.5 rounded-control border px-2.5 text-xs font-medium transition-colors',
-                chime.enabled && chime.blocked
-                  ? 'border-warning-line bg-warning-soft text-warning'
-                  : chime.enabled
-                    ? 'border-accent-line bg-accent-soft text-accent'
-                    : 'border-line bg-surface text-muted hover:bg-surface-sunken hover:text-ink',
-              )}
-            >
-              {chime.enabled ? (
-                <Bell aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
-              ) : (
-                <BellOff aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
-              )}
-              {chime.enabled && chime.blocked ? 'Tap anywhere to allow sound' : 'Sound'}
-            </button>
-          </span>
         }
       />
 
@@ -408,10 +448,15 @@ export function OrderBoard() {
         announcements rather than one unchanged string (see the hook).
       */}
       <p aria-live="polite" aria-atomic="true" className="sr-only">
-        <span key={chime.announcement.seq}>{chime.announcement.text}</span>
+        <span key={announcement.seq}>{announcement.text}</span>
       </p>
 
-      <StatsStrip />
+      {/*
+        Clicking a breakdown band selects the matching filter. `setStatusFilter` goes straight in --
+        StatsFilter is a subset of FilterValue, and a handler taking the wider union satisfies the
+        narrower parameter, so there is no cast and no circular import.
+      */}
+      <StatsStrip onFilter={setStatusFilter} />
 
       {/*
         TWO ROWS, and the split is the point: the top row decides WHICH orders, the bottom row
@@ -429,7 +474,14 @@ export function OrderBoard() {
         alignment cue that was missing when everything sat in one undifferentiated line.
       */}
       <Toolbar className="flex-col items-stretch gap-2.5">
-        <div className="flex flex-wrap items-center gap-2">
+        {/*
+          `w-full` is load-bearing, not decoration. Without it this row takes its width from
+          `align-items: stretch` on the Toolbar -- and stretch is clamped by the row's automatic
+          minimum size, which resolved to the min-content of the chip rail's `shrink-0` chips
+          (~382px). So on a 360px phone the row was 382px wide inside a 328px content box and the
+          whole PAGE scrolled sideways. An explicit width cannot be clamped upward that way.
+        */}
+        <div className="flex w-full flex-wrap items-center gap-2">
           {/*
             THE CHIP RAIL HOLDS ONE LINE.
 
@@ -441,11 +493,25 @@ export function OrderBoard() {
 
             The negative margin lets the scroll area span the toolbar's own padding, so a chip
             scrolls to the very edge instead of stopping short inside it.
+
+            NO `w-full` HERE, deliberately. It used to have one, and combined with `-mx-4` it
+            asserted a width that then got clamped up by min-content and pushed the row -- and the
+            page -- wider than the viewport. With width left auto the rail is a shrinkable flex item
+            that fills the space its negative margins open up: measured 0..360 on a 360px phone, so
+            the bleed the comment above describes still happens, and it is symmetric now (the first
+            chip sits 16px in, the last scrolls flush to the content edge). `lg:w-auto` went with it,
+            since auto is now the only value.
+
+            `scrollbar-none`, back after a turn with `scrollbar-slim`: on macOS with classic
+            scrollbars a horizontal bar under the rail renders as a full-width grey slab, which
+            costs more than the affordance is worth on the one band staff look at all shift. The
+            partially-visible last chip is the affordance instead -- a chip clipped at the edge says
+            "more this way" without a bar saying it.
           */}
           <div
             role="group"
             aria-label="Quick status filters"
-            className="scroll-x-contain scrollbar-none -mx-4 flex w-full flex-nowrap gap-1.5 px-4 lg:mx-0 lg:w-auto lg:px-0"
+            className="scroll-x-contain scrollbar-none -mx-4 flex flex-nowrap gap-1.5 px-4 lg:mx-0 lg:px-0"
           >
             {QUICK_FILTERS.map((value) => {
               const filter = FILTERS.find((f) => f.value === value)
@@ -467,33 +533,60 @@ export function OrderBoard() {
           </div>
 
           {/*
+            THE THREE NARROWING CONTROLS, AS ONE ROW.
+
+            An explicit container rather than letting them wrap freely among the rail's siblings.
+            Two attempts at doing it with flex properties alone both failed on the rail's `-mx-4`:
+            those negative margins leave 32px of slack on the rail's line, and a `flex-1` Select
+            with `min-width: 0` cheerfully collapses into it -- 47px in one attempt, 24px in the
+            next, while the other Select took a 300px line to itself. A container with `w-full` has
+            no negative margins, so it claims a whole line and nothing can squeeze in beside it.
+
+            Inside it: no `flex-wrap`. These three stay on one line by construction, the two Selects
+            splitting whatever the chip leaves and truncating their own labels if it is tight.
+            `lg:w-auto` hands the row back to the shared line on a wide screen.
+          */}
+          <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto">
+            {/*
             The dropdown keeps every status reachable. It shows the SELECTION only when the chips do
             not already -- pick Preparing and it reads "Preparing"; pick New and the chip is lit, so
             this falls back to its placeholder instead of saying the same word twice.
           */}
-          <Select
-            value={QUICK_FILTERS.includes(statusFilter) ? '' : statusFilter}
-            onChange={(value) => setStatusFilter(value as FilterValue)}
-            options={filterOptions}
-            placeholder="More statuses"
-            ariaLabel="Filter by status"
-            className="min-w-[10.5rem]"
-          />
+            <Select
+              value={QUICK_FILTERS.includes(statusFilter) ? '' : statusFilter}
+              onChange={(value) => setStatusFilter(value as FilterValue)}
+              options={filterOptions}
+              placeholder="More statuses"
+              ariaLabel="Filter by status"
+              /*
+              ONE ROW ON A PHONE. `min-w-[10.5rem]` and `min-w-[9.5rem]` (168px and 152px) plus the
+              Unpaid chip came to 437px against the 328px a 360px screen has, so the three of them
+              wrapped onto two lines. Below `sm` they share the line instead: `flex-1` with
+              `min-w-0` lets each take half of what the chip leaves and truncate its own label.
+              The fixed minimums come back at `sm`, where there is room for them.
+            */
+              className="min-w-0 flex-1 sm:min-w-[10.5rem] sm:flex-none"
+            />
 
-          {/* The boundary between choosing a stage and narrowing within it. Hidden once the row
+            {/* The boundary between choosing a stage and narrowing within it. Hidden once the row
               wraps, where a rule would fall in the middle of a line and mean nothing. */}
-          <span aria-hidden="true" className="hidden h-6 w-px shrink-0 bg-divider lg:block" />
+            <span aria-hidden="true" className="hidden h-6 w-px shrink-0 bg-divider lg:block" />
 
-          <Select
-            value={tableFilter}
-            onChange={setTableFilter}
-            options={tableOptions}
-            ariaLabel="Filter by table"
-            className="min-w-[9.5rem]"
-          />
-          <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
-            Unpaid only
-          </ToggleChip>
+            <Select
+              value={tableFilter}
+              onChange={setTableFilter}
+              options={tableOptions}
+              ariaLabel="Filter by table"
+              className="min-w-0 flex-1 sm:min-w-[9.5rem] sm:flex-none"
+            />
+            <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
+              {/* "Unpaid only" is 94px of the 328px a 360px phone has for all three controls, and
+                those 26px are the difference between the status Select showing its label and
+                truncating it. "only" is the word carrying least meaning on a toggle. */}
+              <span className="sm:hidden">Unpaid</span>
+              <span className="hidden sm:inline">Unpaid only</span>
+            </ToggleChip>
+          </div>
         </div>
 
         <SearchInput
@@ -565,6 +658,7 @@ export function OrderBoard() {
                 order={order}
                 now={now}
                 pending={busy?.uid === order.uid ? busy.target : null}
+                isNew={arrived.has(order.uid)}
                 onTransition={(target) => transition(order, target)}
               />
             ))}

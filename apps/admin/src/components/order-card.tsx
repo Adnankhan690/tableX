@@ -55,10 +55,19 @@ export function OrderCard({
   now,
   onTransition,
   pending,
+  isNew = false,
 }: {
   order: OrderView
   now: number
   onTransition: (target: TransitionTarget) => void
+  /**
+   * True for the first moment after this ticket arrives, which plays the entrance.
+   *
+   * Driven by the board rather than by this card mounting: a mount is not an arrival. Switching the
+   * status filter remounts every card on the board, and an order changing stage can mount a card
+   * that has been open for twenty minutes.
+   */
+  isNew?: boolean
   /**
    * The transition currently in flight on THIS order, or null.
    *
@@ -117,6 +126,9 @@ export function OrderCard({
           ? 'border-age-warn-line bg-gradient-to-b from-age-warn via-age-warn to-surface'
           : '',
         tone === 'calm' ? 'border-line' : '',
+        // Honoured for reduced motion, like every other transition in this panel: a board that
+        // refetches every few seconds is exactly where unwanted motion accumulates.
+        isNew ? 'animate-order-in motion-reduce:animate-none' : '',
       )}
     >
       {/*
