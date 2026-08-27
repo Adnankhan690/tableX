@@ -11,7 +11,7 @@ import type {
 import { requiresReason, TRANSITION_VERB } from '@tablex/shared'
 import { ErrorState } from '@tablex/ui'
 import { Inbox } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { OrderCard } from '@/components/order-card'
 import { PageHeader } from '@/components/page-header'
@@ -22,6 +22,7 @@ import { EmptyState, Notice, SearchInput, Skeleton, ToggleChip, Toolbar } from '
 import { useAdminStream } from '@/hooks/useAdminStream'
 import { useNewOrderChime } from '@/hooks/useNewOrderChime'
 import { api } from '@/lib/api'
+import { scanForArrivals } from '@/lib/new-arrivals'
 
 /**
  * The pipeline, in kitchen order.
@@ -58,6 +59,14 @@ const FILTERS = [
   statuses: readonly OrderStatus[]
   live?: boolean
 }[]
+
+/**
+ * How long a ticket stays marked as newly arrived.
+ *
+ * Comfortably longer than the 220ms entrance: the mark only has to outlive the animation, and
+ * clearing it early would abort the keyframe mid-slide.
+ */
+const ARRIVAL_MARK_MS = 700
 
 /** How many orders one request may return when the filter is not the live shorthand. */
 const PAGE_SIZE = 50
@@ -139,6 +148,29 @@ export function OrderBoard() {
    * Held here rather than inside each card: one interval for the whole board instead of one per
    * order, which on a busy night is the difference between one timer and forty.
    */
+  /**
+   * The tickets currently playing their entrance, by UID.
+   *
+   * Held here rather than inside OrderCard because a card MOUNTING is not an order ARRIVING, and
+   * conflating the two is the obvious way to get this wrong: switching the status filter remounts
+   * every card on the board, and an order moving stage can mount a card that has been open twenty
+   * minutes. Only the board knows which UIDs are new to it.
+   */
+  const [arrived, setArrived] = useState<ReadonlySet<string>>(() => new Set())
+  /** Every UID this board has rendered. Grow-only, for the reason given in lib/new-arrivals.ts. */
+  const rendered = useRef<Set<string>>(new Set())
+  /** False until the first list lands: a shift's opening twelve tickets did not just arrive. */
+  const primed = useRef(false)
+  /** Pending un-mark timers, cleared on unmount so none fires into a dead component. */
+  const arrivalTimers = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  useEffect(
+    () => () => {
+      for (const timer of arrivalTimers.current) clearTimeout(timer)
+    },
+    [],
+  )
+
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -166,6 +198,37 @@ export function OrderBoard() {
           ...(unpaidOnly ? { payment_status: 'pending' as const } : {}),
         })
         .then((result) => {
+          /*
+            MARKED HERE, NOT IN AN EFFECT, and the placement is the whole reason the entrance looks
+            right. An effect runs AFTER the commit that renders the list, so the card would mount
+            un-marked and pick up the animation class one frame later -- a visible hitch. Doing it
+            in the fetch callback puts this setState in the same batch as `setOrders`, so the card's
+            very first commit already carries the class and the animation starts from mount.
+
+            `scanForArrivals` is the same tested function the chime uses, against the RENDERED list
+            rather than the open set: audio should fire for a new order whatever the filter, but
+            only a card actually on screen has an entrance to play.
+          */
+          const scan = scanForArrivals(rendered.current, result.orders, primed.current)
+          for (const uid of scan.unseen) rendered.current.add(uid)
+          primed.current = true
+
+          if (scan.arrived.length > 0) {
+            const fresh = scan.arrived.map((order) => order.uid)
+            setArrived((previous) => new Set([...previous, ...fresh]))
+            // Cleared well after the 220ms animation, never during it: removing the class mid-flight
+            // aborts the keyframe and snaps the card to its final position.
+            arrivalTimers.current.push(
+              setTimeout(() => {
+                setArrived((previous) => {
+                  const next = new Set(previous)
+                  for (const uid of fresh) next.delete(uid)
+                  return next
+                })
+              }, ARRIVAL_MARK_MS),
+            )
+          }
+
           setOrders(result.orders)
           setError(null)
           if (selected.value === 'open') {
@@ -595,6 +658,7 @@ export function OrderBoard() {
                 order={order}
                 now={now}
                 pending={busy?.uid === order.uid ? busy.target : null}
+                isNew={arrived.has(order.uid)}
                 onTransition={(target) => transition(order, target)}
               />
             ))}
