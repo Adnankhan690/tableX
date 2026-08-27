@@ -63,6 +63,34 @@ const PAGE_SIZE = 50
 
 type FilterValue = (typeof FILTERS)[number]['value']
 
+/**
+ * The statuses that get a chip of their own, in the order a shift needs them.
+ *
+ * Chosen by what costs a restaurant money if it is missed, not by what is easiest to list:
+ *
+ *  - `open`      the working set, and the default. One tap back from anywhere.
+ *  - `placed`    an order nobody has acknowledged yet. The most time-critical thing on the
+ *                board: the diner is sitting there with no confirmation, and the board's own
+ *                escalation clock (AGE_WARN_SECONDS) exists for exactly this state.
+ *  - `ready`     food is plated and going cold on the pass until someone runs it.
+ *  - `completed` the owner's question rather than the floor's -- "how did we do today" -- and the
+ *                one archive worth a single tap.
+ *
+ * Accepted and Preparing are deliberately NOT chips: the kitchen is already on those, so filtering
+ * to them is browsing rather than acting. Cancelled and rejected stay in the dropdown, because
+ * reviewing refusals is a end-of-shift job, not a service-time one.
+ */
+const QUICK_FILTERS: readonly FilterValue[] = ['open', 'placed', 'ready', 'completed']
+
+/**
+ * Which chips carry a count.
+ *
+ * Only the queues. A badge says "this many things are waiting for you", so putting one on
+ * Completed would turn a record into a demand -- and the strip above already reports the day's
+ * completed total with its share of today. An archive gets a chip, not a badge.
+ */
+const BADGED: readonly FilterValue[] = ['open', 'placed', 'ready']
+
 /** A pending transition that is waiting on a reason from the dialog. */
 interface PendingReason {
   orderUid: string
@@ -91,6 +119,15 @@ export function OrderBoard() {
   const [pending, setPending] = useState<PendingReason | null>(null)
 
   const [statusFilter, setStatusFilter] = useState<FilterValue>('open')
+  /**
+   * Every open order, purely to count the chips.
+   *
+   * The badges have to keep telling the truth after a chip is tapped, and the list itself cannot
+   * do that: filtering to New leaves `orders` holding only placed ones, so a Ready badge derived
+   * from it would read 0. This costs nothing in the default view -- there `orders` IS the open set,
+   * so it is reused -- and one extra request per refresh only while a narrower filter is active.
+   */
+  const [queue, setQueue] = useState<OrderView[] | null>(null)
   const [tableFilter, setTableFilter] = useState('')
   const [search, setSearch] = useState('')
   const [unpaidOnly, setUnpaidOnly] = useState(false)
@@ -130,6 +167,17 @@ export function OrderBoard() {
         .then((result) => {
           setOrders(result.orders)
           setError(null)
+          if (selected.value === 'open') {
+            setQueue(result.orders)
+            return
+          }
+          // A narrower filter is active, so the chip counts need their own read of the open set.
+          api
+            .listOrders(token, { live: true, per_page: PAGE_SIZE })
+            .then((open) => setQueue(open.orders))
+            .catch(() => {
+              /* Counts are a convenience; losing them must not disturb the board. */
+            })
         })
         .catch(setError)
     })
@@ -227,36 +275,26 @@ export function OrderBoard() {
   }, [orders])
 
   /**
-   * How many of the loaded orders sit in each stage.
+   * What each badged chip shows.
    *
-   * Shown on the filter's own options, which is where the five column headings' counts went: the
-   * dropdown doubles as the summary of what is on the board.
+   * `open` is the whole open set; the two stage chips count within it. Null while the open set has
+   * not loaded, so a badge is absent rather than confidently wrong.
    */
-  const counts = useMemo(() => {
-    const tally = new Map<OrderStatus, number>()
-    for (const order of orders ?? []) tally.set(order.status, (tally.get(order.status) ?? 0) + 1)
-    return tally
-  }, [orders])
+  const chipCounts = useMemo((): Partial<Record<FilterValue, number>> => {
+    if (queue === null) return {}
+    return {
+      open: queue.length,
+      placed: queue.filter((order) => order.status === 'placed').length,
+      ready: queue.filter((order) => order.status === 'ready').length,
+    }
+  }, [queue])
 
   const filterOptions = useMemo(
-    () =>
-      FILTERS.map((filter) => {
-        // A count is only honest for the view currently loaded -- asking for "New" fetches only
-        // placed orders, so it cannot also say how many are Ready. Counts therefore appear on the
-        // option only while the loaded set actually covers that stage.
-        const covered =
-          statusFilter === 'all' ||
-          (statusFilter === 'open' && PIPELINE.includes(filter.statuses[0] as OrderStatus))
-        const total = filter.statuses.reduce((n, status) => n + (counts.get(status) ?? 0), 0)
-        return {
-          value: filter.value,
-          label:
-            covered && filter.value !== 'open' && filter.value !== 'all'
-              ? `${filter.label} · ${total}`
-              : filter.label,
-        }
-      }),
-    [counts, statusFilter],
+    // Plain labels. The counts that used to hang off these options were only honest for whichever
+    // scope happened to be loaded, and the chips above now carry them from a source that stays
+    // correct whatever is selected.
+    () => FILTERS.map((filter) => ({ value: filter.value, label: filter.label })),
+    [],
   )
 
   /**
@@ -311,33 +349,96 @@ export function OrderBoard() {
 
       <StatsStrip />
 
-      <Toolbar>
-        {/* The status filter comes first: it decides what the list IS, where the other three
-            narrow it. */}
-        <Select
-          value={statusFilter}
-          onChange={(value) => setStatusFilter(value as FilterValue)}
-          options={filterOptions}
-          ariaLabel="Filter by status"
-          className="min-w-[12rem]"
-        />
+      {/*
+        TWO ROWS, and the split is the point: the top row decides WHICH orders, the bottom row
+        narrows them. Four controls wrapping in one band made "Open orders" and "All tables" sit
+        side by side as if they were the same kind of thing.
+      */}
+      {/*
+        FILTERS ON TOP, SEARCH BELOW.
+
+        The top row decides WHICH orders and how they are narrowed; search gets its own full-width
+        row underneath. Two reasons it is not squeezed in beside the filters: a search field is the
+        one control whose useful width depends on what you type into it, and an order number and a
+        customer name are both longer than the 12rem it was getting when four controls shared a
+        band. The vertical rule splits the row into "which stage" and "narrow it down", which is the
+        alignment cue that was missing when everything sat in one undifferentiated line.
+      */}
+      <Toolbar className="flex-col items-stretch gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {/*
+            THE CHIP RAIL HOLDS ONE LINE.
+
+            It scrolls sideways rather than wrapping: the four stages are one set, and a set that
+            breaks across two lines stops reading as a set -- "Completed" alone on a second row
+            looks like a different kind of control. `w-full` below lg gives it the whole line to
+            scroll in; from lg it takes its natural width and shares the row with the controls that
+            follow, so a wide screen still gets one tidy band instead of a stranded rail.
+
+            The negative margin lets the scroll area span the toolbar's own padding, so a chip
+            scrolls to the very edge instead of stopping short inside it.
+          */}
+          <div
+            role="group"
+            aria-label="Quick status filters"
+            className="scroll-x-contain scrollbar-none -mx-4 flex w-full flex-nowrap gap-1.5 px-4 lg:mx-0 lg:w-auto lg:px-0"
+          >
+            {QUICK_FILTERS.map((value) => {
+              const filter = FILTERS.find((f) => f.value === value)
+              if (!filter) return null
+              return (
+                <ToggleChip
+                  key={value}
+                  active={statusFilter === value}
+                  count={BADGED.includes(value) ? chipCounts[value] : undefined}
+                  // Only the two stages that need someone to move: an unacknowledged order and
+                  // food waiting on the pass. The open-orders total is a scope, not a queue.
+                  countTone={value === 'placed' || value === 'ready' ? 'urgent' : 'neutral'}
+                  onClick={() => setStatusFilter(value)}
+                >
+                  {filter.label}
+                </ToggleChip>
+              )
+            })}
+          </div>
+
+          {/*
+            The dropdown keeps every status reachable. It shows the SELECTION only when the chips do
+            not already -- pick Preparing and it reads "Preparing"; pick New and the chip is lit, so
+            this falls back to its placeholder instead of saying the same word twice.
+          */}
+          <Select
+            value={QUICK_FILTERS.includes(statusFilter) ? '' : statusFilter}
+            onChange={(value) => setStatusFilter(value as FilterValue)}
+            options={filterOptions}
+            placeholder="More statuses"
+            ariaLabel="Filter by status"
+            className="min-w-[10.5rem]"
+          />
+
+          {/* The boundary between choosing a stage and narrowing within it. Hidden once the row
+              wraps, where a rule would fall in the middle of a line and mean nothing. */}
+          <span aria-hidden="true" className="hidden h-6 w-px shrink-0 bg-divider lg:block" />
+
+          <Select
+            value={tableFilter}
+            onChange={setTableFilter}
+            options={tableOptions}
+            ariaLabel="Filter by table"
+            className="min-w-[9.5rem]"
+          />
+          <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
+            Unpaid only
+          </ToggleChip>
+        </div>
+
         <SearchInput
           value={search}
           onValueChange={setSearch}
-          placeholder="Order number or customer"
+          placeholder="Search by order number or customer name"
           label="Search orders"
-          className="min-w-[12rem]"
+          className="w-full"
         />
-        <Select
-          value={tableFilter}
-          onChange={setTableFilter}
-          options={tableOptions}
-          ariaLabel="Filter by table"
-          className="min-w-[10rem]"
-        />
-        <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
-          Unpaid only
-        </ToggleChip>
       </Toolbar>
 
       {notice !== null ? (

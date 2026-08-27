@@ -140,6 +140,41 @@ initial state, or the server markup and the first client render disagree. Collap
 keeps `live` and `unpaid`: the two figures a staff member would notice from the doorway, so
 reclaiming the space never blinds anyone.
 
+## The orders toolbar
+
+Two rows, and the split is the whole idea: the top row decides **which** orders, the bottom row
+**narrows** them. Four controls wrapping in one band put "Open orders" and "All tables" side by side
+as though they were the same kind of thing.
+
+**Quick chips** for the stages a shift lives in — Open orders, New, Ready, Completed — with the full
+list still one dropdown away. Chosen by what costs money if missed, not by what is easy to list:
+`New` is an order nobody has acknowledged (the diner is sitting there, and `AGE_WARN_SECONDS` exists
+for exactly this state), `Ready` is food going cold on the pass, `Completed` is the owner's
+end-of-day question. Accepted and Preparing are deliberately *not* chips — the kitchen is already on
+those, so filtering to them is browsing rather than acting.
+
+**Badges are queue depths, and only on queues.** A badge says "this many are waiting for you", so
+Completed has none: an archive gets a chip, not a demand. The counts come from a separate read of
+the open set, not from the list on screen — filter to New and a Ready badge derived from `orders`
+would read 0. It costs nothing in the default view, where `orders` *is* the open set and gets
+reused, and one extra request only while a narrower filter is active. `e2e/ui-smoke.mjs` asserts
+exactly this: tap New, and the Open and Ready badges must not move.
+
+**The dropdown never repeats a chip.** When the selection is chip-covered it shows its placeholder,
+"More statuses…", so it reads as the rest rather than as a second copy of the state.
+
+**Search owns its own row, full width.** It is the one control whose useful width depends on what
+gets typed into it — an order number and a customer name are both longer than the 12rem it got when
+four controls shared a band. A vertical rule inside the filter row separates "which stage" from
+"narrow it down"; it hides once the row wraps, where a rule would fall mid-line and mean nothing.
+
+**Two silhouettes, on purpose.** A chip is fully rounded and white; a field is `rounded-control`
+with the `bg-field` fill and a `border-line-strong` edge. Search, the status dropdown and the table
+dropdown all share that field treatment, so the toolbar reads as *two kinds of control* — things you
+toggle and things you type or pick in — rather than one row of similar rectangles. A badge on an
+urgent queue is a filled accent circle; a zero is always quiet, whatever its tone says, because an
+empty queue that shouts is how staff learn to stop reading badges.
+
 ## Animating to auto height
 
 Two surfaces expand — the order card's ticket lines and the stats strip — and both use the same

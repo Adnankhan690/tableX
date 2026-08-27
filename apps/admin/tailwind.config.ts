@@ -71,9 +71,14 @@ const config: Config = {
         display: ['1.5rem', { lineHeight: '2rem', letterSpacing: '-0.02em' }], // 24px, auth screens
       },
       borderRadius: {
-        control: '0.5rem', // buttons, inputs, chips
-        card: '0.625rem', // cards, list containers, popovers
-        panel: '0.875rem', // dialogs and the auth card
+        // One step softer than the first pass, across the whole scale rather than on the one
+        // control that prompted it: the dropdown looked boxy next to the pill-shaped chips, and
+        // fixing it in isolation would have left a field, a button and a card each at a different
+        // radius in the same row. The relationships are what matter -- controls stay crisper than
+        // cards, cards crisper than panels -- so all three move together.
+        control: '0.625rem', // 10px: buttons, inputs, select triggers
+        card: '0.75rem', // 12px: cards, list containers, popovers
+        panel: '1rem', // 16px: dialogs and the auth card
       },
       boxShadow: {
         // Two levels of elevation in the whole app, and a third only for modals. More than that

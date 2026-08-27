@@ -367,11 +367,14 @@ export function Select<T extends string = string>({
         onClick={() => (open ? setOpen(false) : openWith(selectedIndex))}
         onKeyDown={onKeyDown}
         className={cn(
-          'flex min-h-tap items-center justify-between gap-2 rounded-card border bg-bg px-3 text-sm',
+          // The same fill, radius and edge as Input and SearchInput: a select IS a field, and the
+          // toolbar reads as two kinds of control -- filled fields you type or pick in, white pills
+          // you toggle -- only if all three fields agree.
+          'flex min-h-tap items-center justify-between gap-2 rounded-control border bg-field px-3 text-base',
           'text-left transition-colors',
           // The open trigger takes the accent border the focused input does, so the pair reads as
           // one control rather than a panel floating next to an inert button.
-          open ? 'border-accent' : 'border-line hover:border-muted',
+          open ? 'border-accent' : 'border-line-strong hover:border-muted',
           disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
           className,
         )}

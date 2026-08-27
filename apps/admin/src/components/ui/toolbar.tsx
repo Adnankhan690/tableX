@@ -27,6 +27,20 @@ export function Toolbar({ className, children, ...rest }: HTMLAttributes<HTMLDiv
 
 export interface ToggleChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   active: boolean
+  /**
+   * A queue depth. Rendered as a badge inside the chip.
+   *
+   * Only pass it for something a person is expected to work through -- a badge reads as "this many
+   * are waiting for you", so putting one on an archive turns a record into a demand.
+   */
+  count?: number
+  /**
+   * Whether a non-zero count means someone should act now.
+   *
+   * `urgent` fills the badge with the accent; anything else keeps it quiet. A zero is ALWAYS quiet
+   * whatever this says -- an empty queue that shouts is how staff learn to stop reading badges.
+   */
+  countTone?: 'neutral' | 'urgent'
   children: ReactNode
 }
 
@@ -36,22 +50,54 @@ export interface ToggleChipProps extends ButtonHTMLAttributes<HTMLButtonElement>
  * `aria-pressed` rather than a checkbox: it is a control that changes what the list shows, not a
  * value being collected, and the pressed state is what a screen reader needs to hear.
  */
-export function ToggleChip({ active, className, children, ...rest }: ToggleChipProps) {
+export function ToggleChip({
+  active,
+  count,
+  countTone = 'neutral',
+  className,
+  children,
+  ...rest
+}: ToggleChipProps) {
+  const loud = countTone === 'urgent' && count !== undefined && count > 0
   return (
     <button
       type="button"
       aria-pressed={active}
       className={cn(
-        'inline-flex min-h-tap shrink-0 items-center gap-1.5 rounded-control border px-3 text-sm font-medium',
+        // Fully rounded, and that is a system rule rather than a flourish: a chip is a filter you
+        // toggle, an input is a box you type in. Giving the two different silhouettes means the
+        // toolbar reads as two kinds of control at a glance instead of one row of similar rectangles.
+        'inline-flex min-h-tap shrink-0 items-center gap-2 rounded-full border pl-3.5 text-sm font-medium',
         'transition-colors duration-100',
+        // Tighter on the right when a badge is present, so the badge sits inside the pill rather
+        // than looking bolted on.
+        count !== undefined ? 'pr-1.5' : 'pr-3.5',
         active
-          ? 'border-accent-line bg-accent-soft text-accent'
-          : 'border-line-strong bg-surface text-muted hover:border-muted hover:text-ink',
+          ? 'border-accent bg-accent-soft text-accent'
+          : 'border-line-strong bg-surface text-muted hover:border-muted hover:bg-surface-sunken hover:text-ink',
         className,
       )}
       {...rest}
     >
       {children}
+      {count !== undefined ? (
+        <span
+          className={cn(
+            'inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-1.5',
+            'text-xs font-semibold [font-variant-numeric:tabular-nums]',
+            loud
+              ? // Filled, so a waiting queue is visible from across a counter.
+                'bg-accent text-accent-ink'
+              : active
+                ? // On an active chip the badge sits on accent-soft, so a neutral grey would
+                  // disappear into it.
+                  'bg-surface text-accent'
+                : 'bg-surface-sunken text-faint',
+          )}
+        >
+          {count}
+        </span>
+      ) : null}
     </button>
   )
 }

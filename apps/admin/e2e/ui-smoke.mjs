@@ -176,6 +176,49 @@ const board = await page.locator('body').innerText()
 // test of nothing.
 ck('the status filter is present', (await page.getByLabel('Filter by status').count()) === 1)
 ck('the board opens on open orders', /Open orders/i.test(board))
+
+// The quick chips, and the property that is easy to break: their badges are queue depths read from
+// the open set, NOT from the list on screen. Tapping New narrows the list to placed orders, and the
+// Ready and Open badges must still be right afterwards -- derive them from `orders` and they wouldn't be.
+const openChip = page.getByRole('button', { name: /^Open orders/ })
+const newChip = page.getByRole('button', { name: /^New/ })
+const readyChip = page.getByRole('button', { name: /^Ready/ })
+ck(
+  'quick chips are offered for the stages a shift lives in',
+  (await newChip.count()) === 1 && (await readyChip.count()) === 1,
+)
+
+// The chip rail holds ONE line at every width and scrolls instead of wrapping -- four stages are one
+// set, and a set that breaks across two rows stops reading as a set. Asserted by height, because
+// that is what regresses the moment someone puts `flex-wrap` back.
+const rail = page.getByRole('group', { name: 'Quick status filters' })
+for (const width of [1440, 900, 560, 420]) {
+  await page.setViewportSize({ width, height: 950 })
+  await page.waitForTimeout(400)
+  const railBox = await rail.boundingBox()
+  ck(`the chip rail is one line at ${width}px`, railBox.height <= 44, `${railBox.height}px`)
+}
+ck(
+  'the rail scrolls itself rather than the page',
+  (await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 2,
+)
+await page.setViewportSize({ width: 1440, height: 950 })
+await page.waitForTimeout(400)
+const badgesBefore = `${await openChip.innerText()}|${await readyChip.innerText()}`
+await newChip.click()
+await page.waitForTimeout(1800)
+ck('tapping a chip selects it', (await newChip.getAttribute('aria-pressed')) === 'true')
+ck(
+  'the badges stay correct once the list is narrowed',
+  `${await openChip.innerText()}|${await readyChip.innerText()}` === badgesBefore,
+  `${badgesBefore} -> ${await openChip.innerText()}|${await readyChip.innerText()}`,
+)
+ck(
+  'the dropdown stops repeating the chip',
+  /More statuses/i.test(await page.getByLabel('Filter by status').innerText()),
+)
+await openChip.click()
+await page.waitForTimeout(1500)
 ck('search is present and labelled', (await page.locator('input[type=search]').count()) >= 1)
 ck('the table filter is present', (await page.locator('[role=combobox]').count()) >= 1)
 ck('an order card renders as an article', (await page.locator('article').count()) >= 0)
