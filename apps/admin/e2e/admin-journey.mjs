@@ -66,7 +66,19 @@ const placed = await (
   })
 ).json()
 const orderNumber = placed.data.order.order_number
+const orderUid = placed.data.order.uid
 console.log(`(seeded order ${orderNumber} on table 5)`)
+
+/**
+ * The seeded order's card, found by UID rather than by its number.
+ *
+ * Order numbers restart daily (A-001…), so a database carrying more than one day of orders can
+ * have two open tickets called A-002 -- and `.first()` then picks whichever the board's sort puts
+ * on top, which is the wrong one as often as not. The uid is on the card's own "Open order" link,
+ * so this is exact without the card having to expose anything for the test's benefit.
+ */
+const seededCard = () =>
+  page.locator('article').filter({ has: page.locator(`a[href="/orders/${orderUid}"]`) })
 
 console.log('=== 1. Login ===')
 await page.goto('http://localhost:3001/login', { waitUntil: 'networkidle' })
@@ -129,7 +141,7 @@ ck('unpaid tile present', /Unpaid/i.test(stats))
 await page.screenshot({ path: `${SHOT}/a2-board.png` })
 
 console.log('=== 4. Server-driven action buttons (D1) ===')
-const card = page.locator('article', { hasText: orderNumber }).first()
+const card = seededCard()
 const buttons = await card.locator('button').allInnerTexts()
 ck('Accept offered on a new order', buttons.includes('Accept'), buttons.join('|'))
 ck('Reject offered on a new order', buttons.includes('Reject'), buttons.join('|'))
@@ -159,7 +171,7 @@ for (const [label, expect] of [
   ['Mark ready', 'READY'],
   ['Mark served', 'SERVED'],
 ]) {
-  const target = page.locator('article', { hasText: orderNumber }).first()
+  const target = seededCard()
   await target.locator(`button:has-text("${label}")`).click()
   await page.waitForTimeout(900)
   const text = await page.locator('main').innerText()
@@ -168,11 +180,7 @@ for (const [label, expect] of [
 await page.screenshot({ path: `${SHOT}/a4-board-served.png` })
 
 console.log('=== 7. Order detail and payment settlement (D2) ===')
-await page
-  .locator('article', { hasText: orderNumber })
-  .first()
-  .locator('a:has-text("Open order")')
-  .click()
+await page.locator(`a[href="/orders/${orderUid}"]`).click()
 await page.waitForURL(/\/orders\/ord_/, { timeout: 10000 })
 await page.waitForSelector('text=Payment', { timeout: 10000 })
 const detail = await page.locator('main').innerText()
