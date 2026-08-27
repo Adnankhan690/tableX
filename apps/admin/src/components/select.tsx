@@ -370,7 +370,9 @@ export function Select<T extends string = string>({
           // The same fill, radius and edge as Input and SearchInput: a select IS a field, and the
           // toolbar reads as two kinds of control -- filled fields you type or pick in, white pills
           // you toggle -- only if all three fields agree.
-          'flex min-h-tap items-center justify-between gap-2 rounded-control border bg-field px-3 text-base',
+          'flex items-center justify-between gap-2 rounded-control border bg-field',
+          // Compact below `sm` -- see the tap-token note in tailwind.config.ts.
+          'min-h-tap-sm px-2.5 text-sm sm:min-h-tap sm:px-3 sm:text-base',
           'text-left transition-colors',
           // The open trigger takes the accent border the focused input does, so the pair reads as
           // one control rather than a panel floating next to an inert button.
@@ -455,7 +457,9 @@ export function Select<T extends string = string>({
                         onPointerDown={(event) => event.preventDefault()}
                         onClick={() => commit(index)}
                         className={cn(
-                          'flex min-h-tap cursor-pointer items-center gap-2 px-3 py-1.5 text-sm',
+                          'flex cursor-pointer items-center gap-2',
+                          // An option row matches the trigger it dropped out of.
+                          'min-h-tap-sm px-2.5 py-1 text-sm sm:min-h-tap sm:px-3 sm:py-1.5',
                           isActive ? 'bg-accent-soft' : '',
                           option.disabled ? 'cursor-not-allowed opacity-50' : '',
                         )}

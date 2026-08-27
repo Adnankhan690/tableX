@@ -331,8 +331,17 @@ export function OrderBoard() {
     <>
       <PageHeader
         title="Orders"
+        /*
+          SHOWN ONLY WHEN THE CHIPS DO NOT ALREADY SAY IT -- the same rule the status Select below
+          follows, for the same reason. With Open orders selected this line read "Open orders · 8 on
+          the board" while the lit chip two rows down read "Open orders 8": the same two facts,
+          twice, costing a line of a phone screen before the first ticket.
+
+          BADGED, not QUICK_FILTERS, is the test: Completed deliberately has no count on its chip
+          (see the note there), so its total is only ever stated here.
+        */
         subtitle={
-          orders === null
+          orders === null || BADGED.includes(statusFilter)
             ? undefined
             : `${FILTERS.find((f) => f.value === statusFilter)?.label ?? 'Orders'} · ${
                 orders.length
@@ -352,8 +361,14 @@ export function OrderBoard() {
               />
               {/* Staff need to know whether to trust this board second-by-second. Polling is still
                   correct, just slower, and saying which mode it is in avoids a staff member
-                  assuming a stale board is an empty one. */}
-              {live ? 'Live' : 'Refreshing every 5s'}
+                  assuming a stale board is an empty one.
+
+                  Two lengths rather than one: "Refreshing every 5s" is 121px, which is most of the
+                  space a 320px phone has left after the title, and it was single-handedly wrapping
+                  this whole row onto a second line. The short form keeps the distinction -- which
+                  is the part that matters -- at a width that fits. */}
+              <span className="sm:hidden">{live ? 'Live' : 'Polling'}</span>
+              <span className="hidden sm:inline">{live ? 'Live' : 'Refreshing every 5s'}</span>
             </span>
 
             {/*
@@ -389,7 +404,16 @@ export function OrderBoard() {
               ) : (
                 <BellOff aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
               )}
-              {chime.enabled && chime.blocked ? 'Tap anywhere to allow sound' : 'Sound'}
+              {chime.enabled && chime.blocked ? (
+                // Stays visible at every width: it is an instruction, and an icon cannot give one.
+                // The row may wrap on a phone while this shows, which is the right trade for a
+                // state where sound looks on and is not.
+                'Tap anywhere to allow sound'
+              ) : (
+                // `sr-only` and not `hidden`: the label IS this button's accessible name, so
+                // hiding it outright would leave a screen reader with a bare icon.
+                <span className="sr-only sm:not-sr-only">Sound</span>
+              )}
             </button>
           </span>
         }
@@ -457,14 +481,16 @@ export function OrderBoard() {
             chip sits 16px in, the last scrolls flush to the content edge). `lg:w-auto` went with it,
             since auto is now the only value.
 
-            `scrollbar-slim` rather than `scrollbar-none`: the rail scrolls on any phone and hiding
-            the bar hid that fact. A slim bar in the panel's own palette is the affordance without
-            the 15px grey slab the old comment was avoiding.
+            `scrollbar-none`, back after a turn with `scrollbar-slim`: on macOS with classic
+            scrollbars a horizontal bar under the rail renders as a full-width grey slab, which
+            costs more than the affordance is worth on the one band staff look at all shift. The
+            partially-visible last chip is the affordance instead -- a chip clipped at the edge says
+            "more this way" without a bar saying it.
           */}
           <div
             role="group"
             aria-label="Quick status filters"
-            className="scroll-x-contain scrollbar-slim -mx-4 flex flex-nowrap gap-1.5 px-4 lg:mx-0 lg:px-0"
+            className="scroll-x-contain scrollbar-none -mx-4 flex flex-nowrap gap-1.5 px-4 lg:mx-0 lg:px-0"
           >
             {QUICK_FILTERS.map((value) => {
               const filter = FILTERS.find((f) => f.value === value)
@@ -486,33 +512,60 @@ export function OrderBoard() {
           </div>
 
           {/*
+            THE THREE NARROWING CONTROLS, AS ONE ROW.
+
+            An explicit container rather than letting them wrap freely among the rail's siblings.
+            Two attempts at doing it with flex properties alone both failed on the rail's `-mx-4`:
+            those negative margins leave 32px of slack on the rail's line, and a `flex-1` Select
+            with `min-width: 0` cheerfully collapses into it -- 47px in one attempt, 24px in the
+            next, while the other Select took a 300px line to itself. A container with `w-full` has
+            no negative margins, so it claims a whole line and nothing can squeeze in beside it.
+
+            Inside it: no `flex-wrap`. These three stay on one line by construction, the two Selects
+            splitting whatever the chip leaves and truncating their own labels if it is tight.
+            `lg:w-auto` hands the row back to the shared line on a wide screen.
+          */}
+          <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto">
+            {/*
             The dropdown keeps every status reachable. It shows the SELECTION only when the chips do
             not already -- pick Preparing and it reads "Preparing"; pick New and the chip is lit, so
             this falls back to its placeholder instead of saying the same word twice.
           */}
-          <Select
-            value={QUICK_FILTERS.includes(statusFilter) ? '' : statusFilter}
-            onChange={(value) => setStatusFilter(value as FilterValue)}
-            options={filterOptions}
-            placeholder="More statuses"
-            ariaLabel="Filter by status"
-            className="min-w-[10.5rem]"
-          />
+            <Select
+              value={QUICK_FILTERS.includes(statusFilter) ? '' : statusFilter}
+              onChange={(value) => setStatusFilter(value as FilterValue)}
+              options={filterOptions}
+              placeholder="More statuses"
+              ariaLabel="Filter by status"
+              /*
+              ONE ROW ON A PHONE. `min-w-[10.5rem]` and `min-w-[9.5rem]` (168px and 152px) plus the
+              Unpaid chip came to 437px against the 328px a 360px screen has, so the three of them
+              wrapped onto two lines. Below `sm` they share the line instead: `flex-1` with
+              `min-w-0` lets each take half of what the chip leaves and truncate its own label.
+              The fixed minimums come back at `sm`, where there is room for them.
+            */
+              className="min-w-0 flex-1 sm:min-w-[10.5rem] sm:flex-none"
+            />
 
-          {/* The boundary between choosing a stage and narrowing within it. Hidden once the row
+            {/* The boundary between choosing a stage and narrowing within it. Hidden once the row
               wraps, where a rule would fall in the middle of a line and mean nothing. */}
-          <span aria-hidden="true" className="hidden h-6 w-px shrink-0 bg-divider lg:block" />
+            <span aria-hidden="true" className="hidden h-6 w-px shrink-0 bg-divider lg:block" />
 
-          <Select
-            value={tableFilter}
-            onChange={setTableFilter}
-            options={tableOptions}
-            ariaLabel="Filter by table"
-            className="min-w-[9.5rem]"
-          />
-          <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
-            Unpaid only
-          </ToggleChip>
+            <Select
+              value={tableFilter}
+              onChange={setTableFilter}
+              options={tableOptions}
+              ariaLabel="Filter by table"
+              className="min-w-0 flex-1 sm:min-w-[9.5rem] sm:flex-none"
+            />
+            <ToggleChip active={unpaidOnly} onClick={() => setUnpaidOnly((v) => !v)}>
+              {/* "Unpaid only" is 94px of the 328px a 360px phone has for all three controls, and
+                those 26px are the difference between the status Select showing its label and
+                truncating it. "only" is the word carrying least meaning on a toggle. */}
+              <span className="sm:hidden">Unpaid</span>
+              <span className="hidden sm:inline">Unpaid only</span>
+            </ToggleChip>
+          </div>
         </div>
 
         <SearchInput

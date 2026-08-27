@@ -93,8 +93,17 @@ const config: Config = {
         dialog: '0 24px 48px -12px rgb(14 21 32 / 0.25)',
       },
       spacing: { tap: '2.5rem' },
-      minHeight: { tap: '2.5rem' },
-      minWidth: { tap: '2.5rem' },
+      /*
+        Two tap floors, and the smaller one is phones only.
+        `tap` (40px) is the panel's real target size -- it is used on a tablet at arm's length, so
+        controls have to be reachable without aiming. `tap-sm` (36px) applies below the `sm`
+        breakpoint, where the whole viewport is 320-414px and 40px controls read as oversized
+        furniture crowding out the content. It is a compromise, not a free win: 36px is comfortably
+        past WCAG 2.5.8's 24px minimum but under the 44px that 2.5.5 asks for, and most of the
+        visual weight is taken out of font size and padding rather than height for that reason.
+      */
+      minHeight: { tap: '2.5rem', 'tap-sm': '2.25rem' },
+      minWidth: { tap: '2.5rem', 'tap-sm': '2.25rem' },
       keyframes: {
         // Motion exists here only to signal that something arrived or is waiting. Both are short
         // enough to read as feedback rather than as animation.
