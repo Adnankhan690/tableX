@@ -219,7 +219,8 @@
   }
 
   /**
-   * A slim scrollbar for panels that scroll inside a rounded box.
+   * A slim scrollbar for anything that scrolls inside the layout rather than as the page: the
+   * select dropdown's option list, the order board's chip rail.
    *
    * TWO MECHANISMS, AND ONLY ONE OF THEM RUNS ON ANY GIVEN BROWSER. Worth stating plainly, because
    * the obvious reading -- that the standard properties cover Firefox and the -webkit- rules cover

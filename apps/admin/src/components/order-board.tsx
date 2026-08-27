@@ -429,7 +429,14 @@ export function OrderBoard() {
         alignment cue that was missing when everything sat in one undifferentiated line.
       */}
       <Toolbar className="flex-col items-stretch gap-2.5">
-        <div className="flex flex-wrap items-center gap-2">
+        {/*
+          `w-full` is load-bearing, not decoration. Without it this row takes its width from
+          `align-items: stretch` on the Toolbar -- and stretch is clamped by the row's automatic
+          minimum size, which resolved to the min-content of the chip rail's `shrink-0` chips
+          (~382px). So on a 360px phone the row was 382px wide inside a 328px content box and the
+          whole PAGE scrolled sideways. An explicit width cannot be clamped upward that way.
+        */}
+        <div className="flex w-full flex-wrap items-center gap-2">
           {/*
             THE CHIP RAIL HOLDS ONE LINE.
 
@@ -441,11 +448,23 @@ export function OrderBoard() {
 
             The negative margin lets the scroll area span the toolbar's own padding, so a chip
             scrolls to the very edge instead of stopping short inside it.
+
+            NO `w-full` HERE, deliberately. It used to have one, and combined with `-mx-4` it
+            asserted a width that then got clamped up by min-content and pushed the row -- and the
+            page -- wider than the viewport. With width left auto the rail is a shrinkable flex item
+            that fills the space its negative margins open up: measured 0..360 on a 360px phone, so
+            the bleed the comment above describes still happens, and it is symmetric now (the first
+            chip sits 16px in, the last scrolls flush to the content edge). `lg:w-auto` went with it,
+            since auto is now the only value.
+
+            `scrollbar-slim` rather than `scrollbar-none`: the rail scrolls on any phone and hiding
+            the bar hid that fact. A slim bar in the panel's own palette is the affordance without
+            the 15px grey slab the old comment was avoiding.
           */}
           <div
             role="group"
             aria-label="Quick status filters"
-            className="scroll-x-contain scrollbar-none -mx-4 flex w-full flex-nowrap gap-1.5 px-4 lg:mx-0 lg:w-auto lg:px-0"
+            className="scroll-x-contain scrollbar-slim -mx-4 flex flex-nowrap gap-1.5 px-4 lg:mx-0 lg:px-0"
           >
             {QUICK_FILTERS.map((value) => {
               const filter = FILTERS.find((f) => f.value === value)
