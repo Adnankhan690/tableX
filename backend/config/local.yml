@@ -119,3 +119,9 @@ realtime:
 log:
   level: info
   format: text
+
+email:
+  provider: brevo
+  brevo_api_key: ""
+  sender_email: "noreply@tabley.in"
+  sender_name: "tableY Admin"

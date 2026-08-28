@@ -5,15 +5,27 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
 import { Button, Field, Input, Notice, PasswordInput } from '@/components/ui'
+import { api } from '@/lib/api'
 
 export function LoginForm() {
   const router = useRouter()
   const { login, auth, hydrated } = useAuth()
 
+  // Login view states
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Forgot password views: 'login' | 'forgot' | 'code' | 'reset'
+  const [view, setView] = useState<'login' | 'forgot' | 'code' | 'reset'>('login')
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotCode, setForgotCode] = useState('')
+  const [forgotPassword, setForgotPassword] = useState('')
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('')
+  const [forgotSubmitting, setForgotSubmitting] = useState(false)
+  const [forgotSuccess, setForgotSuccess] = useState(false)
+  const [forgotError, setForgotError] = useState<string | null>(null)
 
   // A signed-in user landing here is sent onward. In an effect, not during render, because Next
   // forbids navigating while rendering.
@@ -42,6 +54,90 @@ export function LoginForm() {
          */
         setError(isApiError(err) ? err.message : 'Could not sign in. Check your connection.')
       })
+  }
+
+  const handleForgotEmailSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (forgotSubmitting) return
+
+    setForgotSubmitting(true)
+    setForgotError(null)
+
+    api
+      .forgotPassword({ email: forgotEmail.trim() })
+      .then(() => {
+        setForgotSubmitting(false)
+        setView('code')
+      })
+      .catch((err: unknown) => {
+        setForgotSubmitting(false)
+        setForgotError(
+          isApiError(err) ? err.message : 'Could not request code. Check your connection.',
+        )
+      })
+  }
+
+  const handleVerifyCodeSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (forgotSubmitting) return
+
+    setForgotSubmitting(true)
+    setForgotError(null)
+
+    api
+      .verifyResetCode({ email: forgotEmail.trim(), code: forgotCode.trim() })
+      .then(() => {
+        setForgotSubmitting(false)
+        setView('reset')
+      })
+      .catch((err: unknown) => {
+        setForgotSubmitting(false)
+        setForgotError(isApiError(err) ? err.message : 'Invalid or expired code. Please try again.')
+      })
+  }
+
+  const handleResetPasswordSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (forgotSubmitting) return
+
+    if (forgotPassword !== forgotConfirmPassword) {
+      setForgotError('Passwords do not match.')
+      return
+    }
+
+    if (forgotPassword.length < 8) {
+      setForgotError('Password must be at least 8 characters long.')
+      return
+    }
+
+    setForgotSubmitting(true)
+    setForgotError(null)
+
+    api
+      .resetPassword({
+        email: forgotEmail.trim(),
+        code: forgotCode.trim(),
+        new_password: forgotPassword,
+      })
+      .then(() => {
+        setForgotSubmitting(false)
+        setForgotSuccess(true)
+      })
+      .catch((err: unknown) => {
+        setForgotSubmitting(false)
+        setForgotError(
+          isApiError(err) ? err.message : 'Could not reset password. Please try again.',
+        )
+      })
+  }
+
+  const resetForgotFlow = () => {
+    setForgotEmail('')
+    setForgotCode('')
+    setForgotPassword('')
+    setForgotConfirmPassword('')
+    setForgotSuccess(false)
+    setForgotError(null)
   }
 
   return (
@@ -81,66 +177,283 @@ export function LoginForm() {
       </section>
 
       <section className="flex items-center justify-center px-4 py-12">
-        <form onSubmit={submit} className="w-full max-w-sm">
-          <div className="lg:hidden">
-            <WordmarkDark />
-          </div>
-          <h1 className="mt-6 text-display font-semibold tracking-tight lg:mt-0">Sign in</h1>
-          <p className="mt-1 text-base text-muted">
-            Manage your restaurant&apos;s orders and menu.
-          </p>
-
-          <div className="mt-6 space-y-3">
-            <Field label="Email">
-              {({ id }) => (
-                <Input
-                  id={id}
-                  type="email"
-                  autoComplete="username"
-                  autoFocus
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@restaurant.com"
-                />
-              )}
-            </Field>
-            <Field label="Password">
-              {({ id }) => (
-                <PasswordInput
-                  id={id}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              )}
-            </Field>
-          </div>
-
-          {error !== null ? (
-            <div className="mt-3">
-              {/* role=alert lives on the Notice. The message is the server's, verbatim: see the
-                  comment on the catch above for why it must not be elaborated. */}
-              <Notice tone="danger">{error}</Notice>
+        {view === 'login' && (
+          <form onSubmit={submit} className="w-full max-w-sm">
+            <div className="lg:hidden">
+              <WordmarkDark />
             </div>
-          ) : null}
+            <h1 className="mt-6 text-display font-semibold tracking-tight lg:mt-0">Sign in</h1>
+            <p className="mt-1 text-base text-muted">
+              Manage your restaurant&apos;s orders and menu.
+            </p>
 
-          <Button
-            type="submit"
-            variant="primary"
-            block
-            className="mt-5"
-            loading={submitting}
-            loadingLabel="Signing in…"
-          >
-            Sign in
-          </Button>
+            <div className="mt-6 space-y-3">
+              <Field label="Email">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    type="email"
+                    autoComplete="username"
+                    autoFocus
+                    required
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@restaurant.com"
+                  />
+                )}
+              </Field>
+              <Field label="Password">
+                {({ id }) => (
+                  <PasswordInput
+                    id={id}
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
 
-          <p className="mt-4 text-xs text-muted">
-            Forgotten your password? Ask an owner to set a new one from the Staff page.
-          </p>
-        </form>
+            {error !== null ? (
+              <div className="mt-3">
+                {/* role=alert lives on the Notice. The message is the server's, verbatim: see the
+                    comment on the catch above for why it must not be elaborated. */}
+                <Notice tone="danger">{error}</Notice>
+              </div>
+            ) : null}
+
+            <Button
+              type="submit"
+              variant="primary"
+              block
+              className="mt-5"
+              loading={submitting}
+              loadingLabel="Signing in…"
+            >
+              Sign in
+            </Button>
+
+            <p className="mt-4 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  resetForgotFlow()
+                  setView('forgot')
+                }}
+                className="font-medium text-accent hover:underline focus:outline-none"
+              >
+                Forgot your password?
+              </button>
+            </p>
+          </form>
+        )}
+
+        {view === 'forgot' && (
+          <form onSubmit={handleForgotEmailSubmit} className="w-full max-w-sm animate-fade-in">
+            <div className="lg:hidden">
+              <WordmarkDark />
+            </div>
+            <h1 className="mt-6 text-display font-semibold tracking-tight lg:mt-0">
+              Reset password
+            </h1>
+            <p className="mt-1 text-base text-muted">
+              Enter your email address and we&apos;ll send you a 6-digit code to reset your
+              password.
+            </p>
+
+            <div className="mt-6">
+              <Field label="Email">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    type="email"
+                    autoComplete="email"
+                    autoFocus
+                    required
+                    value={forgotEmail}
+                    onChange={(event) => setForgotEmail(event.target.value)}
+                    placeholder="you@restaurant.com"
+                  />
+                )}
+              </Field>
+            </div>
+
+            {forgotError !== null ? (
+              <div className="mt-3">
+                <Notice tone="danger">{forgotError}</Notice>
+              </div>
+            ) : null}
+
+            <Button
+              type="submit"
+              variant="primary"
+              block
+              className="mt-5"
+              loading={forgotSubmitting}
+              loadingLabel="Submitting…"
+            >
+              Submit
+            </Button>
+
+            <div className="mt-5 text-center">
+              <button
+                type="button"
+                onClick={() => setView('login')}
+                className="text-sm font-medium text-accent hover:underline focus:outline-none"
+              >
+                Back to Sign in
+              </button>
+            </div>
+          </form>
+        )}
+
+        {view === 'code' && (
+          <form onSubmit={handleVerifyCodeSubmit} className="w-full max-w-sm animate-fade-in">
+            <div className="lg:hidden">
+              <WordmarkDark />
+            </div>
+            <h1 className="mt-6 text-display font-semibold tracking-tight lg:mt-0">
+              Enter verification code
+            </h1>
+            <p className="mt-1 text-base text-muted">
+              If this email matches an account in our system, a verification code has been sent to{' '}
+              <span className="font-semibold">{forgotEmail}</span>. Please check your inbox and spam
+              folders.
+            </p>
+
+            <div className="mt-6">
+              <Field label="Verification Code">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    autoFocus
+                    required
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    value={forgotCode}
+                    onChange={(event) => setForgotCode(event.target.value)}
+                    placeholder="123456"
+                  />
+                )}
+              </Field>
+            </div>
+
+            {forgotError !== null ? (
+              <div className="mt-3">
+                <Notice tone="danger">{forgotError}</Notice>
+              </div>
+            ) : null}
+
+            <Button
+              type="submit"
+              variant="primary"
+              block
+              className="mt-5"
+              loading={forgotSubmitting}
+              loadingLabel="Verifying…"
+            >
+              Verify Code
+            </Button>
+
+            <div className="mt-5 text-center">
+              <button
+                type="button"
+                onClick={() => setView('forgot')}
+                className="text-sm font-medium text-accent hover:underline focus:outline-none"
+              >
+                Back
+              </button>
+            </div>
+          </form>
+        )}
+
+        {view === 'reset' && (
+          <form onSubmit={handleResetPasswordSubmit} className="w-full max-w-sm animate-fade-in">
+            <div className="lg:hidden">
+              <WordmarkDark />
+            </div>
+            <h1 className="mt-6 text-display font-semibold tracking-tight lg:mt-0">
+              Create new password
+            </h1>
+            <p className="mt-1 text-base text-muted">
+              Choose a strong password with at least 8 characters.
+            </p>
+
+            {!forgotSuccess ? (
+              <>
+                <div className="mt-6 space-y-3">
+                  <Field label="New Password">
+                    {({ id }) => (
+                      <PasswordInput
+                        id={id}
+                        autoComplete="new-password"
+                        autoFocus
+                        required
+                        value={forgotPassword}
+                        onChange={(event) => setForgotPassword(event.target.value)}
+                        placeholder="••••••••"
+                      />
+                    )}
+                  </Field>
+                  <Field label="Confirm New Password">
+                    {({ id }) => (
+                      <PasswordInput
+                        id={id}
+                        autoComplete="new-password"
+                        required
+                        value={forgotConfirmPassword}
+                        onChange={(event) => setForgotConfirmPassword(event.target.value)}
+                        placeholder="••••••••"
+                      />
+                    )}
+                  </Field>
+                </div>
+
+                {forgotError !== null ? (
+                  <div className="mt-3">
+                    <Notice tone="danger">{forgotError}</Notice>
+                  </div>
+                ) : null}
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  block
+                  className="mt-5"
+                  loading={forgotSubmitting}
+                  loadingLabel="Resetting password…"
+                >
+                  Reset password
+                </Button>
+              </>
+            ) : (
+              <div className="mt-6 space-y-4">
+                <Notice tone="success" title="Password reset successful">
+                  Your password has been updated. You can now sign in with your new credentials.
+                </Notice>
+                <Button type="button" variant="primary" block onClick={() => setView('login')}>
+                  Sign in
+                </Button>
+              </div>
+            )}
+
+            {!forgotSuccess && (
+              <div className="mt-5 text-center">
+                <button
+                  type="button"
+                  onClick={() => setView('login')}
+                  className="text-sm font-medium text-accent hover:underline focus:outline-none"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </form>
+        )}
       </section>
     </main>
   )

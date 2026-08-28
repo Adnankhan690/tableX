@@ -29,6 +29,7 @@ type Config struct {
 	Storage  StorageConfig  `yaml:"storage"`
 	Realtime RealtimeConfig `yaml:"realtime"`
 	Log      LogConfig      `yaml:"log"`
+	Email    EmailConfig    `yaml:"email"`
 }
 
 // AppConfig holds identity and the public URLs used to build QR codes.
@@ -227,6 +228,14 @@ type LogConfig struct {
 	Format string `yaml:"format"`
 }
 
+// EmailConfig holds email service provider settings.
+type EmailConfig struct {
+	Provider    string `yaml:"provider"`
+	BrevoAPIKey string `yaml:"brevo_api_key"`
+	SenderEmail string `yaml:"sender_email"`
+	SenderName  string `yaml:"sender_name"`
+}
+
 // Defaults returns a Config with every safe default filled in. Only secrets and the
 // public base URLs are left empty.
 func Defaults() *Config {
@@ -286,12 +295,18 @@ func Defaults() *Config {
 			SendBufferSize: 64,
 		},
 		Log: LogConfig{Level: "info", Format: "text"},
+		Email: EmailConfig{
+			Provider:    "brevo",
+			SenderEmail: "noreply@tabley.in",
+			SenderName:  "tableX Admin",
+		},
 	}
 }
 
 // Load reads defaults, then the YAML file at path if it is non-empty, then the
 // environment, and validates the result.
 func Load(path string) (*Config, error) {
+	loadDotenv()
 	cfg := Defaults()
 
 	if path != "" {
@@ -310,6 +325,36 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func loadDotenv() {
+	paths := []string{".env", "../.env", "../../.env"}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(raw), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			if val == "" {
+				continue
+			}
+			if os.Getenv(key) == "" {
+				_ = os.Setenv(key, val)
+			}
+		}
+		break
+	}
 }
 
 // applyEnv overlays TABLEX_-prefixed environment variables.
@@ -370,6 +415,10 @@ func (c *Config) applyEnv() {
 
 	envStr("TABLEX_LOG_LEVEL", &c.Log.Level)
 	envStr("TABLEX_LOG_FORMAT", &c.Log.Format)
+
+	envStr("TABLEX_BREVO_API_KEY", &c.Email.BrevoAPIKey)
+	envStr("TABLEX_SENDER_EMAIL", &c.Email.SenderEmail)
+	envStr("TABLEX_SENDER_NAME", &c.Email.SenderName)
 }
 
 // Validate rejects a configuration that would fail confusingly at runtime.

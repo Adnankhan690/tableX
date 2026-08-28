@@ -1,9 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"net/http"
 	"strings"
 	"time"
 
@@ -509,4 +514,187 @@ func stripBearer(header string) string {
 		return strings.TrimSpace(value[7:])
 	}
 	return value
+}
+
+func (s *serviceAuth) ForgotPassword(ctx context.Context, email string) *response.ApplicationError {
+	log := s.Access.Logger.With(ctx)
+	normalized := normalizeEmail(email)
+
+	// Retrieve matching staff users across all tenants/restaurants
+	staffs, err := s.Access.Repositories.Staff.GetByEmailAnyRestaurant(ctx, normalized)
+	if err != nil {
+		log.Errorf("[ForgotPassword] email lookup failed: %+v", err)
+		return response.ErrInternal
+	}
+
+	// For privacy & anti-enumeration, return success even if no user matches.
+	if len(staffs) == 0 {
+		log.Infof("[ForgotPassword] email %q not found, returning mock success", normalized)
+		return nil
+	}
+
+	// Rate limiting: check if a code was already requested in the last 60 seconds
+	lastCode, err := s.Access.Repositories.PasswordReset.GetLastActiveCode(ctx, normalized)
+	if err != nil {
+		log.Errorf("[ForgotPassword] check last active code failed: %+v", err)
+		return response.ErrInternal
+	}
+	if lastCode != nil && time.Since(lastCode.CreatedAt) < 60*time.Second {
+		return response.ErrInvalidRequest.WithMessage("Please wait 60 seconds before requesting another verification code.")
+	}
+
+	// Generate 6-digit cryptographically secure code
+	var code string
+	for i := 0; i < 6; i++ {
+		n, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			log.Errorf("[ForgotPassword] generating code failed: %+v", err)
+			return response.ErrInternal
+		}
+		code += fmt.Sprintf("%d", n.Int64())
+	}
+
+	// Create reset code in DB (expires in 15 minutes)
+	resetCode := &models.PasswordResetCode{
+		Email:     normalized,
+		Code:      code,
+		ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+	}
+	if err := s.Access.Repositories.PasswordReset.CreateCode(ctx, resetCode); err != nil {
+		log.Errorf("[ForgotPassword] create code DB record failed: %+v", err)
+		return response.ErrInternal
+	}
+
+	// Send email using Brevo REST API
+	type BrevoSender struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+	type BrevoRecipient struct {
+		Email string `json:"email"`
+	}
+	type BrevoPayload struct {
+		Sender      BrevoSender      `json:"sender"`
+		To          []BrevoRecipient `json:"to"`
+		Subject     string           `json:"subject"`
+		HtmlContent string           `json:"htmlContent"`
+	}
+
+	payload := BrevoPayload{
+		Sender: BrevoSender{
+			Name:  s.Access.Cfg.Email.SenderName,
+			Email: s.Access.Cfg.Email.SenderEmail,
+		},
+		To: []BrevoRecipient{
+			{Email: normalized},
+		},
+		Subject: "Your tableX password reset verification code",
+		HtmlContent: fmt.Sprintf(`
+			<html>
+			<body style="font-family: sans-serif; padding: 20px; color: #333;">
+				<h2>Password Reset Request</h2>
+				<p>You requested a password reset for your tableX admin account.</p>
+				<p>Your 6-digit verification code is:</p>
+				<div style="font-size: 24px; font-weight: bold; background-color: #f3f4f6; padding: 15px; border-radius: 8px; display: inline-block; letter-spacing: 2px;">
+					%s
+				</div>
+				<p>This code will expire in 15 minutes.</p>
+				<p>If you did not make this request, you can safely ignore this email.</p>
+			</body>
+			</html>
+		`, code),
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		log.Errorf("[ForgotPassword] marshalling payload failed: %+v", err)
+		return response.ErrInternal
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.brevo.com/v3/smtp/email", bytes.NewReader(jsonPayload))
+	if err != nil {
+		log.Errorf("[ForgotPassword] creating request failed: %+v", err)
+		return response.ErrInternal
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("api-key", s.Access.Cfg.Email.BrevoAPIKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Errorf("[ForgotPassword] dispatching Brevo API request failed: %+v", err)
+		return response.ErrInternal
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		log.Errorf("[ForgotPassword] Brevo API returned error status: %d", resp.StatusCode)
+		return response.ErrInternal
+	}
+
+	log.Infof("[ForgotPassword] verification code sent to %q", normalized)
+	return nil
+}
+
+func (s *serviceAuth) VerifyResetCode(ctx context.Context, email string, code string) *response.ApplicationError {
+	log := s.Access.Logger.With(ctx)
+	normalized := normalizeEmail(email)
+
+	resetCode, err := s.Access.Repositories.PasswordReset.GetActiveCode(ctx, normalized, code)
+	if err != nil {
+		log.Errorf("[VerifyResetCode] DB query failed: %+v", err)
+		return response.ErrInternal
+	}
+	if resetCode == nil {
+		return response.ErrInvalidRequest.WithMessage("The verification code you entered is invalid or has expired.")
+	}
+
+	return nil
+}
+
+func (s *serviceAuth) ResetPassword(ctx context.Context, email string, code string, newPassword string) *response.ApplicationError {
+	log := s.Access.Logger.With(ctx)
+	normalized := normalizeEmail(email)
+
+	resetCode, err := s.Access.Repositories.PasswordReset.GetActiveCode(ctx, normalized, code)
+	if err != nil {
+		log.Errorf("[ResetPassword] DB query failed: %+v", err)
+		return response.ErrInternal
+	}
+	if resetCode == nil {
+		return response.ErrInvalidRequest.WithMessage("The verification code you entered is invalid or has expired.")
+	}
+
+	if len(newPassword) < 8 {
+		return response.ErrInvalidRequest.WithMessage("Password must be at least 8 characters long.")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), s.Access.Cfg.Auth.BcryptCost)
+	if err != nil {
+		log.Errorf("[ResetPassword] hashing failed: %+v", err)
+		return response.ErrInternal
+	}
+
+	// Retrieve matches across all restaurants
+	staffs, err := s.Access.Repositories.Staff.GetByEmailAnyRestaurant(ctx, normalized)
+	if err != nil {
+		log.Errorf("[ResetPassword] email lookup failed: %+v", err)
+		return response.ErrInternal
+	}
+
+	for _, staff := range staffs {
+		if _, err := s.Access.Repositories.Staff.UpdateFields(ctx, staff.ID, map[string]any{
+			"password_hash": string(hash),
+		}); err != nil {
+			log.Errorf("[ResetPassword] update failed for staff id=%d: %+v", staff.ID, err)
+			return response.ErrInternal
+		}
+	}
+
+	if err := s.Access.Repositories.PasswordReset.MarkCodeUsed(ctx, resetCode.ID); err != nil {
+		log.Warnf("[ResetPassword] failed to mark code used for id=%d: %+v", resetCode.ID, err)
+	}
+
+	log.Infof("[ResetPassword] password updated successfully for email %q across %d accounts", normalized, len(staffs))
+	return nil
 }

@@ -179,3 +179,11 @@ type RepositoryPaymentMethods interface {
 	RecordWebhookEvent(ctx context.Context, tx *gorm.DB, event *models.PaymentWebhookEvent) (bool, error)
 	MarkWebhookProcessed(ctx context.Context, tx *gorm.DB, id int64, at time.Time, errMsg string) error
 }
+
+// RepositoryPasswordResetMethods accesses password reset codes.
+type RepositoryPasswordResetMethods interface {
+	CreateCode(ctx context.Context, resetCode *models.PasswordResetCode) error
+	GetActiveCode(ctx context.Context, email string, code string) (*models.PasswordResetCode, error)
+	MarkCodeUsed(ctx context.Context, id int32) error
+	GetLastActiveCode(ctx context.Context, email string) (*models.PasswordResetCode, error)
+}

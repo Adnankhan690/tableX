@@ -1,0 +1,28 @@
+meta {
+  name: verify-reset-code
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/auth/verify-reset-code
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "owner@spicegarden.test",
+    "code": "123456"
+  }
+}
+
+tests {
+  test("responds 400 when invalid/expired", function () {
+    expect(res.status).to.equal(400)
+  })
+}

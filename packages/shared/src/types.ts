@@ -556,6 +556,21 @@ export interface StaffLoginRequest {
   password: string
 }
 
+export interface ForgotPasswordRequest {
+  email: string
+}
+
+export interface VerifyResetCodeRequest {
+  email: string
+  code: string
+}
+
+export interface ResetPasswordRequest {
+  email: string
+  code: string
+  new_password: string
+}
+
 export interface StaffMember {
   uid: string
   name: string

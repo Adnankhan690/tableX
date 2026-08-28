@@ -103,3 +103,9 @@ log:
   level: info
   # json here, text locally: production logs are read by a collector, not a human tailing them.
   format: json
+
+email:
+  provider: brevo
+  brevo_api_key: "" # Supplied by environment variable TABLEX_BREVO_API_KEY
+  sender_email: "noreply@tabley.in"
+  sender_name: "tableY Admin"
