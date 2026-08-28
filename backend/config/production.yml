@@ -77,6 +77,21 @@ payments:
     webhook_secret: ""
     base_url: https://api.razorpay.com/v1
 
+storage:
+  # Dish photographs, held in Cloudflare R2 (DECISIONS.md D15). Every R2 value comes from the
+  # environment (TABLEX_R2_*): four of the five are secrets, and the fifth is per-deployment.
+  #
+  # Absent, uploads are disabled and the admin panel hides the control -- a valid deployment,
+  # not a broken one. Present, all five must be, or startup fails.
+  r2:
+    account_id: ""
+    access_key_id: ""
+    secret_access_key: ""
+    bucket: ""
+    public_base_url: ""
+  max_upload_bytes: 5242880
+  presign_ttl: 5m
+
 realtime:
   enabled: true
   ping_interval: 30s

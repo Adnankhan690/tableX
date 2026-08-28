@@ -121,6 +121,17 @@ func (a *App) addAdminRoutes(engine *gin.Engine) {
 	// mean diners keep ordering something the kitchen ran out of.
 	admin.PATCH("/menu/items/:uid/availability", a.controllers.Menu.SetAvailability)
 
+	// Dish photographs (DECISIONS.md D15). Manager-gated with the rest of menu editing: a
+	// photograph is the restaurant's public face, not a mid-service floor action.
+	//
+	// Upload is two calls because the bytes do not come through here. The first mints a
+	// presigned URL and the browser PUTs straight to R2; the second is where the server
+	// inspects what actually landed and attaches it. Nothing is mounted for the PUT itself --
+	// that request never reaches this API.
+	admin.POST("/menu/items/:uid/image/upload", manager, a.controllers.Menu.CreateImageUpload)
+	admin.POST("/menu/items/:uid/image", manager, a.controllers.Menu.ConfirmImageUpload)
+	admin.DELETE("/menu/items/:uid/image", manager, a.controllers.Menu.RemoveImage)
+
 	admin.GET("/tables", a.controllers.Table.ListTables)
 	admin.POST("/tables", manager, a.controllers.Table.CreateTable)
 	admin.POST("/tables/bulk", manager, a.controllers.Table.BulkCreateTables)

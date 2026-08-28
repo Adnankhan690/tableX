@@ -14,17 +14,27 @@ const nextConfig: NextConfig = {
 
   images: {
     /**
-     * Dish photos come from whatever host the restaurant already uses -- a Cloudinary
-     * account, a Shopify CDN, or a URL pasted out of their existing website. We do not know
-     * the hostnames at build time and a restaurant cannot be asked to redeploy the diner app
-     * to add a photo, so any https host is allowed.
+     * Dish photos come from one of two places, and this has to cover both.
      *
-     * The cost is real and worth stating: this makes /_next/image an open image proxy, so a
-     * third party can have our server fetch and cache arbitrary images at our bandwidth
-     * expense. Accepted for v1 because the alternative -- an allowlist -- breaks the
-     * restaurant's own menu photos, which is a product failure rather than a cost. The fix
-     * when it matters is uploading through our own storage and narrowing this to one host,
-     * which is additive and needs no schema change.
+     * Since docs/DECISIONS.md D15 a restaurant can UPLOAD a photo, which is stored in this
+     * deployment's own R2 bucket and served from `storage.r2.public_base_url`. That is one
+     * known host -- but it is configured at run time, per deployment, and this file is
+     * evaluated at build time, so it cannot be named here.
+     *
+     * The other place is unchanged: a URL pasted out of the restaurant's existing website or
+     * Cloudinary account. Those hostnames are unknowable and always will be, and a
+     * restaurant cannot be asked to redeploy this app to add a photo.
+     *
+     * So the wildcard stays, and the cost stays with it, stated plainly: /_next/image is an
+     * open image proxy, and a third party can have our server fetch and cache arbitrary
+     * images at our bandwidth expense.
+     *
+     * NARROWING IS NOW POSSIBLE, for a deployment that has moved every restaurant onto
+     * uploaded photos: replace the wildcard with that one bucket hostname. It is a one-line
+     * change here and needs no schema change, because image_key already resolves through
+     * configuration rather than through stored URLs. It is not done by default because it
+     * would break the menu of every restaurant still using a pasted URL, and a broken menu
+     * is a product failure where an open proxy is a cost.
      *
      * http is deliberately absent: a mixed-content image silently fails to render on an
      * https page, which looks like a broken menu.

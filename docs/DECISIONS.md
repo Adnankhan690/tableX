@@ -359,3 +359,134 @@ that deserves its own decision.
 **Reversal cost.** Low. One route group, one middleware, one service. Removing it leaves the
 schema untouched and puts restaurant creation back in SQL.
 
+---
+
+## D15 — Dish photos are uploaded to our own object storage, on Cloudflare R2
+
+**Not a PRD question.** `menu_item.image_url` has existed since the first migration, but
+nothing ever wrote to it except a manager pasting a URL from a site the restaurant already
+ran. A restaurant with no website — which is most of the target market — had no way to put a
+photograph on a dish at all.
+
+**Decision.** A restaurant uploads a photograph from the admin panel. The bytes are held in
+this deployment's own bucket, and three routes carry it:
+
+| | |
+| --- | --- |
+| `POST /menu/items/:uid/image/upload` | Mints a presigned URL. Changes nothing. |
+| `POST /menu/items/:uid/image` | Attaches a finished upload, after inspecting it. |
+| `DELETE /menu/items/:uid/image` | Clears the photo and deletes the object. |
+
+### Why R2, and why the S3 client is not a mistake
+
+**Egress.** A menu is the hottest read in the product and a photo-heavy one is almost
+entirely image bytes. R2 charges nothing for egress — not in the free tier, not after it —
+while S3 and Google Cloud Storage bill roughly $0.09–$0.12/GB. At the scale this platform is
+built for the storage and request charges round to nothing on any provider; bandwidth is the
+only line that grows with success, and on R2 it does not exist. The free allowance (10 GB
+stored, 1M writes, 10M reads per month) covers a deployment of this size several times over.
+
+**`internal/storage/r2.go` imports `github.com/aws/aws-sdk-go-v2/service/s3`, and that is the
+R2 integration, not a leftover from an S3 one.** R2 publishes no Go SDK; its documented
+interface is the S3 HTTP API. The package is a protocol client pointed at
+`{account_id}.r2.cloudflarestorage.com` with credentials issued by the Cloudflare dashboard —
+the same relationship as using a Postgres driver to talk to CockroachDB. No AWS account,
+bucket, region or bill exists anywhere in this path, and AWS credentials will not work.
+
+### The upload is two calls, and that is the safety design
+
+The browser PUTs the file **straight to R2** on a presigned URL. It never passes through the
+API, which runs on a 512MB free-tier instance where streaming a 6MB phone photograph would
+occupy a request worker for the length of a restaurant's uplink and pay for the bandwidth
+twice.
+
+But a presigned URL is issued *before* there is anything to inspect. A signature proves the
+client sent the length and content type it promised; it says nothing about whether those
+bytes are a photograph. So every check lives on the second call, against the object that
+actually landed: it must exist, be non-empty, be within `storage.max_upload_bytes`, and its
+**leading bytes must sniff as an accepted image and match the type R2 will serve it as**.
+Anything that fails is deleted rather than left in the bucket.
+
+**SVG is refused, permanently.** An SVG is a script-bearing document, and a browser rendering
+one from our image host executes it on that host's origin. Every accepted format — JPEG, PNG,
+WebP — is an inert raster format. This is the one entry in that list that is a security
+decision rather than a product one.
+
+### The key is the mapping, and it is checked
+
+```
+menu/{restaurant_uid}/{item_uid}/{image_uid}.{ext}
+```
+
+Each segment earns its place. `restaurant_uid` makes tenancy structural — a lifecycle rule
+can be scoped to one tenant, and a cross-tenant key is visible by inspection ([D3](#d3--multi-tenant-data-model-single-restaurant-admin-scope)).
+`item_uid` is the dish-to-object mapping in both directions. `image_uid` is **fresh on every
+upload**, so replacing a photo writes a new key rather than overwriting one — overwriting
+would leave every CDN edge and every phone that already fetched the old bytes serving them
+against an unchanged URL, which reads as "the upload silently did nothing".
+
+The key comes back from the client on the confirm call, so **being well-formed is not
+enough**: both uids in it must match the authenticated actor's restaurant and the dish in the
+path. Without that comparison, a well-formed key naming another restaurant is exactly what
+would be sent to point one tenant's dish at another tenant's object. That check is a pure
+function, `imageKeyBelongsTo`, tested exhaustively without a fixture.
+
+### Two columns, one field on the wire
+
+`image_key` is added **alongside** `image_url`, not in place of it.
+
+- `image_key` set → we host the bytes; the URL is resolved at read time against
+  `storage.r2.public_base_url`.
+- `image_key` empty → `image_url` is served verbatim, as it always was.
+
+Both collapse into the single `image_url` field the DTOs already carried, so the diner app
+did not change at all. Because they are one field to a client, setting `image_url` through
+`PATCH /menu/items/:uid` clears `image_key` as well — otherwise pasting a URL over an uploaded
+photo would return 200 and change nothing, since the uploaded copy wins. Storing the resolved URL instead would bake today's hostname into
+every row and leave nothing to delete the object by — and it would make moving buckets or
+putting a new CDN domain in front a migration over the whole table rather than a config edit.
+It also means a deployment that **loses** its storage configuration degrades to "dishes have
+no photo" rather than "every dish has a broken image", and restoring the configuration
+restores the photographs with no data change.
+
+### What was considered and rejected
+
+**Proxying the upload through the API.** Simpler by one round trip, and wrong on the
+constraint that actually binds: the API instance has 512MB and spins down when idle, and the
+bytes would cost bandwidth on the way in and again on the way out.
+
+**Overwriting a fixed key per dish.** Removes the cleanup path, and breaks caching in a way
+that is invisible in development and permanent in production.
+
+**Trusting the declared content type.** It is a form field. The bytes decide.
+
+**A `provider` config flag.** Credential presence is the switch, exactly as it is for the
+Razorpay adapter ([D2](#d2--payments-provider-interface-static-upi-as-the-v1-default)). A
+boolean that can disagree with the credentials beside it is a third state to debug. A
+*partially* filled block fails startup rather than silently disabling uploads — nobody fills
+in three of five values on purpose, and silent disabling would let a deploy meant to turn
+uploads on report success.
+
+### What this does not do
+
+**No orphan reaper.** An upload that is presigned and PUT but never confirmed leaves an
+object nothing references. Replacements and removals delete the old object explicitly, but
+that delete is best-effort and runs *after* the database write — deleting first and then
+failing the write would leave a row pointing at bytes that no longer exist, which is worse.
+The residue is bounded (only authenticated managers can create it, one object at a time) and
+the intended sweeper is **an R2 lifecycle rule on the `menu/` prefix**, not a cron job in this
+codebase. This is a real gap, stated rather than glossed: without that rule configured,
+abandoned uploads accumulate slowly and forever.
+
+**No realtime event.** A sold-out toggle publishes to open diner menus; a new photograph does
+not. Photos are not time-critical the way availability is, and diners pick it up on the next
+load.
+
+**No narrowing of `images.remotePatterns`.** Both Next apps still allow any https host,
+because pasted URLs remain supported and an allowlist would break the menu of every
+restaurant using one. The comment in each config now records that narrowing is a one-line
+change for a deployment that has moved entirely to uploaded photos.
+
+**Reversal cost.** Low. The routes, the `internal/storage` package and one nullable column.
+Dropping it leaves `image_url` working exactly as it did before.
+

@@ -10,9 +10,10 @@ import type {
 } from '@tablex/shared'
 import { FOOD_TYPE_LABEL } from '@tablex/shared'
 import { cn, ErrorState, FoodTypeBadge } from '@tablex/ui'
-import { ChevronDown, UtensilsCrossed } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { ChevronDown, ImagePlus, UtensilsCrossed } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
+import { DishPhoto } from '@/components/dish-photo'
 import { PageHeader } from '@/components/page-header'
 import { Select, type SelectOption } from '@/components/select'
 import {
@@ -30,6 +31,12 @@ import {
   Toolbar,
 } from '@/components/ui'
 import { api } from '@/lib/api'
+import {
+  ACCEPT_ATTRIBUTE,
+  DEFAULT_MAX_UPLOAD_BYTES,
+  prepareImage,
+  putToStorage,
+} from '@/lib/image-upload'
 import { formatMinorForInput, parsePriceToMinor } from '@/lib/price-input'
 
 const FOOD_TYPES: readonly FoodType[] = ['veg', 'non_veg', 'egg']
@@ -63,6 +70,14 @@ interface ItemDraft {
   foodType: FoodType | null
   spiceLevel: SpiceLevel | ''
   prepTime: string
+  /**
+   * Chosen before the dish exists, uploaded straight after it is created.
+   *
+   * It cannot be uploaded first: an object key encodes the menu item's uid, and there is no
+   * uid until the dish is saved (docs/DECISIONS.md D15). So the create runs, and the photo
+   * follows -- which is also why a failed photo does not lose the dish.
+   */
+  photo: File | null
 }
 
 /**
@@ -91,6 +106,7 @@ const emptyDraft = (categoryUid: string): ItemDraft => ({
   foodType: null,
   spiceLevel: '',
   prepTime: '',
+  photo: null,
 })
 
 export function MenuManager() {
@@ -116,6 +132,31 @@ export function MenuManager() {
    */
   const [filter, setFilter] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  /**
+   * Whether this DEPLOYMENT stores images at all (docs/DECISIONS.md D15).
+   *
+   * Read from the menu response rather than assumed. Without it the photo control would be
+   * visible on every deployment and answer TX_IMG_001 on the ones that cannot store
+   * anything -- a button whose only outcome is an error.
+   */
+  const [imageUploadEnabled, setImageUploadEnabled] = useState(false)
+  /** This deployment's per-photo ceiling, so downscaling targets a size that will be accepted. */
+  const [imageMaxBytes, setImageMaxBytes] = useState(DEFAULT_MAX_UPLOAD_BYTES)
+  /**
+   * Uploads in flight, KEYED BY DISH: presence means busy, the value is progress (null where
+   * the browser cannot report it).
+   *
+   * A map rather than one uid, because nothing stops a manager starting a second upload while
+   * the first is still going -- every other row stays clickable by design. With a single value
+   * the second upload cleared the first row's busy state mid-flight, which un-disabled its
+   * controls and brought back its remove button: clicking that fired a DELETE that could land
+   * before the first upload's confirm, so the confirm then re-attached a photo the manager had
+   * just deleted. The two uploads also shared one progress number and fought over it.
+   *
+   * Kept apart from `pending` so a photo upload does not grey out the sold-out buttons on the
+   * rest of the page.
+   */
+  const [photoUploads, setPhotoUploads] = useState<Record<string, number | null>>({})
   const [draft, setDraft] = useState<ItemDraft | null>(null)
   const [newCategory, setNewCategory] = useState('')
   const [addingCategory, setAddingCategory] = useState(false)
@@ -129,6 +170,9 @@ export function MenuManager() {
         .getMenu(token)
         .then((result) => {
           setCategories(result.categories)
+          setImageUploadEnabled(result.image_upload_enabled)
+          // Zero when uploads are disabled; keep the default rather than a ceiling of nothing.
+          if (result.image_max_upload_bytes > 0) setImageMaxBytes(result.image_max_upload_bytes)
           setError(null)
         })
         .catch(setError)
@@ -170,6 +214,118 @@ export function MenuManager() {
     [getToken, load],
   )
 
+  /**
+   * The photo upload, end to end: prepare, get a slot, PUT to R2, confirm.
+   *
+   * Four steps rather than one because the bytes do not go through our API -- the browser
+   * uploads straight to the bucket on a presigned URL, so a 6MB phone photograph never
+   * occupies a request worker on the free-tier instance (docs/DECISIONS.md D15).
+   *
+   * Returns the error message rather than setting a notice, so the caller decides how to
+   * phrase it. Creating a dish and replacing a photo need different wording for the same
+   * failure: one has just created something, the other has not lost anything.
+   */
+  /** Marks a dish as uploading, with no progress reported yet. */
+  const beginUpload = useCallback((uid: string) => {
+    setPhotoUploads((current) => ({ ...current, [uid]: null }))
+  }, [])
+
+  /** Clears a dish's upload, whether it succeeded or failed. */
+  const endUpload = useCallback((uid: string) => {
+    setPhotoUploads((current) => {
+      const { [uid]: _done, ...rest } = current
+      return rest
+    })
+  }, [])
+
+  const runUpload = useCallback(
+    async (token: string, itemUid: string, file: File, maxBytes: number): Promise<void> => {
+      const prepared = await prepareImage(file, maxBytes)
+      if (!prepared.ok) throw new Error(prepared.error)
+
+      const slot = await api.createImageUpload(token, itemUid, {
+        content_type: prepared.image.contentType,
+        size_bytes: prepared.image.blob.size,
+      })
+
+      await putToStorage(
+        { url: slot.upload_url, method: slot.method, headers: slot.headers },
+        prepared.image.blob,
+        // Progress lands on this dish's entry only, and only while it is still in flight --
+        // a late frame from an upload that already finished must not resurrect its row.
+        (fraction) =>
+          setPhotoUploads((current) =>
+            itemUid in current ? { ...current, [itemUid]: fraction } : current,
+          ),
+      )
+
+      // Nothing about the dish has changed until this lands. An upload abandoned before
+      // here leaves an object in the bucket and the menu untouched, which is the right way
+      // round: a half-finished upload must never show a half-finished dish.
+      await api.confirmImageUpload(token, itemUid, { object_key: slot.object_key })
+    },
+    [],
+  )
+
+  const uploadPhoto = useCallback(
+    (item: AdminMenuItemView, file: File) => {
+      setNotice(null)
+      beginUpload(item.uid)
+
+      getToken()
+        .then(async (token) => {
+          if (!token) return
+          await runUpload(token, item.uid, file, imageMaxBytes)
+        })
+        .then(() => {
+          endUpload(item.uid)
+          // Said out loud, for the same reason a price change is: the thumbnail changing in a
+          // 40px box on an 8,500px page is not feedback a screen-reader user receives at all.
+          setNotice({ tone: 'success', text: `${item.name} now has a photo.` })
+          load()
+        })
+        .catch((err: unknown) => {
+          endUpload(item.uid)
+          setNotice({
+            tone: 'danger',
+            text:
+              isApiError(err) || err instanceof Error
+                ? err.message
+                : `Could not add a photo to ${item.name}.`,
+          })
+        })
+    },
+    [beginUpload, endUpload, getToken, imageMaxBytes, load, runUpload],
+  )
+
+  const removePhoto = useCallback(
+    (item: AdminMenuItemView) => {
+      setNotice(null)
+      beginUpload(item.uid)
+
+      getToken().then((token) => {
+        if (!token) {
+          endUpload(item.uid)
+          return
+        }
+        api
+          .removeImage(token, item.uid)
+          .then(() => {
+            endUpload(item.uid)
+            load()
+          })
+          .catch((err: unknown) => {
+            endUpload(item.uid)
+            setNotice({
+              tone: 'danger',
+              text: isApiError(err) ? err.message : 'Could not remove the photo.',
+            })
+          })
+      })
+    },
+    [beginUpload, endUpload, getToken, load],
+  )
+
   const createItem = useCallback(() => {
     if (draft === null) return
 
@@ -196,6 +352,8 @@ export function MenuManager() {
       ...(draft.prepTime ? { prep_time_mins: Number.parseInt(draft.prepTime, 10) } : {}),
     }
 
+    const photo = draft.photo
+
     setPending('new-item')
     setNotice(null)
     getToken().then((token) => {
@@ -205,10 +363,52 @@ export function MenuManager() {
       }
       api
         .createItem(token, body)
-        .then(() => {
+        .then((created) => {
+          /*
+            THE DISH EXISTS FROM HERE ON, and everything below is shaped by that.
+
+            The photo cannot be uploaded first -- its object key encodes the menu item's uid,
+            and there is no uid until the dish is saved. So the create is settled COMPLETELY
+            before the upload starts: the form closes, `pending` is released, and the menu
+            reloads so the new row is on screen.
+
+            Releasing `pending` here rather than after the upload is not tidiness. It is
+            page-wide, and every "Mark sold out" button is disabled while it is set -- so
+            holding it across a 40s upload over venue wifi would freeze all 93 of them, which
+            is the exact failure the comment on `pending` above records as already fixed once.
+
+            Reloading here rather than only at the end is what gives the upload somewhere to
+            report: progress renders on the new dish's own row, which does not exist until the
+            menu has been refetched.
+          */
           setDraft(null)
           setPending(null)
+
+          if (photo === null) {
+            load()
+            return
+          }
+
+          beginUpload(created.uid)
           load()
+
+          runUpload(token, created.uid, photo, imageMaxBytes)
+            .then(() => {
+              endUpload(created.uid)
+              setNotice({ tone: 'success', text: `${body.name} was added, with its photo.` })
+              load()
+            })
+            .catch((err: unknown) => {
+              endUpload(created.uid)
+              // Named as a photo failure, never as a failed create. The dish is saved, and
+              // saying otherwise would send a manager to add a duplicate.
+              setNotice({
+                tone: 'danger',
+                text: `${body.name} was added, but its photo was not: ${
+                  isApiError(err) || err instanceof Error ? err.message : 'the upload failed.'
+                } Add one from its row.`,
+              })
+            })
         })
         .catch((err: unknown) => {
           setPending(null)
@@ -218,7 +418,7 @@ export function MenuManager() {
           })
         })
     })
-  }, [draft, getToken, load])
+  }, [beginUpload, draft, endUpload, getToken, imageMaxBytes, load, runUpload])
 
   const createCategory = useCallback(() => {
     const name = newCategory.trim()
@@ -506,11 +706,28 @@ export function MenuManager() {
                             single letter. Four columns is a desktop shape; a phone gets two rows.
                           */
                           className={cn(
-                            'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-divider px-4 py-2',
-                            'sm:grid-cols-[auto_minmax(0,1fr)_auto]',
+                            // The photo takes a leading auto column. It costs 40px plus a gap
+                            // of fixed furniture, which the stacked mobile shape can afford --
+                            // below sm the row is [photo][mark][name] with price and action on
+                            // their own line, so the name still gets minmax(0,1fr).
+                            'grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-divider px-4 py-2',
+                            'sm:grid-cols-[auto_auto_minmax(0,1fr)_auto]',
                             !item.is_available ? 'bg-surface-sunken' : '',
                           )}
                         >
+                          <DishPhoto
+                            {...(item.image_url ? { url: item.image_url } : { url: undefined })}
+                            dishName={item.name}
+                            // Uploading is menu editing, so it follows the same role rule as
+                            // pricing -- unlike the sold-out toggle beside it, which every role
+                            // gets. And it is hidden entirely where the deployment cannot store
+                            // anything, rather than offered and then refused.
+                            canEdit={canEdit && imageUploadEnabled}
+                            busy={item.uid in photoUploads}
+                            progress={photoUploads[item.uid] ?? null}
+                            onPick={(file) => uploadPhoto(item, file)}
+                            onRemove={() => removePhoto(item)}
+                          />
                           <FoodTypeBadge type={item.food_type} size={14} />
                           <div className="min-w-0">
                             <p className="flex items-center gap-2 text-base font-medium">
@@ -535,7 +752,7 @@ export function MenuManager() {
                             to. Right-aligned: below sm this puts the action at the edge the thumb
                             reaches, and at sm+ the column is auto-width so it has no effect.
                           */}
-                          <div className="col-start-2 flex items-center justify-end gap-2 sm:col-start-3">
+                          <div className="col-start-3 flex items-center justify-end gap-2 sm:col-start-4">
                             {/* No wrapping <label>: the field is named by the aria-label below,
                                 which names it per dish ("Price of Butter Chicken in rupees")
                                 rather than repeating the word "Price" 93 times down the page. */}
@@ -582,6 +799,7 @@ export function MenuManager() {
                         <ItemForm
                           draft={draft}
                           busy={pending === 'new-item'}
+                          photoEnabled={imageUploadEnabled}
                           onChange={setDraft}
                           onCancel={() => setDraft(null)}
                           onSave={createItem}
@@ -662,16 +880,21 @@ export function MenuManager() {
 function ItemForm({
   draft,
   busy,
+  photoEnabled,
   onChange,
   onCancel,
   onSave,
 }: {
   draft: ItemDraft
   busy: boolean
+  /** False where this deployment stores no images -- the field is then absent, not disabled. */
+  photoEnabled: boolean
   onChange: (draft: ItemDraft) => void
   onCancel: () => void
   onSave: () => void
 }) {
+  const photoInput = useRef<HTMLInputElement | null>(null)
+
   return (
     <div className="space-y-3 border-t border-divider bg-bg p-4">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -773,6 +996,64 @@ function ItemForm({
           )}
         </Field>
       </div>
+
+      {/*
+        The photo is optional and last, because it is the only field that cannot be applied
+        until AFTER the dish is saved: an object key encodes the menu item's uid, and there
+        is no uid yet (docs/DECISIONS.md D15). Putting it here matches the order things
+        actually happen in, and the hint says so rather than leaving a manager wondering why
+        the upload did not start when they picked the file.
+      */}
+      {photoEnabled ? (
+        <Field
+          label="Photo"
+          optional
+          hint="JPEG, PNG or WebP. Uploaded once the dish is saved, and resized for a 3G connection."
+        >
+          {({ id, describedBy }) => (
+            <div className="flex min-w-0 items-center gap-2">
+              <Button
+                id={id}
+                aria-describedby={describedBy}
+                onClick={() => photoInput.current?.click()}
+                className="shrink-0"
+              >
+                <ImagePlus aria-hidden="true" className="mr-2 h-4 w-4" strokeWidth={2} />
+                {draft.photo === null ? 'Choose a photo' : 'Choose a different photo'}
+              </Button>
+
+              {draft.photo !== null ? (
+                <>
+                  <span className="min-w-0 truncate text-sm text-muted">{draft.photo.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => onChange({ ...draft, photo: null })}
+                  >
+                    Clear
+                  </Button>
+                </>
+              ) : null}
+
+              <input
+                ref={photoInput}
+                type="file"
+                accept={ACCEPT_ATTRIBUTE}
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null
+                  // Cleared first, so re-picking the same file after clearing it still fires.
+                  event.target.value = ''
+                  if (file) onChange({ ...draft, photo: file })
+                }}
+              />
+            </div>
+          )}
+        </Field>
+      ) : null}
 
       <div className="flex gap-2 border-t border-divider pt-3">
         <Button variant="primary" loading={busy} loadingLabel="Saving…" onClick={onSave}>

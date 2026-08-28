@@ -91,6 +91,41 @@ services:
       - key: TABLEX_PLATFORM_TOKEN
         sync: false
 
+      # OPTIONAL. Dish photo uploads, held in Cloudflare R2 (docs/DECISIONS.md D15).
+      #
+      # Leave all five unset and uploads are disabled: the admin panel hides the control and
+      # dishes keep whatever image_url was pasted into them. That is a working deployment, not
+      # a degraded one.
+      #
+      # Set them and it is ALL FIVE OR NONE -- a partially configured block fails startup
+      # rather than silently disabling uploads, so a deploy meant to enable them cannot report
+      # success while doing nothing.
+      #
+      # R2, not S3. From the Cloudflare dashboard: R2 -> Manage API Tokens, scoped to Object
+      # Read & Write on this one bucket. The Go client is the S3 protocol client because R2
+      # publishes no SDK of its own; no AWS account is involved and AWS keys will not work.
+      - key: TABLEX_R2_ACCOUNT_ID
+        sync: false
+      - key: TABLEX_R2_ACCESS_KEY_ID
+        sync: false
+      - key: TABLEX_R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: TABLEX_R2_BUCKET
+        sync: false
+
+      # The public origin diners fetch images from: a custom domain bound to the bucket in the
+      # Cloudflare dashboard, e.g. https://img.tabley.in.
+      #
+      # NOT the <account>.r2.cloudflarestorage.com endpoint -- that is the authenticated API
+      # and serves nothing publicly, so every dish photo would 401. Startup rejects that value
+      # by name. Must be https in production, or the browser blocks it as mixed content and the
+      # menu renders with no photographs at all.
+      #
+      # Whatever host this names must also be added to images.remotePatterns in
+      # apps/diner/next.config.ts and apps/admin/next.config.ts.
+      - key: TABLEX_R2_PUBLIC_BASE_URL
+        sync: false
+
       # ---- non-secret, safe to keep in the repository ----
 
       - key: TABLEX_ENV

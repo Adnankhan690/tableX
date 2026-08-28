@@ -4,11 +4,14 @@ import type {
   AdminMenuResponse,
   BulkCreateTablesRequest,
   ChangePasswordRequest,
+  ConfirmImageUploadRequest,
   ConfirmPaymentRequest,
   CreateCategoryRequest,
+  CreateImageUploadRequest,
   CreateMenuItemRequest,
   CreateStaffRequest,
   CreateTableRequest,
+  ImageUploadResponse,
   ListOrdersQuery,
   MarkPaymentFailedRequest,
   OrderListResponse,
@@ -174,6 +177,56 @@ export class AdminApi {
     return this.http.request(`${ADMIN}/menu/items/${encodeURIComponent(uid)}/availability`, {
       method: 'PATCH',
       body: { is_available: isAvailable },
+      auth: { kind: 'staff', token },
+    })
+  }
+
+  // --- Dish photographs (docs/DECISIONS.md D15) ---
+
+  /**
+   * Step one: ask for somewhere to put a photograph.
+   *
+   * Returns a presigned URL the browser PUTs to directly. Nothing about the dish changes
+   * until confirmImageUpload runs, so an abandoned upload leaves the menu untouched.
+   *
+   * Throws with code `TX_IMG_001` on a deployment that hosts no images -- check
+   * `image_upload_enabled` on the menu response instead of catching that.
+   */
+  createImageUpload(
+    token: string,
+    uid: string,
+    body: CreateImageUploadRequest,
+  ): Promise<ImageUploadResponse> {
+    return this.http.request(`${ADMIN}/menu/items/${encodeURIComponent(uid)}/image/upload`, {
+      method: 'POST',
+      body,
+      auth: { kind: 'staff', token },
+    })
+  }
+
+  /**
+   * Step two: attach the finished upload to the dish.
+   *
+   * This is where the server validates -- size, and the real content type sniffed from the
+   * bytes rather than the one the client declared. A key naming another dish or another
+   * restaurant is refused here (`TX_IMG_005`).
+   */
+  confirmImageUpload(
+    token: string,
+    uid: string,
+    body: ConfirmImageUploadRequest,
+  ): Promise<AdminMenuItemView> {
+    return this.http.request(`${ADMIN}/menu/items/${encodeURIComponent(uid)}/image`, {
+      method: 'POST',
+      body,
+      auth: { kind: 'staff', token },
+    })
+  }
+
+  /** Removes a dish's photograph. Idempotent -- a dish with none answers 200. */
+  removeImage(token: string, uid: string): Promise<AdminMenuItemView> {
+    return this.http.request(`${ADMIN}/menu/items/${encodeURIComponent(uid)}/image`, {
+      method: 'DELETE',
       auth: { kind: 'staff', token },
     })
   }

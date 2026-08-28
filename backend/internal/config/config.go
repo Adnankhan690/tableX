@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ type Config struct {
 	Platform PlatformConfig `yaml:"platform"`
 	Guest    GuestConfig    `yaml:"guest"`
 	Payments PaymentsConfig `yaml:"payments"`
+	Storage  StorageConfig  `yaml:"storage"`
 	Realtime RealtimeConfig `yaml:"realtime"`
 	Log      LogConfig      `yaml:"log"`
 }
@@ -140,6 +142,74 @@ type RazorpayConfig struct {
 	BaseURL       string `yaml:"base_url"`
 }
 
+// StorageConfig configures the object store dish photographs are uploaded to
+// (DECISIONS.md D15).
+//
+// There is no `enabled` flag and no provider name, deliberately. Credential presence is the
+// switch, exactly as it is for the Razorpay adapter: a deployment either has somewhere to
+// put an image or it does not, and a boolean that can disagree with the credentials beside
+// it is a third state nobody wants to debug.
+type StorageConfig struct {
+	R2 R2Config `yaml:"r2"`
+	// MaxUploadBytes bounds one photograph. Enforced twice -- signed into the upload URL so
+	// R2 refuses an oversized body, and re-checked against the stored object before it is
+	// attached to a dish, because only the second check is a guarantee.
+	MaxUploadBytes int64 `yaml:"max_upload_bytes"`
+	// PresignTTL bounds how long an upload URL stays usable. Short: it is a write capability
+	// against our bucket, and the browser uses it within seconds of being handed it.
+	PresignTTL time.Duration `yaml:"presign_ttl"`
+}
+
+// R2Config holds Cloudflare R2 credentials and the public origin images are served from.
+//
+// R2, not S3, and the distinction is worth stating because the client library says
+// otherwise: R2 publishes no Go SDK, so internal/storage reaches it through the S3 protocol
+// client. These are R2 API tokens from the Cloudflare dashboard. AWS credentials will not
+// work and no AWS account is involved.
+type R2Config struct {
+	// AccountID forms the API endpoint, https://{account_id}.r2.cloudflarestorage.com.
+	AccountID string `yaml:"account_id"`
+	// AccessKeyID and SecretAccessKey are an R2 API token scoped to Object Read & Write on
+	// this bucket alone.
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	Bucket          string `yaml:"bucket"`
+	// PublicBaseURL is the origin diners fetch images from -- a custom domain bound to the
+	// bucket, e.g. https://img.tabley.in.
+	//
+	// NOT the r2.cloudflarestorage.com endpoint, which is authenticated and serves nothing
+	// publicly. Cloudflare also documents the bucket's own r2.dev subdomain as rate limited
+	// and unsuitable for production, so a real deployment binds a domain.
+	PublicBaseURL string `yaml:"public_base_url"`
+}
+
+// fields returns the five values that must all be present, with the config key each came
+// from, so validation can report exactly which half of a half-filled block is missing.
+func (c *R2Config) fields() map[string]string {
+	return map[string]string{
+		"storage.r2.account_id":        c.AccountID,
+		"storage.r2.access_key_id":     c.AccessKeyID,
+		"storage.r2.secret_access_key": c.SecretAccessKey,
+		"storage.r2.bucket":            c.Bucket,
+		"storage.r2.public_base_url":   c.PublicBaseURL,
+	}
+}
+
+// UploadsEnabled reports whether this deployment can accept an image upload.
+//
+// All five or none. A partially configured bucket is treated as an error at startup rather
+// than as "disabled", because the two are not the same mistake: nobody half-fills a config
+// block on purpose, and silently disabling uploads would let a deploy that was meant to
+// enable them look successful.
+func (c *StorageConfig) UploadsEnabled() bool {
+	for _, v := range c.R2.fields() {
+		if v == "" {
+			return false
+		}
+	}
+	return true
+}
+
 // RealtimeConfig holds WebSocket hub settings (DECISIONS.md D10).
 type RealtimeConfig struct {
 	Enabled      bool          `yaml:"enabled"`
@@ -199,6 +269,14 @@ func Defaults() *Config {
 			DefaultProvider: "upi_static",
 			UPIStaticNote:   "Order {{order}} ref {{ref}}",
 			Razorpay:        RazorpayConfig{BaseURL: "https://api.razorpay.com/v1"},
+		},
+		Storage: StorageConfig{
+			// 5 MB. A manager photographs a dish on a phone, which produces 3-6 MB, and the
+			// admin app downscales before uploading -- so this is a ceiling on the pathological
+			// case rather than a limit the ordinary one runs into. Raising it costs storage on
+			// every dish and download time on every 3G diner (PRD 7).
+			MaxUploadBytes: 5 << 20,
+			PresignTTL:     5 * time.Minute,
 		},
 		Realtime: RealtimeConfig{
 			Enabled:        true,
@@ -278,6 +356,16 @@ func (c *Config) applyEnv() {
 	envStr("TABLEX_RAZORPAY_KEY_SECRET", &c.Payments.Razorpay.KeySecret)
 	envStr("TABLEX_RAZORPAY_WEBHOOK_SECRET", &c.Payments.Razorpay.WebhookSecret)
 
+	// R2, not AWS: these are Cloudflare API tokens. Named TABLEX_R2_* rather than
+	// TABLEX_S3_* so nobody sets AWS keys here and waits for them to work.
+	envStr("TABLEX_R2_ACCOUNT_ID", &c.Storage.R2.AccountID)
+	envStr("TABLEX_R2_ACCESS_KEY_ID", &c.Storage.R2.AccessKeyID)
+	envStr("TABLEX_R2_SECRET_ACCESS_KEY", &c.Storage.R2.SecretAccessKey)
+	envStr("TABLEX_R2_BUCKET", &c.Storage.R2.Bucket)
+	envStr("TABLEX_R2_PUBLIC_BASE_URL", &c.Storage.R2.PublicBaseURL)
+	envInt64("TABLEX_STORAGE_MAX_UPLOAD_BYTES", &c.Storage.MaxUploadBytes)
+	envDuration("TABLEX_STORAGE_PRESIGN_TTL", &c.Storage.PresignTTL)
+
 	envBool("TABLEX_REALTIME_ENABLED", &c.Realtime.Enabled)
 
 	envStr("TABLEX_LOG_LEVEL", &c.Log.Level)
@@ -331,6 +419,8 @@ func (c *Config) Validate() error {
 		problems = append(problems, "guest.max_quantity_per_item must be positive")
 	}
 
+	problems = append(problems, c.Storage.validate(c.IsProduction())...)
+
 	// A production deployment that trusts every proxy header has a spoofable client IP,
 	// which silently defeats the rate limiter.
 	if c.IsProduction() && len(c.Server.TrustedProxies) == 0 {
@@ -342,6 +432,94 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+// validate checks the storage block, returning the problems it found.
+//
+// Absent configuration is silent: a deployment that hosts no images is a valid deployment
+// and must not fail to boot over it. Everything below fires only once somebody has started
+// filling the block in.
+func (c *StorageConfig) validate(isProduction bool) []string {
+	var problems []string
+
+	set := make([]string, 0, 5)
+	missing := make([]string, 0, 5)
+	for key, value := range c.R2.fields() {
+		if value == "" {
+			missing = append(missing, key)
+		} else {
+			set = append(set, key)
+		}
+	}
+	sort.Strings(missing)
+
+	// A HALF-FILLED BLOCK IS AN ERROR, NOT A DISABLED FEATURE. Treating it as disabled would
+	// let a deploy that was meant to turn uploads on report success, and the failure would
+	// then surface as a manager pressing an upload button that answers "not configured".
+	if len(set) > 0 && len(missing) > 0 {
+		problems = append(problems, fmt.Sprintf(
+			"storage.r2 is partially configured -- set all of it or none of it. Missing: %s",
+			strings.Join(missing, ", ")))
+	}
+
+	// The account id is copied off the bucket's "S3 API" row in the dashboard, which shows a
+	// whole URL -- https://{account_id}.r2.cloudflarestorage.com/{bucket} -- so pasting the
+	// URL instead of the id is the obvious mistake to make from that screen. It builds an
+	// endpoint like https://https://abc.r2.cloudflarestorage.com/bucket.r2.cloudflarestorage.com,
+	// which fails as an unresolvable host and reads as "R2 is down".
+	if c.R2.AccountID != "" && strings.ContainsAny(c.R2.AccountID, "/:.") {
+		problems = append(problems,
+			"storage.r2.account_id must be just the account id, not a URL -- copy only the "+
+				"subdomain from the bucket's S3 API endpoint (https://ACCOUNT_ID.r2.cloudflarestorage.com/bucket)")
+	}
+
+	// Likewise the bucket: the same row ends with /{bucket}, and pasting the whole tail gives
+	// a bucket name with a slash in it, which R2 answers with a 404 on every operation.
+	if strings.ContainsAny(c.R2.Bucket, "/:") {
+		problems = append(problems,
+			"storage.r2.bucket must be just the bucket name, with no slashes or scheme")
+	}
+
+	if c.R2.PublicBaseURL != "" {
+		switch {
+		case !strings.HasPrefix(c.R2.PublicBaseURL, "http://") &&
+			!strings.HasPrefix(c.R2.PublicBaseURL, "https://"):
+			problems = append(problems,
+				"storage.r2.public_base_url must include a scheme, e.g. https://img.example.com")
+		case isProduction && !strings.HasPrefix(c.R2.PublicBaseURL, "https://"):
+			// A plain-http image on an https page is blocked as mixed content and renders as
+			// nothing at all, so the menu looks broken rather than insecure.
+			problems = append(problems,
+				"storage.r2.public_base_url must be https in production (mixed content is blocked by the browser)")
+		case strings.Contains(c.R2.PublicBaseURL, ".r2.cloudflarestorage.com"):
+			// The API endpoint is authenticated and serves nothing publicly. Setting it here
+			// produces a menu where every image 401s.
+			problems = append(problems,
+				"storage.r2.public_base_url is the API endpoint, not a public origin -- bind a custom domain to the bucket and use that")
+		}
+	}
+
+	if c.MaxUploadBytes <= 0 {
+		problems = append(problems, "storage.max_upload_bytes must be positive")
+	} else if c.MaxUploadBytes > maxAllowedUploadBytes {
+		problems = append(problems, fmt.Sprintf(
+			"storage.max_upload_bytes %d exceeds the %d-byte ceiling -- a menu photograph that large costs every 3G diner who loads the page",
+			c.MaxUploadBytes, maxAllowedUploadBytes))
+	}
+
+	if c.PresignTTL <= 0 {
+		problems = append(problems, "storage.presign_ttl must be positive")
+	} else if c.PresignTTL > time.Hour {
+		// The URL is a write capability against our bucket. The browser uses it within
+		// seconds; anything beyond an hour is a credential left lying around.
+		problems = append(problems, "storage.presign_ttl must be an hour or less")
+	}
+
+	return problems
+}
+
+// maxAllowedUploadBytes caps what max_upload_bytes may be set to, as opposed to what it
+// defaults to. 25 MB is already far past any sensible dish photograph.
+const maxAllowedUploadBytes = 25 << 20
 
 // IsProduction reports whether this is a production deployment.
 func (c *Config) IsProduction() bool { return strings.EqualFold(c.App.Env, "production") }
@@ -374,6 +552,14 @@ func envStr(key string, dst *string) {
 func envInt(key string, dst *int) {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
+			*dst = n
+		}
+	}
+}
+
+func envInt64(key string, dst *int64) {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			*dst = n
 		}
 	}

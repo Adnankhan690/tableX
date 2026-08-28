@@ -29,7 +29,15 @@ type MenuItem struct {
 	CategoryID   int32  `gorm:"not null;index" json:"category_id"`
 	Name         string `gorm:"size:128;not null" json:"name"`
 	Description  string `gorm:"type:text" json:"description,omitempty"`
-	ImageURL     string `gorm:"type:text" json:"image_url,omitempty"`
+	// ImageURL is a URL the restaurant pasted from a site they already run, served
+	// verbatim. ImageKey is an object we host ourselves, whose URL is resolved against
+	// storage.public_base_url at read time (DECISIONS.md D15).
+	//
+	// At most one is ever set. ImageKey wins when both are, because that is the state a
+	// half-finished migration off an external host leaves behind, and the hosted copy is
+	// the one we can guarantee still resolves.
+	ImageURL string `gorm:"type:text" json:"image_url,omitempty"`
+	ImageKey string `gorm:"type:text" json:"image_key,omitempty"`
 	// PriceMinor is paise (DECISIONS.md D7).
 	PriceMinor int64      `gorm:"not null" json:"price_minor"`
 	FoodType   FoodType   `gorm:"size:16;not null" json:"food_type"`

@@ -78,6 +78,35 @@ payments:
     webhook_secret: ""
     base_url: https://api.razorpay.com/v1
 
+storage:
+  # Dish photographs, held in Cloudflare R2 (DECISIONS.md D15).
+  #
+  # EMPTY LOCALLY, AND THAT IS A WORKING STATE. With no credentials the admin panel hides the
+  # upload control and dishes keep whatever image_url was pasted into them, so nothing about
+  # local development needs a bucket. Fill all five in to exercise the real upload path.
+  #
+  # All five or none: a half-filled block fails startup rather than silently disabling
+  # uploads, because nobody half-fills one on purpose and a deploy meant to enable them
+  # would otherwise look successful.
+  #
+  # R2, not S3. These come from the Cloudflare dashboard (R2 -> Manage API Tokens), scoped to
+  # Object Read & Write on this bucket alone. AWS credentials will not work here.
+  r2:
+    account_id: ""
+    access_key_id: ""
+    secret_access_key: ""
+    bucket: ""
+    # The public origin diners fetch images from -- a custom domain bound to the bucket.
+    # NOT the r2.cloudflarestorage.com endpoint, which is authenticated and serves nothing
+    # publicly, and startup refuses it for that reason.
+    public_base_url: ""
+  # 5 MB. A phone photograph is 3-6 MB and the admin app downscales before uploading, so this
+  # bounds the pathological case rather than the ordinary one.
+  max_upload_bytes: 5242880
+  # How long an upload URL stays usable. Short, because it is a write capability against the
+  # bucket and the browser uses it within seconds.
+  presign_ttl: 5m
+
 realtime:
   enabled: true
   ping_interval: 30s

@@ -255,6 +255,64 @@ export interface AdminMenuCategoryView {
 
 export interface AdminMenuResponse {
   categories: AdminMenuCategoryView[]
+  /**
+   * Whether this DEPLOYMENT has an object store configured (docs/DECISIONS.md D15).
+   *
+   * A deployment fact, not a restaurant one, which is why it rides here rather than on
+   * RestaurantSettings. The menu screen hides its upload control when this is false, so a
+   * manager never presses a button that can only answer TX_IMG_001.
+   */
+  image_upload_enabled: boolean
+  /**
+   * This deployment's per-photo ceiling in bytes, so the panel downscales to a size that
+   * will actually be accepted. Zero when uploads are disabled.
+   *
+   * Without it the client can only assume the default: a deployment that lowered the limit
+   * would produce a dead end, where a photo small enough to pass the client's check is
+   * refused by the server and retrying fails identically.
+   */
+  image_max_upload_bytes: number
+}
+
+// --- Dish photographs (docs/DECISIONS.md D15) ---
+//
+// Uploading is two calls. The first mints a presigned URL and the browser PUTs the file
+// straight to Cloudflare R2, so a 5MB photograph never passes through the API. The second
+// attaches the finished object, and is where the server checks what actually landed --
+// its size, and its real content type sniffed from the leading bytes.
+
+/** JPEG, PNG and WebP only. SVG is refused by the server: it executes script. */
+export type ImageContentType = 'image/jpeg' | 'image/png' | 'image/webp'
+
+export interface CreateImageUploadRequest {
+  content_type: ImageContentType
+  size_bytes: number
+}
+
+export interface ImageUploadResponse {
+  upload_url: string
+  method: string
+  /**
+   * Must be replayed on the PUT verbatim -- they are inside the signature, so adding,
+   * dropping or renaming one produces a 403 rather than a partial upload.
+   *
+   * Host and Content-Length are deliberately absent: browsers forbid script from setting
+   * either and supply both themselves.
+   */
+  headers: Record<string, string>
+  /**
+   * Encodes the restaurant and the menu item:
+   * `menu/{restaurant_uid}/{item_uid}/{image_uid}.{ext}`. Handed back to confirmImageUpload,
+   * which refuses any key naming a different dish or a different restaurant.
+   */
+  object_key: string
+  expires_at: string
+  /** The server's ceiling, echoed so a too-large file can be refused before it is uploaded. */
+  max_bytes: number
+}
+
+export interface ConfirmImageUploadRequest {
+  object_key: string
 }
 
 export interface CreateCategoryRequest {

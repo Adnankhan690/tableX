@@ -56,8 +56,8 @@ Expect, on a fresh database:
 
 ```
 applied 001_create_restaurant
-... 13 lines ...
-applied 13 migration(s)
+... 14 lines ...
+applied 14 migration(s)
 ```
 
 It is safe to re-run. Applied versions are recorded in `schema_migration`, and a second run
@@ -126,6 +126,66 @@ backend that looks perfectly healthy from `curl`.
 `/api/platform/v1` is never mounted and the admin app's `/onboard` page has nothing to call —
 the first restaurant would have to be created in Supabase's SQL editor instead.
 
+## Cloudflare R2 — dish photos (optional)
+
+Unset, uploads are disabled: the admin panel hides the control and dishes keep whatever
+`image_url` was pasted into them. That is a working deployment (DECISIONS.md D15).
+
+**All five or none.** A partially filled block *fails startup* rather than quietly disabling
+uploads — nobody fills in three of five on purpose, and silent disabling would let a deploy
+meant to enable them report success.
+
+| Variable | Where it comes from |
+|---|---|
+| `TABLEX_R2_ACCOUNT_ID` | R2 → Overview, the account ID in the endpoint URL |
+| `TABLEX_R2_ACCESS_KEY_ID` | R2 → Manage API Tokens |
+| `TABLEX_R2_SECRET_ACCESS_KEY` | shown **once**, at token creation |
+| `TABLEX_R2_BUCKET` | the bucket name |
+| `TABLEX_R2_PUBLIC_BASE_URL` | `https://img.tabley.in` — a custom domain on the bucket |
+
+### Setting it up
+
+1. **R2 → Create bucket.** Name it (`tablex-images`), location Automatic.
+2. **Manage API Tokens → Create API token.** Permission **Object Read & Write**, scoped to
+   *this bucket only*. Copy both halves; the secret is shown once.
+3. **Bucket → Settings → Public access → Connect Domain.** Add `img.tabley.in`. This is the
+   value `TABLEX_R2_PUBLIC_BASE_URL` takes.
+4. **Bucket → Settings → CORS policy.** Without this the browser's PUT fails with a network
+   error and status 0, which reads as "storage is down":
+
+   ```json
+   [{ "AllowedOrigins": ["https://admin.tabley.in"],
+      "AllowedMethods": ["PUT"],
+      "AllowedHeaders": ["content-type"],
+      "MaxAgeSeconds": 3600 }]
+   ```
+
+5. **Bucket → Settings → Object lifecycle rules.** Add one on prefix `menu/` deleting
+   incomplete multipart uploads and, if you want the sweeper, aged objects. **This is the only
+   thing that reclaims an abandoned upload** — a file PUT but never confirmed is referenced by
+   nothing and nothing in the application deletes it (D15 says so plainly).
+6. Add the `img.tabley.in` host to `images.remotePatterns` in both `next.config.ts` files if
+   you narrow them from the current wildcard.
+
+### The three ways this goes wrong
+
+**`TABLEX_R2_PUBLIC_BASE_URL` set to the API endpoint.** `<account>.r2.cloudflarestorage.com`
+is authenticated and serves nothing publicly, so every dish photo 401s while the bucket,
+credentials and keys are all correct. Startup rejects this value by name.
+
+**http instead of https.** Browsers block mixed content, so the menu renders with no
+photographs and no error. Startup refuses it in production.
+
+**No CORS policy on the bucket.** Presigning succeeds, the PUT fails at the browser with no
+usable detail. Check this first if uploads fail and nothing appears in the API logs — the
+upload never reaches the API, so its logs will show the presign and then nothing.
+
+### It is not AWS
+
+`internal/storage/r2.go` imports `github.com/aws/aws-sdk-go-v2/service/s3`. R2 publishes no Go
+SDK and speaks the S3 protocol, so that package is the protocol client pointed at Cloudflare.
+No AWS account is involved, and AWS credentials will not work in these variables.
+
 ### Vercel — both apps, same two values
 
 | Variable | Value |
@@ -147,7 +207,7 @@ down" rather than as a configuration error.
 ## First deploy, in order
 
 1. Create the Supabase project in `singapore`; copy the session-mode pooler URL.
-2. Run the migration (above). Confirm `applied 13 migration(s)`.
+2. Run the migration (above). Confirm `applied 14 migration(s)`.
 3. Apply the Blueprint on Render; fill in the six `sync: false` variables.
 4. Point `api.tabley.in` at the Render service; wait for TLS.
 5. Set the two `NEXT_PUBLIC_` variables on both Vercel projects and **redeploy both**.

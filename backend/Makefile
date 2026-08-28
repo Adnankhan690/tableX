@@ -4,7 +4,20 @@
 
 CONFIG ?= config/local.yml
 
-run: ## Run the API server
+# Secrets live in the repo-root .env, which is gitignored. config/local.yml is checked in and
+# carries only the shape and the non-secret local values, so anything that must not be
+# committed -- R2 credentials, a real JWT secret, the platform token -- belongs in .env.
+#
+# NOTHING IN THE GO CODE READS A .env FILE. config.Load reads defaults, then the YAML, then
+# the process environment; it has no dotenv step and deliberately so, because a server in
+# production is handed real environment variables. That leaves this target as the only thing
+# that can bridge the two locally -- and without it, a value set in .env never reaches the
+# process and the feature it configures silently stays switched off, which is a bad hour to
+# spend when the .env looks obviously correct.
+ENV_FILE ?= ../.env
+
+run: ## Run the API server, loading secrets from the repo-root .env if present
+	@if [ -f $(ENV_FILE) ]; then set -a; . $(ENV_FILE); set +a; fi; \
 	go run ./cmd/server --config $(CONFIG)
 
 build: ## Build the server binary
