@@ -5,9 +5,7 @@ import { cn } from '@tablex/ui'
 /**
  * The add / +/- control.
  *
- * Collapses to a single "Add" button at zero rather than showing a disabled minus. The
- * collapsed state is a much larger tap target, which matters because this is the control the
- * whole product funnels through and it is pressed with a thumb while holding a phone.
+ * Supports default style (e.g. in Cart screen) and 'overlay' style (floating on dish photos in Menu).
  */
 export function QuantityStepper({
   quantity,
@@ -15,13 +13,75 @@ export function QuantityStepper({
   disabled,
   max = 99,
   label,
+  variant = 'default',
+  className,
 }: {
   quantity: number
   onChange: (next: number) => void
   disabled?: boolean
   max?: number
   label: string
+  variant?: 'default' | 'overlay'
+  className?: string
 }) {
+  if (variant === 'overlay') {
+    if (quantity === 0) {
+      return (
+        <button
+          type="button"
+          onClick={() => onChange(1)}
+          disabled={disabled}
+          aria-label={`Add ${label}`}
+          className={cn(
+            'min-w-[5.5rem] h-9 px-4 rounded-xl font-bold text-[0.8125rem] tracking-wide shadow-md uppercase',
+            'bg-white text-[#e25c63] border border-[#e25c63]/25 hover:bg-[#fff5f5]',
+            'flex items-center justify-center gap-1 transition-transform active:scale-95 disabled:opacity-40',
+            className,
+          )}
+        >
+          <span>ADD</span>
+          <span className="text-base leading-none font-extrabold">+</span>
+        </button>
+      )
+    }
+
+    return (
+      <div
+        className={cn(
+          'min-w-[6rem] h-9 rounded-xl shadow-md bg-[#e25c63] text-white flex items-center justify-between px-2 font-bold select-none',
+          'transition-all',
+          className,
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => onChange(quantity - 1)}
+          disabled={disabled}
+          aria-label={quantity === 1 ? `Remove ${label}` : `One less ${label}`}
+          className="flex h-full w-7 items-center justify-center text-lg leading-none active:opacity-75 disabled:opacity-40"
+        >
+          −
+        </button>
+        <span
+          aria-live="polite"
+          className="min-w-6 text-center text-sm font-bold tabular-nums text-white"
+        >
+          {quantity}
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(quantity + 1)}
+          disabled={disabled || quantity >= max}
+          aria-label={`One more ${label}`}
+          className="flex h-full w-7 items-center justify-center text-lg leading-none active:opacity-75 disabled:opacity-40"
+        >
+          +
+        </button>
+      </div>
+    )
+  }
+
+  // Default variant
   if (quantity === 0) {
     return (
       <button
@@ -33,6 +93,7 @@ export function QuantityStepper({
           'min-h-tap min-w-[4.25rem] rounded-full border border-accent px-4',
           'text-[0.9375rem] font-semibold text-accent',
           'transition-opacity active:opacity-70 disabled:opacity-40',
+          className,
         )}
       >
         Add
@@ -41,7 +102,12 @@ export function QuantityStepper({
   }
 
   return (
-    <div className="flex min-h-tap items-center rounded-full bg-accent text-accent-ink">
+    <div
+      className={cn(
+        'flex min-h-tap items-center rounded-full bg-accent text-accent-ink',
+        className,
+      )}
+    >
       <button
         type="button"
         onClick={() => onChange(quantity - 1)}

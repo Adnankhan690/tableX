@@ -233,7 +233,7 @@ export function MenuScreen() {
       />
 
       {/* Search and filter, sticky under the header so they stay reachable down a long menu. */}
-      <div className="sticky top-[3.75rem] z-10 border-b border-line bg-bg px-4 py-2">
+      <div className="sticky top-[3.75rem] z-20 border-b border-line bg-bg px-4 py-2">
         <div className="flex items-center gap-2">
           <input
             type="search"
@@ -410,6 +410,17 @@ export function MenuScreen() {
 
 /** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
 /**
+ * The dish blurb.
+ *
+ * Extracted rather than inlined because the row already carries six other things and this is the
+ * only one that is prose. Clamped to two lines: a long description pushes the price and the rating
+ * apart, and those two are what a diner is actually comparing between rows.
+ */
+function DishDescription({ description }: { description: string }) {
+  return <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">{description}</p>
+}
+
+/**
  * A dish's score on the menu, as one line.
  *
  * One filled star and a number rather than five stars: at this size a five-star row is a
@@ -502,7 +513,7 @@ function DishRow({
         <div className="flex items-center gap-1.5">
           <FoodTypeBadge type={item.food_type} size={14} />
           {item.is_bestseller && !unavailable ? (
-            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-accent">
+            <span className="rounded-md bg-amber-100 border border-amber-300/50 px-2 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-amber-800">
               Bestseller
             </span>
           ) : null}
@@ -510,40 +521,59 @@ function DishRow({
 
         <p className="mt-1 text-dish-name">{item.name}</p>
 
-        <div className="mt-0.5 flex items-center gap-2">
-          <p className="text-price tabular-nums">{item.price.display}</p>
-          {/*
-            Absent, not zeroed, for a dish without enough ratings -- the server omits the field
-            below its publication threshold. A "5.0" from one tap would rank an untried dish
-            above a consistently good one, so no score is the honest rendering (PRD 6.2).
-          */}
-          {item.rating ? <DishRating rating={item.rating} /> : null}
-        </div>
+        <p className="mt-1 text-base font-bold tabular-nums text-ink">{item.price.display}</p>
 
-        {item.description ? (
-          <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">
-            {item.description}
-          </p>
+        {/*
+          Rating directly under the price, which is where every food app puts it -- the two are
+          read as one unit when deciding.
+
+          Absent, not zeroed, for a dish without enough ratings: the server omits the field below
+          its publication threshold. A "5.0" from one tap would rank an untried dish above a
+          consistently good one, so no score is the honest rendering (PRD 6.2).
+        */}
+        {item.rating ? (
+          <div className="mt-1">
+            <DishRating rating={item.rating} />
+          </div>
         ) : null}
 
-        <div className="mt-1 flex items-center gap-2 text-[0.75rem] text-muted">
+        {item.description ? <DishDescription description={item.description} /> : null}
+
+        <div className="mt-1.5 flex items-center gap-2 text-[0.75rem] text-muted">
           {item.prep_time_mins ? <span>{item.prep_time_mins} min</span> : null}
           {item.spice_level ? <span className="capitalize">{item.spice_level}</span> : null}
         </div>
 
         {unavailable ? (
-          <p className="mt-1 text-[0.8125rem] font-medium text-nonveg">Unavailable today</p>
+          <p className="mt-1.5 text-[0.8125rem] font-medium text-nonveg">Unavailable today</p>
         ) : null}
       </div>
 
-      <div className="flex flex-col items-end justify-between gap-2">
+      {/*
+        `self-start` is load-bearing, not tidiness. This is a flex child, so without it the
+        default `align-items: stretch` makes it as tall as the whole row -- and the stepper's
+        `-bottom-3` then anchors to the bottom of the row rather than to the photo, leaving it
+        floating a hundred pixels below the image it is supposed to sit on.
+
+        `relative` is what the overlay positions against, and `mb-3` is what stops it colliding
+        with the row divider: it hangs 12px below the photo, which is exactly the row's padding.
+      */}
+      <div className="relative mb-3 shrink-0 self-start">
         <DishImage name={item.name} {...(item.image_url ? { url: item.image_url } : {})} />
+        {/*
+          `addable`, not `!unavailable`. The two differ when the restaurant itself is closed
+          (DECISIONS.md D18) -- a sold-out dish and a shut kitchen both mean "cannot be ordered",
+          and only one of them is about this dish.
+        */}
         {addable ? (
-          <QuantityStepper
-            quantity={quantity}
-            label={item.name}
-            onChange={(next) => (next === 1 && quantity === 0 ? onAdd() : onSetQuantity(next))}
-          />
+          <div className="absolute -bottom-3 left-1/2 z-[1] -translate-x-1/2">
+            <QuantityStepper
+              quantity={quantity}
+              label={item.name}
+              variant="overlay"
+              onChange={(next) => (next === 1 && quantity === 0 ? onAdd() : onSetQuantity(next))}
+            />
+          </div>
         ) : null}
       </div>
     </li>
