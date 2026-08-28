@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 // MenuItemView is one dish as the diner menu renders it.
 type MenuItemView struct {
 	UID         string `json:"uid"`
@@ -119,4 +121,64 @@ type AdminMenuCategoryView struct {
 // ResponseAdminMenu is the full menu for management, including archived rows.
 type ResponseAdminMenu struct {
 	Categories []AdminMenuCategoryView `json:"categories"`
+	// ImageUploadEnabled reports whether this DEPLOYMENT has an object store configured
+	// (DECISIONS.md D15). It rides on the menu response because that is the one screen that
+	// needs it, and it is a deployment fact rather than a restaurant one -- so it does not
+	// belong on RestaurantSettings, which is per-tenant.
+	//
+	// The admin panel hides the upload control when this is false, which is what stops a
+	// manager meeting TX_IMG_001 by pressing a button that was never going to work.
+	ImageUploadEnabled bool `json:"image_upload_enabled"`
+	// ImageMaxUploadBytes is this deployment's per-photo ceiling, sent so the admin panel can
+	// downscale to a size that will actually be accepted.
+	//
+	// Without it the client can only guess at the default, and a deployment that lowered the
+	// limit produces a dead end: a 3MB photo is small enough that the client leaves it alone,
+	// the server refuses it, and retrying takes the identical branch and fails identically.
+	// Zero when uploads are disabled.
+	ImageMaxUploadBytes int64 `json:"image_max_upload_bytes"`
+}
+
+// --- Dish photographs (DECISIONS.md D15) ---
+//
+// Uploading is two calls, not one, and the split is the whole safety design.
+//
+// The first mints a presigned URL and the browser PUTs the bytes straight to R2, so a 5 MB
+// photograph never passes through this API. The second attaches the finished object to the
+// dish, and is the point at which the server checks what actually landed in the bucket --
+// its size, and its real content type sniffed from the leading bytes. A single call could
+// not do that, because at the moment a URL is issued there is nothing to inspect.
+
+// RequestCreateImageUpload asks for somewhere to put one photograph.
+//
+// Both fields describe what the client INTENDS to upload. They are signed into the URL, so
+// R2 rejects a body that disagrees -- but they are a claim, not a fact, which is why the
+// confirm step re-checks rather than trusting them.
+type RequestCreateImageUpload struct {
+	ContentType string `json:"content_type" binding:"required"`
+	SizeBytes   int64  `json:"size_bytes" binding:"required,min=1"`
+}
+
+// ResponseImageUpload is a time-boxed capability to write exactly one object.
+type ResponseImageUpload struct {
+	UploadURL string `json:"upload_url"`
+	Method    string `json:"method"`
+	// Headers must be sent with the PUT verbatim. They are inside the signature, so adding,
+	// dropping or renaming one produces a 403 rather than a partial upload.
+	//
+	// Host and Content-Length are deliberately absent: browsers forbid script from setting
+	// either and supply both themselves.
+	Headers map[string]string `json:"headers"`
+	// ObjectKey is handed back to the confirm call. It encodes the restaurant and the menu
+	// item, and confirm refuses a key naming any other.
+	ObjectKey string    `json:"object_key"`
+	ExpiresAt time.Time `json:"expires_at"`
+	// MaxBytes is echoed so the client can fail a too-large file locally, before spending a
+	// restaurant's uplink on an upload the confirm step would reject.
+	MaxBytes int64 `json:"max_bytes"`
+}
+
+// RequestConfirmImageUpload attaches a finished upload to the dish.
+type RequestConfirmImageUpload struct {
+	ObjectKey string `json:"object_key" binding:"required"`
 }

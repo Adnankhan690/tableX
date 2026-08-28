@@ -1,0 +1,81 @@
+meta {
+  name: confirm-image
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/menu/items/{{admin_item_uid}}/image
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "object_key": "{{image_object_key}}"
+  }
+}
+
+tests {
+  test("responds 200, or refuses an upload that never happened", function () {
+    // 422 is the expected result of a sequential collection run: upload-image-url minted a
+    // key, but nothing PUT any bytes to it, so there is no object to attach. Verifying that
+    // refusal is worth more than skipping the request.
+    expect([200, 422, 501]).to.include(res.status)
+  })
+
+  test("an unwritten key is refused as not-uploaded, not as a server error", function () {
+    if (res.status === 422) {
+      expect(["TX_IMG_004", "TX_IMG_005"]).to.include(res.body.code)
+    }
+  })
+
+  test("a successful attach returns the dish showing its new photo", function () {
+    if (res.status === 200) {
+      expect(res.body.data.uid).to.equal(bru.getVar("admin_item_uid"))
+      expect(res.body.data.image_url).to.be.a("string").and.not.equal("")
+    }
+  })
+}
+
+docs {
+  # Attach an uploaded photo to the dish
+
+**Step two of two, and the only step that checks anything.** A presigned PUT proves the client
+sent the length and content type it promised; it says nothing about whether those bytes are a
+photograph. Everything the signature cannot constrain is constrained here, against the object
+that actually landed:
+
+| Check | Failure |
+| --- | --- |
+| Key is well-formed **and names this restaurant and this dish** | `422 TX_IMG_005` |
+| Object exists in the bucket | `422 TX_IMG_004` |
+| Object is not zero bytes | `422 TX_IMG_004` |
+| Size is within `storage.max_upload_bytes` | `413 TX_IMG_003` |
+| Leading bytes really are a JPEG/PNG/WebP, **and match what R2 will serve it as** | `422 TX_IMG_006` |
+
+The ownership check is the load-bearing one. The key arrives from the client, so being
+well-formed is not enough -- a well-formed key naming **another restaurant** is exactly what
+would be sent to point a dish at somebody else's object. Both uids in the key must match the
+authenticated actor's restaurant and the dish in the path, or nothing touches the bucket
+(`TX_IMG_005`, which is also what a malformed key gets: distinguishing the two would tell a
+caller probing keys which guess was structurally right).
+
+Rejected objects are deleted rather than left in the bucket.
+
+On success the dish's previous photo is deleted **after** the row is updated, never before --
+deleting first and then failing the write would leave the row pointing at bytes that no longer
+exist. `image_url` is cleared alongside, so a dish cannot end up with both an uploaded photo and
+a pasted URL.
+
+A `422` here in a sequential collection run is correct: `upload-image-url` minted a key, but
+Bruno did not PUT a file to it.
+}

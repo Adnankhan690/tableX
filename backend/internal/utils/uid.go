@@ -22,6 +22,10 @@ const (
 	UIDPrefixOrder      = "ord"
 	UIDPrefixOrderItem  = "oit"
 	UIDPrefixPayment    = "pay"
+	// UIDPrefixImage names one uploaded object. Fresh on every upload rather than reused
+	// per dish, so replacing a photograph writes a new object key and no CDN edge can keep
+	// serving the previous bytes from cache (DECISIONS.md D15).
+	UIDPrefixImage = "img"
 )
 
 // uidAlphabet is Crockford-style base32 without padding: unambiguous when read aloud or

@@ -281,6 +281,50 @@ STAFFADD=$(curl -s -o /dev/null -w "%{http_code}" -X POST $ADM/staff -H "Authori
   -H 'Content-Type: application/json' -d '{"name":"X","email":"x@y.test","password":"password123","role":"staff"}')
 ck "only owners create staff"            "403" "$STAFFADD"
 
+echo "--- dish photos (D15) ---"
+# Uploading is menu editing, so it follows the same role rule as pricing rather than the
+# sold-out toggle's.
+PHOTO403=$(curl -s -o /dev/null -w "%{http_code}" -X POST $ADM/menu/items/$PANEER/image/upload \
+  -H "Authorization: Bearer $SJWT" -H 'Content-Type: application/json' \
+  -d '{"content_type":"image/jpeg","size_bytes":120000}')
+ck "floor staff cannot upload a photo"   "403" "$PHOTO403"
+
+# The remaining assertions accept 501 as well as the refusal they are really about: on a
+# deployment with no R2 configured -- which is the default, and how CI runs -- the service
+# refuses for lack of a store before it ever looks at the key.
+refused() { [ "$1" = "$2" ] || [ "$1" = "501" ] && echo yes || echo no; }
+
+SVG=$(curl -s -o /dev/null -w "%{http_code}" -X POST $ADM/menu/items/$PANEER/image/upload \
+  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+  -d '{"content_type":"image/svg+xml","size_bytes":4000}')
+ck "SVG is refused as an image type"     "yes" "$(refused "$SVG" 422)"
+
+HUGE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $ADM/menu/items/$PANEER/image/upload \
+  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+  -d '{"content_type":"image/jpeg","size_bytes":999999999}')
+ck "an oversized upload is refused"      "yes" "$(refused "$HUGE" 413)"
+
+# THE TENANT CHECK. A perfectly well-formed key that names a DIFFERENT restaurant is what
+# would be sent to point this dish at somebody else's object.
+FOREIGN=$(curl -s -o /dev/null -w "%{http_code}" -X POST $ADM/menu/items/$PANEER/image \
+  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+  -d "{\"object_key\":\"menu/rst_zzzzzzzzzzzz/$PANEER/img_aaaaaaaaaaaa.jpg\"}")
+ck "another restaurant's key is refused" "yes" "$(refused "$FOREIGN" 422)"
+
+TRAVERSAL=$(curl -s -o /dev/null -w "%{http_code}" -X POST $ADM/menu/items/$PANEER/image \
+  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+  -d '{"object_key":"menu/../../etc/passwd"}')
+ck "a traversal key is refused"          "yes" "$(refused "$TRAVERSAL" 422)"
+
+# Idempotent, and it works with no storage configured -- that is precisely when a manager is
+# clearing rows whose photos no longer resolve.
+RMPHOTO=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE $ADM/menu/items/$PANEER/image \
+  -H "Authorization: Bearer $JWT")
+ck "removing an absent photo is a 200"   "200" "$RMPHOTO"
+
+ck "the menu says whether uploads exist" "yes" "$(curl -s $ADM/menu -H "Authorization: Bearer $JWT" \
+  | python3 -c "import sys,json;print('yes' if 'image_upload_enabled' in json.load(sys.stdin)['data'] else 'no')")"
+
 echo
 echo "=============== 10. QR & TABLES (D4) ==============="
 TABLES=$(curl -s $ADM/tables -H "Authorization: Bearer $JWT")

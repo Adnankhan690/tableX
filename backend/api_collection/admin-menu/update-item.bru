@@ -42,4 +42,9 @@ docs {
 
 Raising a price here is the case `order_item`'s snapshotting exists for. Run
 `admin-orders / get-order` afterwards and confirm the earlier order's total has not moved.
+
+**`image_url` is special on this route.** Supplying it also clears any uploaded photo
+(`image_key`), because the two are one field to a client and the uploaded copy takes precedence
+(docs/DECISIONS.md D15). Without that, pasting a URL over an uploaded photo would answer 200 and
+change nothing visible. `"image_url": ""` clears the dish's photo whichever way it was set.
 }

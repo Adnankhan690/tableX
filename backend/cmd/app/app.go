@@ -18,6 +18,7 @@ import (
 	"tablex/internal/realtime"
 	"tablex/internal/repositories"
 	"tablex/internal/services"
+	"tablex/internal/storage"
 )
 
 // App holds every constructed dependency and the HTTP server.
@@ -58,7 +59,13 @@ func New(cfg *config.Config, log logger.Logger) (*App, error) {
 
 	repos := repositories.NewRepositories(cfg, store, log)
 	providers := buildPaymentRegistry(cfg, log)
-	svcs := services.NewServices(cfg, store, log, repos, providers, hub)
+
+	objects, err := buildObjectStore(cfg, log)
+	if err != nil {
+		return nil, fmt.Errorf("app: object storage: %w", err)
+	}
+
+	svcs := services.NewServices(cfg, store, log, repos, providers, objects, hub)
 	ctrls := controllers.NewControllers(cfg, log, svcs, hub, store)
 	mws := middlewares.New(cfg, log, svcs)
 
@@ -119,6 +126,43 @@ func buildPaymentRegistry(cfg *config.Config, log logger.Logger) *payments.Regis
 	registry := payments.NewRegistry(fallback, available...)
 	entry.Infof("[buildPaymentRegistry] providers: %v", registry.Names())
 	return registry
+}
+
+// buildObjectStore constructs the store dish photographs live in (DECISIONS.md D15).
+//
+// Same shape as the Razorpay adapter above: credentials decide. A deployment with none gets
+// a store that refuses writes and resolves every key to the empty string, so "this
+// deployment hosts no images" is one object rather than a nil check on every read path.
+//
+// A HALF-FILLED BLOCK NEVER REACHES HERE -- config.Validate rejects it at startup, because
+// silently disabling uploads would let a deploy that was meant to enable them look
+// successful. That makes the error below unreachable today; it is propagated rather than
+// logged so it stays that way if a future option can fail.
+func buildObjectStore(cfg *config.Config, log logger.Logger) (storage.Storage, error) {
+	entry := log.With(context.Background())
+
+	if !cfg.Storage.UploadsEnabled() {
+		entry.Infof("[buildObjectStore] no R2 credentials configured, dish photo uploads are disabled -- " +
+			"set TABLEX_R2_* to enable them. Dishes can still carry a pasted image_url.")
+		return storage.NewUnconfigured(), nil
+	}
+
+	objects, err := storage.NewR2(storage.R2Options{
+		AccountID:       cfg.Storage.R2.AccountID,
+		AccessKeyID:     cfg.Storage.R2.AccessKeyID,
+		SecretAccessKey: cfg.Storage.R2.SecretAccessKey,
+		Bucket:          cfg.Storage.R2.Bucket,
+		PublicBaseURL:   cfg.Storage.R2.PublicBaseURL,
+		PresignTTL:      cfg.Storage.PresignTTL,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// The bucket name and public origin are logged; the credentials are not.
+	entry.Infof("[buildObjectStore] R2 bucket %q ready, images served from %s (max %d bytes per upload)",
+		cfg.Storage.R2.Bucket, cfg.Storage.R2.PublicBaseURL, cfg.Storage.MaxUploadBytes)
+	return objects, nil
 }
 
 // buildEngine configures Gin and installs the middleware chain.

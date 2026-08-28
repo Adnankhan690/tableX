@@ -139,3 +139,60 @@ func (c *ControllerMenu) SetAvailability(ctx *gin.Context) {
 		ctx.Request.Context(), actor, ctx.Param(PathParamUID), &req)
 	response.Send(ctx, result, appErr)
 }
+
+// --- Dish photographs (DECISIONS.md D15) ---
+
+// CreateImageUpload hands the browser a presigned URL to PUT one photograph to.
+//
+// The response is 200, not 201: nothing has been created yet. It is a capability to create
+// something, and the dish is unchanged until ConfirmImageUpload runs.
+func (c *ControllerMenu) CreateImageUpload(ctx *gin.Context) {
+	actor, appErr := staffPrincipal(ctx)
+	if appErr != nil {
+		response.Send(ctx, nil, appErr)
+		return
+	}
+
+	var req types.RequestCreateImageUpload
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.Access.Logger.With(ctx.Request.Context()).Warnf("[CreateImageUpload] bind: %v", err)
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	result, appErr := c.Access.Services.Menu.CreateImageUpload(
+		ctx.Request.Context(), actor, ctx.Param(PathParamUID), &req)
+	response.Send(ctx, result, appErr)
+}
+
+// ConfirmImageUpload attaches a finished upload to the dish.
+func (c *ControllerMenu) ConfirmImageUpload(ctx *gin.Context) {
+	actor, appErr := staffPrincipal(ctx)
+	if appErr != nil {
+		response.Send(ctx, nil, appErr)
+		return
+	}
+
+	var req types.RequestConfirmImageUpload
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	result, appErr := c.Access.Services.Menu.ConfirmImageUpload(
+		ctx.Request.Context(), actor, ctx.Param(PathParamUID), &req)
+	response.Send(ctx, result, appErr)
+}
+
+// RemoveImage clears a dish's photograph. No body to bind -- the dish is the whole request.
+func (c *ControllerMenu) RemoveImage(ctx *gin.Context) {
+	actor, appErr := staffPrincipal(ctx)
+	if appErr != nil {
+		response.Send(ctx, nil, appErr)
+		return
+	}
+
+	result, appErr := c.Access.Services.Menu.RemoveImage(
+		ctx.Request.Context(), actor, ctx.Param(PathParamUID))
+	response.Send(ctx, result, appErr)
+}

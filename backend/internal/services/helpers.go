@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"tablex/internal/models"
+	"tablex/internal/storage"
 	"tablex/internal/types"
 	"tablex/internal/utils"
 )
@@ -116,12 +117,34 @@ func toTableInfo(t *models.RestaurantTable, qrURL string, liveOrders int64) type
 
 // --- Menu ---
 
-func toMenuItemView(item *models.MenuItem, categoryUID, currency string) types.MenuItemView {
+// menuItemImageURL resolves the one image URL a client renders from the two columns that
+// can supply it (DECISIONS.md D15).
+//
+// ImageKey wins when both are set. That is the state left behind by a restaurant that had
+// an external URL and then uploaded a photograph, and the hosted copy is the one whose
+// continued existence we control.
+//
+// Resolution goes through the store rather than string-concatenating the configured base
+// URL, so that a deployment which has lost its storage configuration yields "" -- no photo
+// -- instead of a URL that cannot resolve. Rows keep their image_key either way, so
+// restoring the configuration restores the photographs with no data change.
+func menuItemImageURL(item *models.MenuItem, store storage.Storage) string {
+	if item.ImageKey != "" {
+		return store.PublicURL(item.ImageKey)
+	}
+	return item.ImageURL
+}
+
+func toMenuItemView(
+	item *models.MenuItem,
+	categoryUID, currency string,
+	store storage.Storage,
+) types.MenuItemView {
 	return types.MenuItemView{
 		UID:          item.UID,
 		Name:         item.Name,
 		Description:  item.Description,
-		ImageURL:     item.ImageURL,
+		ImageURL:     menuItemImageURL(item, store),
 		Price:        money(item.PriceMinor, currency),
 		FoodType:     string(item.FoodType),
 		SpiceLevel:   string(item.SpiceLevel),
@@ -132,9 +155,13 @@ func toMenuItemView(item *models.MenuItem, categoryUID, currency string) types.M
 	}
 }
 
-func toAdminMenuItemView(item *models.MenuItem, categoryUID, currency string) types.AdminMenuItemView {
+func toAdminMenuItemView(
+	item *models.MenuItem,
+	categoryUID, currency string,
+	store storage.Storage,
+) types.AdminMenuItemView {
 	return types.AdminMenuItemView{
-		MenuItemView: toMenuItemView(item, categoryUID, currency),
+		MenuItemView: toMenuItemView(item, categoryUID, currency, store),
 		Status:       string(item.Status),
 		SortOrder:    item.SortOrder,
 	}
@@ -153,6 +180,7 @@ func buildPublicMenu(
 	restaurant *models.Restaurant,
 	categories []*models.MenuCategory,
 	items []*models.MenuItem,
+	store storage.Storage,
 ) *types.ResponseMenu {
 	idToUID := make(map[int32]string, len(categories))
 	for _, c := range categories {
@@ -165,7 +193,7 @@ func buildPublicMenu(
 		if !ok {
 			continue
 		}
-		byCategory[uid] = append(byCategory[uid], toMenuItemView(item, uid, restaurant.Currency))
+		byCategory[uid] = append(byCategory[uid], toMenuItemView(item, uid, restaurant.Currency, store))
 	}
 
 	views := make([]types.MenuCategoryView, 0, len(categories))

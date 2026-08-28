@@ -216,6 +216,7 @@ Roles: `owner` ⊃ `manager` ⊃ `staff`. Marked below where it differs.
 | `POST /menu/categories` · `PATCH /menu/categories/:uid` | manager |
 | `POST /menu/items` · `PATCH /menu/items/:uid` | manager |
 | `PATCH /menu/items/:uid/availability` | **any** — see below |
+| `POST /menu/items/:uid/image/upload` · `POST`/`DELETE /menu/items/:uid/image` | manager |
 | `GET /tables` · `GET /tables/:uid/qr` | any |
 | `POST /tables` · `POST /tables/bulk` · `PATCH /tables/:uid` | manager |
 | `POST /tables/:uid/qr/rotate` | manager |
@@ -229,6 +230,58 @@ Roles: `owner` ⊃ `manager` ⊃ `staff`. Marked below where it differs.
 **Why availability is open to every role** while the rest of menu management is not: marking a
 dish sold out is a floor action taken mid-service. Routing it through a manager means diners keep
 ordering something the kitchen ran out of. Repricing stays restricted.
+
+### Dish photos ([D15](./DECISIONS.md))
+
+Uploading is **two calls**, because the bytes do not come through this API. The browser PUTs
+straight to Cloudflare R2 on a presigned URL, so a 6MB phone photograph never occupies a request
+worker.
+
+```
+1. POST /menu/items/:uid/image/upload   { content_type, size_bytes }
+                                     -> { upload_url, method, headers, object_key, expires_at, max_bytes }
+2. PUT  <upload_url>                    the file, with `headers` replayed VERBATIM   (goes to R2, not here)
+3. POST /menu/items/:uid/image          { object_key }   -> the updated dish
+```
+
+Step 2's headers are inside the signature — altering, adding or dropping one gives a 403 from R2.
+`Host` and `Content-Length` are deliberately not in that map: browsers forbid script from setting
+either and supply both themselves.
+
+**Step 3 is where validation happens**, and that is the point of the split: when the URL is issued
+there is nothing to inspect yet. A signature proves the client sent the length and type it
+promised, not that those bytes are a photograph.
+
+| Checked at step 3 | Failure |
+| --- | --- |
+| Key is well-formed **and names this restaurant and this dish** | `422 TX_IMG_005` |
+| Object exists and is non-empty | `422 TX_IMG_004` |
+| Size within `storage.max_upload_bytes` | `413 TX_IMG_003` |
+| Leading bytes sniff as JPEG/PNG/WebP **and match the stored content type** | `422 TX_IMG_006` |
+
+Rejected objects are deleted rather than left in the bucket. On success the dish's previous photo
+is deleted *after* the row is updated, never before.
+
+`content_type` must be `image/jpeg`, `image/png` or `image/webp` (`422 TX_IMG_002` otherwise).
+**SVG is refused permanently** — it is a script-bearing document and these objects are served from
+a host of ours.
+
+`object_key` is `menu/{restaurant_uid}/{item_uid}/{image_uid}.{ext}`. It encodes the mapping in
+both directions, and the `image_uid` is fresh per upload so replacing a photo writes a new key —
+overwriting would leave CDN edges serving the old bytes against an unchanged URL.
+
+**Setting `image_url` through `PATCH /menu/items/:uid` also clears an uploaded photo.** The two
+are one field on the wire, and the uploaded copy takes precedence when both are set — so without
+this, pasting a URL over an uploaded photo would return 200 and change nothing visible. Passing
+`image_url: ""` clears the dish's photo entirely, whichever way it was set.
+
+`DELETE /menu/items/:uid/image` is idempotent and clears **both** `image_key` and `image_url`, so
+removing an uploaded photo cannot reveal an older pasted URL underneath it. Unlike the two upload
+routes it works on a deployment with no storage configured — that is exactly when a manager is
+tidying rows whose photos no longer resolve.
+
+On a deployment with no object store, the two upload routes answer **`501 TX_IMG_001`**. Read
+`image_upload_enabled` from `GET /menu` and hide the control instead of catching that.
 
 ### `GET /orders` — the queue
 

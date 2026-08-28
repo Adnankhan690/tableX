@@ -1,0 +1,40 @@
+meta {
+  name: remove-image
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{base_url}}/api/admin/v1/menu/items/{{admin_item_uid}}/image
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("the dish comes back with no photo", function () {
+    expect(res.body.data.image_url === undefined || res.body.data.image_url === "").to.equal(true)
+  })
+}
+
+docs {
+  # Remove a dish's photo
+
+Idempotent: a dish that already has no photo answers `200`, not `409`. A remove button that fails
+on a double click is a worse bug than a redundant write.
+
+Clears **both** `image_key` and `image_url`, so removing an uploaded photo cannot silently reveal
+an older pasted URL underneath it. The stored object is then deleted -- but only if we minted the
+key. A URL a restaurant pasted from their own website is not ours to delete.
+
+**Works on a deployment with no storage configured**, unlike the two upload routes. That is
+precisely when a manager is looking at dishes whose photos no longer resolve and wants to tidy
+the rows, so refusing here would strand them.
+}

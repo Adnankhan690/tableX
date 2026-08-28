@@ -1,0 +1,90 @@
+meta {
+  name: upload-image-url
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/menu/items/{{admin_item_uid}}/image/upload
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "content_type": "image/jpeg",
+    "size_bytes": 184320
+  }
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data) {
+    bru.setVar("image_object_key", res.body.data.object_key)
+  }
+}
+
+tests {
+  test("responds 200, or 501 where this deployment stores no images", function () {
+    expect([200, 501]).to.include(res.status)
+  })
+
+  test("the object key names this restaurant and this dish", function () {
+    if (res.status === 200) {
+      const key = res.body.data.object_key
+      expect(key).to.match(/^menu\/rst_[0-9a-z]{12}\/itm_[0-9a-z]{12}\/img_[0-9a-z]{12}\.jpg$/)
+      expect(key).to.include(bru.getVar("admin_item_uid"))
+    }
+  })
+
+  test("headers omit the two a browser refuses to set", function () {
+    if (res.status === 200) {
+      const names = Object.keys(res.body.data.headers).map((h) => h.toLowerCase())
+      expect(names).to.not.include("host")
+      expect(names).to.not.include("content-length")
+    }
+  })
+
+  test("a deployment without storage says so distinctly", function () {
+    if (res.status === 501) {
+      expect(res.body.code).to.equal("TX_IMG_001")
+    }
+  })
+}
+
+docs {
+  # Get an upload URL for a dish photo
+
+**Step one of two.** This mints a presigned URL; it does not change the dish. The browser then
+PUTs the file straight to Cloudflare R2 and calls `confirm-image` -- so a 5MB photograph never
+passes through this API, which runs on a 512MB instance where streaming one would occupy a
+request worker for the length of a restaurant's uplink.
+
+`content_type` must be `image/jpeg`, `image/png` or `image/webp`. **SVG is refused
+deliberately** (`TX_IMG_002`): an SVG executes script in whichever browser renders it, and these
+objects are served from a host of ours.
+
+Both fields are signed into the URL, so R2 rejects a body of a different length or type. They are
+still only a *claim* at this point, which is why `confirm-image` re-checks the object that
+actually arrived rather than trusting them.
+
+`object_key` encodes the restaurant and the menu item -- `menu/{restaurant_uid}/{item_uid}/{image_uid}.jpg`.
+That is the mapping the whole feature turns on, and `confirm-image` refuses any key naming a
+different dish or a different restaurant.
+
+The `headers` map must be replayed on the PUT **verbatim**; they are inside the signature. `Host`
+and `Content-Length` are absent on purpose -- browsers forbid script from setting either and
+supply both themselves.
+
+Answers **501 `TX_IMG_001`** on a deployment with no `TABLEX_R2_*` configuration. Not 500 and not
+503: nothing has failed and nothing is down, this deployment simply does not host images. The
+admin panel reads `image_upload_enabled` from `get-menu` and hides the control, so a manager
+should never see it.
+}

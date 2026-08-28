@@ -19,6 +19,7 @@ import (
 	"tablex/internal/payments"
 	"tablex/internal/realtime"
 	"tablex/internal/repositories"
+	"tablex/internal/storage"
 	"tablex/internal/types"
 )
 
@@ -30,6 +31,11 @@ type ServiceAccess struct {
 	Repositories *repositories.Repositories
 	// Payments resolves a provider by name (DECISIONS.md D2).
 	Payments *payments.Registry
+	// Storage holds dish photographs (DECISIONS.md D15). Never nil: a deployment with no
+	// object store configured gets storage.NewUnconfigured(), which refuses writes and
+	// resolves every key to "". That is what keeps "this deployment hosts no images" one
+	// branch in the menu service rather than a nil check at every call site.
+	Storage storage.Storage
 	// Hub is nil when realtime is disabled in config. Every publish goes through
 	// ServiceAccess.publish, which handles the nil, so no caller needs to check.
 	Hub *realtime.Hub
@@ -86,6 +92,7 @@ func NewServices(
 	log logger.Logger,
 	repos *repositories.Repositories,
 	providers *payments.Registry,
+	objects storage.Storage,
 	hub *realtime.Hub,
 ) *Services {
 	access := &ServiceAccess{
@@ -94,6 +101,7 @@ func NewServices(
 		Logger:       log,
 		Repositories: repos,
 		Payments:     providers,
+		Storage:      objects,
 		Hub:          hub,
 	}
 

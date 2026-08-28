@@ -94,6 +94,19 @@ type ServiceMenuMethods interface {
 	UpdateItem(ctx context.Context, actor *StaffPrincipal, uid string, req *types.RequestUpdateMenuItem) (*types.AdminMenuItemView, *response.ApplicationError)
 	// SetAvailability is the one-tap sold-out toggle staff use mid-service.
 	SetAvailability(ctx context.Context, actor *StaffPrincipal, uid string, req *types.RequestSetAvailability) (*types.AdminMenuItemView, *response.ApplicationError)
+
+	// CreateImageUpload mints a presigned URL the browser PUTs one photograph to directly,
+	// so the bytes never pass through this API (DECISIONS.md D15).
+	CreateImageUpload(ctx context.Context, actor *StaffPrincipal, uid string, req *types.RequestCreateImageUpload) (*types.ResponseImageUpload, *response.ApplicationError)
+	// ConfirmImageUpload attaches a finished upload to the dish, after checking what
+	// actually landed in the bucket. This is the enforcement point, not CreateImageUpload:
+	// only here is there an object to measure and sniff.
+	ConfirmImageUpload(ctx context.Context, actor *StaffPrincipal, uid string, req *types.RequestConfirmImageUpload) (*types.AdminMenuItemView, *response.ApplicationError)
+	// RemoveImage clears a dish's photograph and deletes the object if we hosted it.
+	//
+	// Works on a deployment whose storage configuration has gone away, deliberately: a row
+	// pointing at bytes nobody can serve must always be clearable.
+	RemoveImage(ctx context.Context, actor *StaffPrincipal, uid string) (*types.AdminMenuItemView, *response.ApplicationError)
 }
 
 // ServiceSessionMethods handles the QR scan and guest sessions (DECISIONS.md D4, D5).

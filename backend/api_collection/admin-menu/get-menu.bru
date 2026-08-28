@@ -33,6 +33,17 @@ tests {
     expect(res.body.data.categories).to.be.an("array").with.length.above(0)
   })
 
+  test("reports whether this deployment can store photos, and the ceiling", function () {
+    // The panel hides its upload control on false, rather than offering a button whose only
+    // outcome is TX_IMG_001, and downscales against the ceiling rather than guessing at it
+    // (docs/DECISIONS.md D15).
+    expect(res.body.data).to.have.property("image_upload_enabled")
+    expect(res.body.data).to.have.property("image_max_upload_bytes")
+    if (res.body.data.image_upload_enabled) {
+      expect(res.body.data.image_max_upload_bytes).to.be.above(0)
+    }
+  })
+
   test("each item exposes status separately from availability", function () {
     // Availability is "we ran out tonight"; status is "does this exist on the menu". Keeping them
     // apart means a sold-out evening does not archive the dish and orphan its order history.
