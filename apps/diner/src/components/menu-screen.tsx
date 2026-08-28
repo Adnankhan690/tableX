@@ -393,24 +393,37 @@ export function MenuScreen() {
  */
 /**
  * Dynamic tone based on industry-standard thresholds:
- * - >= 4.0: Emerald green (high satisfaction)
- * - 3.0 - 3.9: Amber / mustard (good/average)
+ * - >= 4.0: Deep emerald green (high satisfaction)
+ * - 3.5 - 3.9: Warm amber / honey (good)
+ * - 3.0 - 3.4: Warm orange (average)
  * - < 3.0: Coral red (below average)
  */
 function getRatingTone(score: number) {
   if (score >= 4.0) {
     return {
-      badge: 'bg-[#24963f] text-white',
+      badge: 'bg-[#15803d] text-white shadow-emerald-950/10',
+    }
+  }
+  if (score >= 3.5) {
+    return {
+      badge: 'bg-[#d97706] text-white shadow-amber-950/10',
     }
   }
   if (score >= 3.0) {
     return {
-      badge: 'bg-[#d97706] text-white',
+      badge: 'bg-[#ea580c] text-white shadow-orange-950/10',
     }
   }
   return {
-    badge: 'bg-[#dc2626] text-white',
+    badge: 'bg-[#dc2626] text-white shadow-rose-950/10',
   }
+}
+
+function formatRatingCount(count: number): string {
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  }
+  return String(count)
 }
 
 function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> }) {
@@ -422,19 +435,28 @@ function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> })
       aria-label={`Rated ${formatRating(rating.average)} out of 5 by ${rating.count} ${
         rating.count === 1 ? 'diner' : 'diners'
       }`}
-      className="inline-flex items-center gap-1.5 align-middle"
+      className="inline-flex items-center gap-1.5 align-middle select-none"
     >
       <span
         className={cn(
-          'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[0.6875rem] font-bold leading-none tracking-tight shadow-sm',
+          'inline-flex items-center gap-0.5 rounded-[5px] px-1.5 py-[2px] text-[0.6875rem] font-bold leading-none tracking-tight shadow-sm',
           tone.badge,
         )}
       >
-        <span aria-hidden="true" className="text-[0.625rem] leading-none">★</span>
         <span className="tabular-nums leading-none">{formatRating(rating.average)}</span>
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+          className="shrink-0 -translate-y-[0.5px]"
+        >
+          <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+        </svg>
       </span>
       <span className="text-[0.75rem] text-muted font-medium tabular-nums" aria-hidden="true">
-        ({rating.count})
+        ({formatRatingCount(rating.count)})
       </span>
     </div>
   )
