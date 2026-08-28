@@ -1,0 +1,52 @@
+meta {
+  name: rate-dish-invalid
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/items/{{order_item_uid}}/review
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "rating": 4,
+    "tags": ["delicious"]
+  }
+}
+
+tests {
+  test("refuses a tag outside the vocabulary", function () {
+    // A DELIBERATE REFUSAL. Verifying that this is rejected is worth more than a green exit
+    // code -- see the collection's docs on why the runner reads assertion results rather than
+    // Bruno's exit status.
+    expect(res.status).to.equal(422)
+  })
+
+  test("with a code the client can switch on", function () {
+    expect(res.body.code).to.equal("TX_REV_003")
+  })
+
+  test("and the earlier rating is untouched", function () {
+    // The whole request is refused, so nothing partial was written. A rejected tag must not
+    // leave the rating updated -- that would be a validation error that half-succeeded.
+    expect(res.body.data).to.be.undefined
+  })
+}
+
+docs {
+  # A tag outside the vocabulary
+
+`tags` is a closed set, and an unrecognised value is a 422 rather than a silent drop.
+
+Silently discarding it would let a client ship a typo that looks like it works, and produce a tag
+count nobody can explain later. The vocabulary lives in `backend/internal/models/review.go` and is
+mirrored in `packages/shared/src/review.ts`.
+}

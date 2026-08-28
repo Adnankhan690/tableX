@@ -61,6 +61,7 @@ type Repositories struct {
 	Menu          RepositoryMenuMethods
 	GuestSession  RepositoryGuestSessionMethods
 	Order         RepositoryOrderMethods
+	Review        RepositoryReviewMethods
 	Payment       RepositoryPaymentMethods
 	PasswordReset RepositoryPasswordResetMethods
 }
@@ -76,6 +77,7 @@ func NewRepositories(cfg *config.Config, store *db.Store, log logger.Logger) *Re
 		Menu:          NewRepositoryMenu(access),
 		GuestSession:  NewRepositoryGuestSession(access),
 		Order:         NewRepositoryOrder(access),
+		Review:        NewRepositoryReview(access),
 		Payment:       NewRepositoryPayment(access),
 		PasswordReset: NewRepositoryPasswordReset(access),
 	}

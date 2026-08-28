@@ -490,3 +490,209 @@ change for a deployment that has moved entirely to uploaded photos.
 **Reversal cost.** Low. The routes, the `internal/storage` package and one nullable column.
 Dropping it leaves `image_url` working exactly as it did before.
 
+
+---
+
+## D16 — Dish ratings open on evidence the food arrived, not on staff tapping "served"
+
+**Not a PRD question.** The product had no way for a diner to say whether the food was any
+good, and no way for a restaurant to find out which dish was failing.
+
+**Decision.** A diner rates each dish they were served, one tap per dish, from the order
+tracking screen. Three routes carry it:
+
+| | |
+| --- | --- |
+| `PUT /guest/v1/orders/:uid/items/:item_uid/review` | Rate one dish. Idempotent. |
+| `GET /admin/v1/reviews` | The feed, filterable by rating, dish, date, has-a-note. |
+| `GET /admin/v1/reviews/summary` | Overall score, distribution, and the two ends of the menu. |
+
+### The eligibility rule is the whole design, and it is not `status == 'served'`
+
+The obvious rule — reviewable once the order reaches `served` — makes the diner's ability to
+rate depend on a staff member tapping a button *after* the food has already left the pass. In
+a real kitchen mid-service that tap is the first thing to go: the order is marked ready, the
+runner takes the plates, and nobody walks back to the tablet. Under that rule those diners are
+never asked, and **the restaurants with the loosest floor discipline — the ones whose service
+most needs measuring — collect the least feedback.** The rule quietly selects against itself.
+
+So eligibility is derived from several independent signals, and **the earliest one to fire
+wins**:
+
+| Signal | Why it is evidence |
+| --- | --- |
+| `served_at` / `completed_at` | The explicit tap. Instant, and the happy path. |
+| A settled **counter** payment | The diner paid on the way out, so the meal is over. |
+| `ready_at` + 10 min | Plated, and the kitchen stopped tapping. The commonest real gap. |
+| `accepted_at` + 45 min | The kitchen stopped tapping much earlier. The backstop. |
+
+Earliest rather than latest, because these are alternative pieces of evidence for one event
+rather than stages of it. Taking the maximum would make a diligent restaurant that taps every
+status wait out the same 45-minute backstop as one that taps none, which is precisely
+backwards.
+
+**A settled payment counts only for `payment_method = counter`.** An `online_upi` order is paid
+at checkout, *before* the food is cooked, so there "paid" carries no information about whether
+it ever arrived. Treating it as evidence would ask a diner to rate a dish nobody has started —
+the single worst failure this feature can have, since a rating collected that way describes
+anticipation rather than a meal.
+
+**Two states never become reviewable, however long they sit.** `placed`, because the kitchen
+has not acknowledged the order and no elapsed time proves anything; and `cancelled`/`rejected`,
+because no food was served. An order whose every line was individually voided is excluded for
+the same reason.
+
+The window closes 24 hours after placement. A rating left the next morning is a memory rather
+than an observation, and leaving it open forever means an old uid keeps a writable endpoint for
+the life of the deployment.
+
+All of this lives in `services.ReviewEligibilityFor` and reaches the client as `can_review`,
+`review_opens_at` and `review_closes_at` on `OrderView` — the same pattern as `can_guest_cancel`
+([D6](./DECISIONS.md)). **The client renders the card from that flag and must not re-derive it.**
+
+### One tap is the entire interaction
+
+`PUT`, not `POST`, and the verb is the product decision showing through: there is no Submit
+button anywhere in the flow, so every tap has to be safe to repeat. A double-tap on a stalled
+phone and a genuine correction from four stars to five take the same path and land on the same
+row, guaranteed by a unique index on `order_item_id` rather than by an idempotency key — this
+endpoint cannot create a second row in the first place.
+
+`rating` is the only required field. Tags come from a **closed vocabulary** and a note is capped
+at 280 characters; both are optional, and a diner who supplies neither has still submitted a
+complete review. The vocabulary is polarity-matched to the rating on the client, because
+offering "Tasty" to someone who just tapped one star reads as not listening.
+
+Free text was rejected as the primary input. Typing on a phone in a restaurant is the step
+people abandon, and prose is not countable: *"9 people said cold this week"* is a service
+problem with an address, where nine sentences are an afternoon of reading. An unrecognised tag
+is a **422 rather than a silent drop** — the value of a fixed vocabulary is that every stored
+tag can be counted, and quietly discarding a typo produces a bucket nobody looks in.
+
+### Identity is the order line, and the aggregate is denormalised
+
+A review belongs to an `order_item`, not to a `menu_item`. The same dish ordered on two nights
+is two ratings, because it was two platings; collapsing them would let a dish that has got worse
+hide behind the night it was good.
+
+`menu_item.rating_count` and `rating_sum` carry the running aggregate — **the one denormalised
+pair in this schema.** The diner menu is the hottest read in the product (PRD 7 makes its
+latency a requirement), and the honest alternative is a `GROUP BY` over every review ever left,
+which gets steadily worse for exactly the restaurants that succeed. Sum and count rather than a
+stored average, because an average is lossy, is a float in a schema that has none, and cannot be
+updated without a read-modify-write — which loses one of two concurrent ratings silently. Both
+move by delta inside the review transaction, in SQL. `scripts/concurrency.sh` §D fires eight
+simultaneous ratings at one dish and asserts the counters still equal the rows.
+
+**Diners see no score below three ratings; staff see every one.** A "5.0" from a single tap is
+not a smaller truth — it ranks an untried dish above one with forty ratings averaging 4.6, and
+the next diner to leave a 3 visibly halves it. Staff are owed the underlying data instead.
+
+### How the score is shown on the menu
+
+The menu leads with a **Most loved** strip: the three highest-rated dishes, above the categories and
+never a re-sort of them. Re-sorting would throw away the restaurant's own `sort_order`, which is a
+decision a manager made and is what a diner sees as the menu's arrangement.
+
+It is computed from the menu **already in memory**. The whole menu arrives in one response (PRD 7),
+so asking the server for a ranking it could only build from the same rows would add a round trip to
+the screen whose latency is a product requirement. Three rules keep it honest: a dish must clear
+`MIN_RATINGS_TO_PUBLISH`, must average at least 4 (without a floor the section quietly becomes
+"least bad"), and must be available — leading with a dish the kitchen has run out of is the one
+recommendation guaranteed to disappoint. It is hidden entirely during a search, where a diner is
+seeking rather than browsing.
+
+**The rating count is revealed on hover, and only where hovering exists.** The score is what a diner
+scans for; the count is what they check before trusting it, and showing both at full weight on every
+row makes a long menu noisier without making any dish clearer. The reveal is gated on
+`(hover: hover) and (pointer: fine)` in CSS rather than on Tailwind's `hover:` variant — that
+variant compiles to `:hover`, which a touch browser fires on tap and then leaves stuck. On touch the
+count is simply always visible: this app is mobile-first by mandate, and a fact hidden behind an
+interaction the device cannot perform is a fact nobody gets.
+
+**Reversal cost.** Low. Two tables' worth of migration (one new table, two columns), three
+routes, and one card on the tracking screen. Dropping it leaves every existing screen unchanged.
+
+---
+
+## D17 — Service is rated separately from food, once per sitting
+
+**Not a PRD question.** [D16](./DECISIONS.md) gave diners a way to rate each dish. It left the
+half of a restaurant that is not the kitchen entirely unmeasured, and — worse — gave that
+feedback nowhere to go but the dish ratings.
+
+The evidence was already in the schema. The dish tag vocabulary shipped with `slow_to_arrive`,
+and that tag is wrong by construction: a diner tapping it is reporting a floor problem, but the
+row records it against a dish. Being late was also the sort of thing that earns two stars, and
+those two stars landed on the biryani's average in the menu manager. The only outlet a diner had
+for a service complaint was one that blamed the food.
+
+**Decision.** A separate service rating, on its own scale, with its own vocabulary.
+
+| | |
+| --- | --- |
+| `PUT /guest/v1/orders/:uid/service-review` | Rate the service. Idempotent, session-scoped. |
+| `GET /admin/v1/reviews/service` | The service feed. |
+| `GET /admin/v1/reviews/summary` | Now returns **`food` and `service`**, never one blended score. |
+
+`slow_to_arrive` is removed from the dish vocabulary. Removing it is *not* the fix and should not
+be mistaken for one — the fix is that there is now somewhere else to say it. Dropping the tag only
+stops inviting a floor complaint in a food context.
+
+### Why not "rate the restaurant"
+
+**A blended number is a vanity metric.** "You are a 3.8" gives a manager nothing to do on Monday.
+**Food 4.6 / Service 3.2** names two different teams and two different fixes, and a single average
+destroys that separation by construction. So the API returns two numbers and the admin panel shows
+two cards; there is deliberately no endpoint anywhere that returns one score for a restaurant.
+
+**There is no discovery value in this product.** A place rating on Zomato exists to help someone
+*choose* a restaurant. This diner has already chosen — they scanned a QR at the table and have
+finished eating. The only surfaces a public score could appear on are `/qr` and `/r/{slug}`, a dev
+gallery and a fallback table-picker. It would be a number attached to no decision.
+
+**Free-text restaurant reviews were rejected.** They are the abandonment path the one-tap contract
+exists to avoid, they are unmoderatable with no identity behind them ([D5](./DECISIONS.md)), and
+Google and Zomato already do them better precisely *because* they have real accounts and public
+accountability.
+
+### Once per sitting, which is why the write is keyed to the session
+
+Service is experienced once per sitting, not once per order: a diner who ordered twice has not been
+served by two different restaurants. So `service_review` is `UNIQUE (guest_session_id)`, and a diner
+with two open orders sees the same answer pre-filled on both — editing either updates the one row.
+
+That also dissolves a question that looks hard: *which order do we ask on?* None of them. The
+question is not about an order.
+
+**The order in the URL is the warrant, not the subject.** It establishes two things and nothing
+else: that this session owns something here, and that the review window is open. Ownership goes
+through the *same* `loadGuestOrder` the dish path uses, so "is this order yours" has one definition
+rather than two that can drift ([D4](./DECISIONS.md)).
+
+`guest_session_id` is **nullable, with `ON DELETE SET NULL`**, and that is load-bearing rather than
+incidental. `RepositoryGuestSessionMethods.DeleteExpired` reaps sessions whose tokens can no longer
+authenticate; cascading would make every prune a silent deletion of a night's service feedback. The
+uniqueness therefore constrains only live sessions, which is exactly the right scope — a session can
+only be written to while it is alive, because holding it is the whole authentication.
+
+### The window is unchanged, and so is the card
+
+Eligibility reuses `services.ReviewEligibilityFor` untouched. There is no `can_review_service` flag,
+because it and `can_review` would only ever disagree by accident.
+
+On the diner screen the service row is the **last** row of the card that already exists, never the
+first. Above the dishes it would cannibalise them: a general question is easier to answer than five
+specific ones, so some diners would answer it and stop — and the per-dish ratings are the half a
+kitchen can act on. After them it is purely additive, one more tap from someone already engaged.
+
+### No denormalised aggregate, and the asymmetry is the point
+
+[D16](./DECISIONS.md) put running counters on `menu_item` because the diner menu is the hottest read
+in the product. Service has none: its average is read on one admin screen, a few times a shift, over
+one tenant's rows behind an index. Denormalising it would buy nothing and cost the reconciliation
+burden and the lost-update hazard that counters bring. **A counter is a cost, and it is only worth
+paying on a hot path.**
+
+**Reversal cost.** Low. One table, three routes, one row on the diner card and one chip group in the
+admin panel. Dropping it leaves the dish ratings exactly as they were, minus one tag.

@@ -14,6 +14,12 @@ headers {
   X-Guest-Token: {{guest_token}}
 }
 
+script:post-response {
+  if (res.status === 200 && res.body.data && res.body.data.items.length > 0) {
+    bru.setVar("order_item_uid", res.body.data.items[0].uid)
+  }
+}
+
 tests {
   test("responds 200", function () {
     expect(res.status).to.equal(200)
@@ -26,6 +32,13 @@ tests {
   test("matches the order we placed", function () {
     expect(res.body.data.order_number).to.equal(bru.getVar("order_number"))
   })
+
+  test("the rating window is shut while the food is still being cooked", function () {
+    // The order is `placed` at this point in the run. can_review is computed server-side and
+    // must be false here: asking a diner to rate a dish the kitchen has not started would
+    // collect a rating of their anticipation rather than their meal.
+    expect(res.body.data.can_review).to.be.false
+  })
 }
 
 docs {
@@ -33,7 +46,13 @@ docs {
 
 Backs the diner's progress screen.
 
+Sets `order_item_uid` from the first line, which `guest-reviews` rates.
+
 **Ownership is verified, and a mismatch answers 404 rather than 403** -- confirming that an order
 exists would let someone enumerate other tables' orders by uid. Try it: scan a different table,
 then request this order with that session's token.
+
+`can_review`, `review_opens_at` and `review_closes_at` carry the rating window, computed
+server-side for the same reason as `can_guest_cancel`: the diner app renders the card exactly when
+submitting it will work.
 }

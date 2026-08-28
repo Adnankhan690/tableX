@@ -12,6 +12,7 @@ import { cn, ErrorState, FoodTypeBadge, Money, Spinner } from '@tablex/ui'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { PaymentPanel } from '@/components/payment-panel'
+import { RateOrder } from '@/components/rate-order'
 import { CenteredMessage, ScreenHeader } from '@/components/screen'
 import { useGatedSession } from '@/components/session-gate'
 import { useOrderStream } from '@/hooks/useOrderStream'
@@ -52,6 +53,32 @@ export function OrderTracking({ orderUid }: { orderUid: string }) {
   }, [refetch])
 
   const terminal = order !== null && isTerminal(order.status)
+
+  /**
+   * Open the rating card at the exact moment the server said it would open.
+   *
+   * The window does not always open on a status change -- it also opens on a timeout after the
+   * kitchen stops updating the order, which is the whole reason a diner at a restaurant that
+   * forgets to tap "served" still gets asked (see review_window.go). Nothing pushes an event
+   * for a deadline passing, so without this the card waits for the next poll, and on a
+   * terminal order polling has already stopped and it would never appear at all.
+   */
+  const reviewOpensAt = order?.review_opens_at ?? null
+  useEffect(() => {
+    if (reviewOpensAt === null) return
+
+    const waitMs = new Date(reviewOpensAt).getTime() - Date.now()
+    if (waitMs <= 0) {
+      refetch()
+      return
+    }
+    // Clamped: setTimeout overflows past ~24.8 days and fires immediately, and a window that
+    // far out will be picked up by the next visit anyway.
+    if (waitMs > 24 * 60 * 60 * 1000) return
+
+    const timer = setTimeout(refetch, waitMs)
+    return () => clearTimeout(timer)
+  }, [refetch, reviewOpensAt])
 
   // Live updates, with polling as a complete fallback (docs/DECISIONS.md D10). Polling stops
   // once the order is closed -- a completed order will never change again.
@@ -193,6 +220,17 @@ export function OrderTracking({ orderUid }: { orderUid: string }) {
         order.payment_method === 'online_upi' ? (
           <PaymentPanel payment={payment.payment} />
         ) : null}
+
+        {/*
+          Rendered strictly from the server's flag, exactly like the cancel button above. The
+          server owns the rating window, so the card exists precisely when submitting will
+          work -- and notably the rule is NOT `status === 'served'`, so this must not be
+          "improved" into a local status check (docs/DECISIONS.md D1, and review_window.go).
+
+          Above the bill and the timeline on purpose: once the food has arrived, "how was it"
+          is the only thing left on this screen a diner can act on.
+        */}
+        {order.can_review ? <RateOrder order={order} onWindowClosed={refetch} /> : null}
 
         {order.payment_method === 'counter' && order.payment_status !== 'paid' ? (
           <section className="rounded-card border border-line bg-surface p-4">

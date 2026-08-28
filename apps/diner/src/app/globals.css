@@ -150,6 +150,32 @@
     padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
   }
 
+  /**
+   * The rating count, revealed on hover where hovering is possible.
+   *
+   * Gated on `(hover: hover) and (pointer: fine)` rather than on Tailwind's `hover:` variant,
+   * and that distinction is the whole point. Tailwind's variant compiles to `:hover`, which a
+   * touch browser fires on tap and then leaves stuck until the next tap elsewhere -- so on a
+   * phone a "reveal on hover" is either never seen or seen and stranded. This app is mobile-first
+   * by mandate (PRD 7), so the DEFAULT here is the touch behaviour: the count is simply visible,
+   * because there is no hover to hide it behind. Only a device with a real pointer gets the
+   * hover treatment.
+   *
+   * Opacity rather than display, so revealing it cannot reflow the row underneath the reader's
+   * eye -- and so the count stays in the accessibility tree either way, which is what keeps the
+   * information reachable for a screen reader on any device.
+   */
+  @media (hover: hover) and (pointer: fine) {
+    .rating-hover .rating-count {
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+    .rating-hover:hover .rating-count,
+    .rating-hover:focus-within .rating-count {
+      opacity: 1;
+    }
+  }
+
   /** Horizontal rules for scroll containers: category chips must not bounce the page. */
   .scroll-x {
     overflow-x: auto;

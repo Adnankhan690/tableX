@@ -18,6 +18,14 @@ type MenuItemView struct {
 	IsBestseller bool   `json:"is_bestseller"`
 	PrepTimeMins *int   `json:"prep_time_mins,omitempty"`
 	CategoryUID  string `json:"category_uid"`
+	// Rating is the dish's aggregate score, omitted entirely rather than sent as zero when
+	// there is nothing to report.
+	//
+	// On the DINER menu it is withheld until the dish has MinRatingsToPublish reviews. A
+	// "5.0" backed by one rating is not information, it is noise that makes a new dish look
+	// better than a consistently good one -- and the first diner to leave a 2 would visibly
+	// halve it. The admin menu has no such threshold: staff are owed the raw count.
+	Rating *RatingSummary `json:"rating,omitempty"`
 }
 
 // MenuCategoryView is one category with its items nested.

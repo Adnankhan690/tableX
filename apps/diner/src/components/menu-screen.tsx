@@ -2,10 +2,10 @@
 
 import { isApiError } from '@tablex/api-client'
 import type { MenuItemView, MenuResponse } from '@tablex/shared'
-import { computeTotals, formatINR } from '@tablex/shared'
+import { computeTotals, formatINR, formatRating, MIN_RATINGS_TO_PUBLISH } from '@tablex/shared'
 import { cn, EmptyState, ErrorState, FoodTypeBadge, Spinner } from '@tablex/ui'
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { DishImage } from '@/components/dish-image'
 import { useCart, useSession } from '@/components/providers'
 import { QuantityStepper } from '@/components/quantity-stepper'
@@ -17,7 +17,28 @@ import { totalsInput } from '@/lib/cart'
 /**
  * The menu (PRD 6.2). The screen the diner spends most of their time on.
  */
+/**
+ * How many dishes the "Most loved" strip carries.
+ *
+ * Three, not ten. It is a recommendation, and a recommendation of ten things is a menu -- which
+ * the diner already has, directly below it.
+ */
+const MOST_LOVED_LIMIT = 3
+
+/**
+ * The score a dish must clear to be called loved.
+ *
+ * Without a floor the section silently becomes "least bad": on a menu where everything sits
+ * around 3.1 it would present mediocrity as a recommendation, which costs more trust than showing
+ * no section at all.
+ */
+const MOST_LOVED_MIN_AVERAGE = 4
+
 export function MenuScreen() {
+  // Generated rather than hard-coded, so two MenuScreens on one page could not emit the same id
+  // and leave the second section pointing at the first one's heading.
+  const mostLovedId = useId()
+
   const session = useGatedSession()
 
   const { cart, count, add, setQuantity } = useCart()
@@ -76,6 +97,53 @@ export function MenuScreen() {
       }))
       .filter((category) => category.items.length > 0)
   }, [menu, query, vegOnly])
+
+  /**
+   * The dishes diners rate highest, lifted to the top of the menu.
+   *
+   * Computed from the menu ALREADY IN MEMORY rather than fetched. The whole menu arrives in one
+   * response (PRD 7), and asking the server for a ranking it could only build from the same rows
+   * would add a round trip to the screen whose latency is a product requirement.
+   *
+   * Derived from `filtered`, so the veg filter narrows it exactly as it narrows everything else --
+   * a vegetarian diner should not be shown a "most loved" list they cannot order from.
+   *
+   * Four rules, each earning its place:
+   *   * `item.rating` present at all. The server withholds a score until a dish has
+   *     MIN_RATINGS_TO_PUBLISH ratings, so this inherits that threshold rather than restating it.
+   *   * average >= MOST_LOVED_MIN_AVERAGE. "Most loved" has to mean loved. Without a floor this
+   *     section becomes "least bad", and on a menu where everything sits at 3.1 it would present
+   *     mediocrity as a recommendation.
+   *   * available. Leading with a dish the kitchen has run out of is worse than leading with
+   *     nothing -- it is the one recommendation guaranteed to disappoint.
+   *   * no active search. A diner who typed "paneer" is looking for something specific, and a
+   *     recommendations strip above their results is in the way. The veg filter is different: it
+   *     narrows, it does not seek.
+   */
+  const mostLoved = useMemo(() => {
+    if (query.trim() !== '') return []
+
+    return filtered
+      .flatMap((category) => category.items)
+      .filter(
+        (item) =>
+          item.is_available &&
+          item.rating !== undefined &&
+          item.rating.count >= MIN_RATINGS_TO_PUBLISH &&
+          item.rating.average >= MOST_LOVED_MIN_AVERAGE,
+      )
+      .sort((a, b) => {
+        // Score, then how many people back it, then name. The last two keys are what make the
+        // order stable: without them two dishes on 4.6 can swap places between renders, and a
+        // list that reshuffles as you scroll reads as a broken page.
+        const byScore = (b.rating?.average ?? 0) - (a.rating?.average ?? 0)
+        if (byScore !== 0) return byScore
+        const byCount = (b.rating?.count ?? 0) - (a.rating?.count ?? 0)
+        if (byCount !== 0) return byCount
+        return a.name.localeCompare(b.name)
+      })
+      .slice(0, MOST_LOVED_LIMIT)
+  }, [filtered, query])
 
   /**
    * Locally computed so the bar updates the instant a quantity changes. Display only -- the
@@ -222,31 +290,76 @@ export function MenuScreen() {
             />
           </div>
         ) : (
-          filtered.map((category) => (
-            <section
-              key={category.uid}
-              id={`cat-${category.uid}`}
-              ref={(node) => {
-                sectionRefs.current[category.uid] = node
-              }}
-              className="scroll-mt-32"
-            >
-              <h2 className="bg-surface-sunken px-4 py-2 text-[0.8125rem] font-semibold uppercase tracking-wide text-muted">
-                {category.name}
-              </h2>
-              <ul>
-                {category.items.map((item) => (
-                  <DishRow
-                    key={item.uid}
-                    item={item}
-                    quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
-                    onAdd={() => add(item)}
-                    onSetQuantity={(next) => setQuantity(item.uid, next)}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))
+          <>
+            {/*
+              Above the categories, and deliberately NOT a re-sort of them.
+
+              Reordering the menu itself by rating would throw away the restaurant's own
+              sort_order -- Starters before Desserts is neither alphabetical nor by score, and it
+              is a decision the manager made. A strip on top adds a recommendation without
+              destroying the arrangement underneath it.
+
+              The same dish therefore appears twice, here and in its category. That is fine and
+              intended: the quantity is read from the cart by uid in both places, so the stepper
+              stays in step wherever the diner taps it.
+            */}
+            {mostLoved.length > 0 ? (
+              <section aria-labelledby={mostLovedId} className="border-b border-line">
+                <h2
+                  id={mostLovedId}
+                  className="flex items-center gap-1.5 bg-accent-soft px-4 py-2 text-[0.8125rem] font-semibold uppercase tracking-wide text-accent"
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+                  </svg>
+                  Most loved
+                </h2>
+                <ul>
+                  {mostLoved.map((item) => (
+                    <DishRow
+                      key={`loved-${item.uid}`}
+                      item={item}
+                      quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      onAdd={() => add(item)}
+                      onSetQuantity={(next) => setQuantity(item.uid, next)}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {filtered.map((category) => (
+              <section
+                key={category.uid}
+                id={`cat-${category.uid}`}
+                ref={(node) => {
+                  sectionRefs.current[category.uid] = node
+                }}
+                className="scroll-mt-32"
+              >
+                <h2 className="bg-surface-sunken px-4 py-2 text-[0.8125rem] font-semibold uppercase tracking-wide text-muted">
+                  {category.name}
+                </h2>
+                <ul>
+                  {category.items.map((item) => (
+                    <DishRow
+                      key={item.uid}
+                      item={item}
+                      quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      onAdd={() => add(item)}
+                      onSetQuantity={(next) => setQuantity(item.uid, next)}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </>
         )}
       </main>
 
@@ -271,6 +384,54 @@ export function MenuScreen() {
 }
 
 /** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
+/**
+ * A dish's score on the menu, as one line.
+ *
+ * One filled star and a number rather than five stars: at this size a five-star row is a
+ * cluster of ambiguous shapes on a scrolling list, and the number is what a diner actually
+ * reads. The count rides along because "4.6" alone invites the question.
+ */
+function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> }) {
+  return (
+    <span
+      // role="img" with a label, rather than a bare span carrying aria-label -- which is both an
+      // accessibility bug and a biome error. The label spells out what "4.8 (12)" means, since
+      // read aloud those two numbers are ambiguous.
+      role="img"
+      aria-label={`Rated ${formatRating(rating.average)} out of 5 by ${rating.count} ${
+        rating.count === 1 ? 'diner' : 'diners'
+      }`}
+      className="flex items-center gap-1 text-[0.8125rem] text-muted"
+    >
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+        className="text-accent"
+      >
+        <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+      </svg>
+      <span aria-hidden="true" className="font-medium tabular-nums text-ink">
+        {formatRating(rating.average)}
+      </span>
+      {/*
+        How many diners are behind the score. Hidden until hover on a pointer device and simply
+        always visible on touch -- see the .rating-count note in globals.css for why that is a
+        media query rather than a Tailwind hover: variant.
+
+        The score is the thing a diner is scanning for; the count is what they check before
+        trusting it. Showing both at full weight on every row makes a long menu noisier without
+        making any single dish clearer.
+      */}
+      <span aria-hidden="true" className="rating-count tabular-nums">
+        ({rating.count})
+      </span>
+    </span>
+  )
+}
+
 function DishRow({
   item,
   quantity,
@@ -291,7 +452,12 @@ function DishRow({
   const unavailable = !item.is_available
 
   return (
-    <li className={cn('flex gap-3 border-b border-line px-4 py-3', unavailable && 'opacity-55')}>
+    <li
+      className={cn(
+        'rating-hover flex gap-3 border-b border-line px-4 py-3',
+        unavailable && 'opacity-55',
+      )}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <FoodTypeBadge type={item.food_type} size={14} />
@@ -303,7 +469,16 @@ function DishRow({
         </div>
 
         <p className="mt-1 text-dish-name">{item.name}</p>
-        <p className="mt-0.5 text-price tabular-nums">{item.price.display}</p>
+
+        <div className="mt-0.5 flex items-center gap-2">
+          <p className="text-price tabular-nums">{item.price.display}</p>
+          {/*
+            Absent, not zeroed, for a dish without enough ratings -- the server omits the field
+            below its publication threshold. A "5.0" from one tap would rank an untried dish
+            above a consistently good one, so no score is the honest rendering (PRD 6.2).
+          */}
+          {item.rating ? <DishRating rating={item.rating} /> : null}
+        </div>
 
         {item.description ? (
           <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">

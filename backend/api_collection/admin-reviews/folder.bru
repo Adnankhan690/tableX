@@ -1,0 +1,18 @@
+meta {
+  name: admin-reviews
+  seq: 15
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  What the restaurant reads back. Requires a staff bearer token from `admin-auth / login`.
+
+  Sequenced after `guest-reviews` so there is at least one review to read.
+
+  Open to every staff role, unlike menu editing. A complaint about a cold dish is most useful to
+  whoever is on the floor right now, and gating it behind a manager login is how it gets read the
+  next morning instead of while the table is still sitting there.
+}

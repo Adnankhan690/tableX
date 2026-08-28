@@ -56,6 +56,17 @@ forgets to scope itself does not compile; and transaction-aware methods take a `
 - **A status comparison written inline.** Go goes through `services.CheckTransition`; TypeScript
   renders `order.next_statuses`. The state machine has one definition ([D1](./DECISIONS.md)) and
   the client is not allowed a second one.
+- **`status === 'served'` used to decide whether a diner may rate.** It looks equivalent to
+  `order.can_review` and is not. The rating window also opens on a settled counter payment and on
+  a timeout after the kitchen stops updating an order, because tying it to that one tap silently
+  excludes every diner whose restaurant forgets it ([D16](./DECISIONS.md)).
+  `services.ReviewEligibilityFor` is the only authority.
+- **One blended rating for a restaurant.** Food and service are rated separately and reported
+  separately, and no endpoint returns a single score for a restaurant. "You are a 3.8" gives a
+  manager nothing to do; "food 4.6, service 3.2" names a team and a shift ([D17](./DECISIONS.md)).
+- **A dish tag on a service rating, or the reverse.** `models.ReviewTag` and `models.ServiceTag`
+  are separate types with separate vocabularies and separate refusal codes, precisely so one
+  cannot be used where the other belongs.
 - **A realtime publish inside a transaction.** It would announce a state a rollback then
   discards. Publish after commit, always.
 - **A tenant-scoped query that ignores its `restaurantID`.** A data-isolation bug, not a style note.
@@ -93,11 +104,12 @@ Bottom-up, so each step compiles:
 ```bash
 make test                    # Go tests + frontend unit tests
 make -C backend test-race    # the hub and order locking only misbehave under -race
-make smoke                   # 93 API assertions against a running server
-make concurrency             # the three races that happen in a real restaurant
-make api-collection          # 139 assertions, the Bruno collection end to end
-cd apps/diner && node e2e/diner-journey.mjs    # 37 assertions, real browser
-cd apps/admin && node e2e/admin-journey.mjs    # 53 assertions, real browser
+make smoke                   # 143 API assertions against a running server
+make concurrency             # the four races that happen in a real restaurant
+make api-collection          # 183 assertions, the Bruno collection end to end
+cd apps/diner && node e2e/diner-journey.mjs    # 47 assertions, real browser
+cd apps/diner && node e2e/rating-journey.mjs   # 20 assertions, real browser
+cd apps/admin && node e2e/admin-journey.mjs    # 69 assertions, real browser
 ```
 
 `make api-collection` reseeds before running, and judges on assertion results rather than Bruno's

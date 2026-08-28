@@ -1,0 +1,23 @@
+meta {
+  name: guest-reviews
+  seq: 14
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Rating the food, from the diner's side. Requires `X-Guest-Token`.
+
+  **Sequenced last on purpose.** The rating window does not open until the food has reached the
+  table, and in a sequential run that does not happen until `admin-orders / mark-served`. Placing
+  this folder before that one would assert against a closed window and fail for a reason that has
+  nothing to do with the endpoint.
+
+  The window itself is deliberately not "status is served". It opens on whichever of several
+  signals fires first -- staff marking the order served, a counter payment settling, or a timeout
+  after the kitchen stopped updating the order at all. Tying it to the served tap alone would mean
+  every diner at a restaurant whose floor staff stop tapping mid-service is never asked to rate.
+  `backend/internal/services/review_window.go` is the single authority.
+}

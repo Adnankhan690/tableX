@@ -69,6 +69,41 @@ ck(
   await page.locator('button[aria-pressed]:has-text("Veg")').first().isVisible(),
 )
 
+// Most loved, and the ratings behind it.
+const loved = page.locator('section:has(h2:text("Most loved")) li')
+ck('the most loved strip is shown', (await loved.count()) === 3, `${await loved.count()} shown`)
+ck(
+  'and leads with the highest rated dish',
+  /Paneer Tikka/.test(await loved.first().innerText()),
+  (await loved.first().innerText()).replace(/\n+/g, ' | '),
+)
+// Lowercased before comparing: both headings are uppercased in CSS and innerText returns what is
+// RENDERED, so a case-sensitive indexOf finds neither and -1 < -1 quietly reports failure. (The
+// Playwright :text() selectors above are case-insensitive by default, which is why only this
+// hand-rolled comparison was caught by it.)
+const menuText = (await page.locator('main').innerText()).toLowerCase()
+ck(
+  'it sits above the first category',
+  menuText.indexOf('most loved') < menuText.indexOf('starters'),
+  `loved@${menuText.indexOf('most loved')} starters@${menuText.indexOf('starters')}`,
+)
+// The floor is what stops the strip becoming "least bad": a 2.7 dish carries a visible score in
+// its own category but must never be recommended.
+ck(
+  'a poorly rated dish is not in it',
+  !/Mixed Veg Pakora/.test(await page.locator('section:has(h2:text("Most loved"))').innerText()),
+)
+
+// THE TOUCH HALF of the hover requirement. There is no hover on a phone, so the count must be
+// plainly visible -- a reveal-on-hover here would hide it forever.
+const touchCount = page.locator('section:has(h2:text("Most loved")) .rating-count').first()
+ck('the rating count is visible on touch', await touchCount.isVisible())
+ck(
+  'and is not hidden behind a hover a phone cannot perform',
+  (await touchCount.evaluate((el) => getComputedStyle(el).opacity)) === '1',
+)
+await page.screenshot({ path: `${SHOT}/2b-most-loved.png` })
+
 // The sold-out dishes must be visible but not addable.
 const soldOut = page.locator('li:has-text("Unavailable today")')
 ck(
@@ -207,7 +242,37 @@ const tableButtons = await page.locator('button:has-text("Table")').count()
 ck('fallback lists the tables', tableButtons === 8, `${tableButtons} shown`)
 await page.screenshot({ path: `${SHOT}/8-table-picker.png` })
 
-console.log('=== 11. No unexpected console errors during the whole journey ===')
+console.log('=== 11. The rating count reveals on hover, but only where hover exists ===')
+/**
+ * A SECOND context, with a real pointer.
+ *
+ * The rest of this journey runs as an iPhone, which reports `(hover: none) (pointer: coarse)` --
+ * so it can prove the touch behaviour and nothing about the hover one. The requirement has two
+ * halves and they are only observable on two different devices.
+ */
+const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+const deskPage = await desktop.newPage()
+await deskPage.goto(`http://localhost:3000/t/${QR}`, { waitUntil: 'networkidle' })
+await deskPage.waitForSelector('text=Most loved', { timeout: 15000 })
+
+const deskRow = deskPage.locator('section:has(h2:text("Most loved")) li').first()
+const deskCount = deskRow.locator('.rating-count')
+const opacityOf = () => deskCount.evaluate((el) => getComputedStyle(el).opacity)
+
+ck('the score itself is always shown', /5\.0/.test(await deskRow.innerText()))
+ck('the count is hidden until hovered', (await opacityOf()) === '0', `opacity ${await opacityOf()}`)
+
+await deskRow.hover()
+await deskPage.waitForTimeout(300)
+ck('and appears on hover', (await opacityOf()) === '1', `opacity ${await opacityOf()}`)
+
+// Opacity rather than display, so revealing it cannot reflow the row under the reader's eye --
+// and so the count stays in the accessibility tree on every device.
+ck('it stays in the accessibility tree either way', (await deskCount.count()) === 1)
+await deskPage.screenshot({ path: `${SHOT}/2c-hover-desktop.png` })
+await desktop.close()
+
+console.log('=== 12. No unexpected console errors during the whole journey ===')
 /**
  * Step 9 deliberately requests an invalid QR token, and the API correctly answers 404. The
  * browser logs that as a console error regardless of the app handling it properly, so the

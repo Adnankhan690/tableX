@@ -429,6 +429,7 @@ func (s *ServiceOrder) GetForGuest(
 	}
 
 	view := toOrderView(order, events, guest.TableLabel, ActorGuest)
+	s.attachServiceReview(ctx, guest, &view)
 	return &view, nil
 }
 
@@ -449,7 +450,51 @@ func (s *ServiceOrder) ListForGuest(
 	for _, order := range orders {
 		views = append(views, toOrderView(order, nil, guest.TableLabel, ActorGuest))
 	}
+
+	// One lookup for the whole page, not one per order. The service review is session-scoped, so
+	// every order in this list carries the SAME row -- querying per order would be N copies of one
+	// answer (DECISIONS.md D17).
+	ptrs := make([]*types.OrderView, 0, len(views))
+	for i := range views {
+		ptrs = append(ptrs, &views[i])
+	}
+	s.attachServiceReview(ctx, guest, ptrs...)
+
 	return &types.ResponseGuestOrders{Orders: views}, nil
+}
+
+// attachServiceReview fills in the session's own service rating on each view.
+//
+// Done here rather than inside toOrderView because the rating belongs to the SITTING, not to any
+// order -- toOrderView takes an order and could only guess. Doing it at the two call sites that
+// actually render the rating card keeps the extra query off the staff paths, which have no use
+// for it.
+//
+// A failure is logged and swallowed. The diner's screen is about their order; losing the stars
+// they already gave would be a shame, but failing the whole request over it would be worse.
+func (s *ServiceOrder) attachServiceReview(
+	ctx context.Context,
+	guest *GuestPrincipal,
+	views ...*types.OrderView,
+) {
+	if len(views) == 0 {
+		return
+	}
+
+	review, err := s.Access.Repositories.Review.GetServiceBySession(ctx, nil, guest.SessionID)
+	if err != nil {
+		// Not having rated service yet is the common case, not a failure.
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			s.Access.Logger.With(ctx).Warnf(
+				"[attachServiceReview] session %s: %+v", guest.SessionUID, err)
+		}
+		return
+	}
+
+	view := toServiceReviewView(review)
+	for _, v := range views {
+		v.ServiceReview = view
+	}
 }
 
 // CancelByGuest withdraws an order the kitchen has not started (DECISIONS.md D6).

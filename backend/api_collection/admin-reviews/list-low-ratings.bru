@@ -1,0 +1,42 @@
+meta {
+  name: list-low-ratings
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/reviews?max_rating=3
+  body: none
+  auth: bearer
+}
+
+params:query {
+  max_rating: 3
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns nothing above the ceiling", function () {
+    // The seeded run leaves a single 4-star review, so this list is legitimately empty. The
+    // assertion is on the FILTER holding, not on there being rows -- a test that needed rows
+    // would fail on a clean database for a reason unrelated to the filter.
+    const above = res.body.data.reviews.filter((r) => r.rating > 3)
+    expect(above).to.have.length(0)
+  })
+}
+
+docs {
+  # The complaints
+
+`max_rating=3` is the query this screen exists for. A manager opens the reviews page mid-service to
+find out which table is unhappy while there is still time to walk over to it.
+
+Pair with `has_comment=true` when you want only the ones somebody explained.
+}

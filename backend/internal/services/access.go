@@ -77,6 +77,7 @@ type Services struct {
 	Menu       ServiceMenuMethods
 	Session    ServiceSessionMethods
 	Order      ServiceOrderMethods
+	Review     ServiceReviewMethods
 	Payment    ServicePaymentMethods
 	Stats      ServiceStatsMethods
 	// Platform is the operator surface. Constructed unconditionally, but only reachable
@@ -116,6 +117,7 @@ func NewServices(
 		Menu:       NewServiceMenu(access),
 		Session:    NewServiceSession(access),
 		Order:      orderSvc,
+		Review:     NewServiceReview(access, orderSvc),
 		Payment:    NewServicePayment(access, orderSvc),
 		Stats:      NewServiceStats(access),
 		Platform:   NewServicePlatform(access),

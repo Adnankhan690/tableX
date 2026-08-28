@@ -265,6 +265,153 @@ CROSS JOIN (VALUES
 WHERE r.slug = 'coastal-curry' AND c.uid = v.category_uid
 ON CONFLICT (uid) DO NOTHING;
 
+-- ---------------------------------------------------------------------------------------------
+-- Ratings history for Spice Garden (DECISIONS.md D16, D17)
+--
+-- Seeded so the rating features are VISIBLE on a fresh `make seed`. Without it the diner menu has
+-- no scores to show, the "Most loved" strip has nothing to lift, and the admin reviews screen is
+-- an empty state -- which reads as broken rather than as new.
+--
+-- EVERYTHING HERE IS DATED YESTERDAY, and that is not cosmetic. Two things break if it is not:
+--
+--   * orders.order_number is unique per (restaurant_id, business_date). Seeding today's orders
+--     without also advancing order_counter would make the first real order of the day collide.
+--   * the dashboard's figures are scoped to today. Backdating keeps a demo history out of them,
+--     so `make seed` does not ship a restaurant that already took four orders this morning.
+--
+-- The guest session is likewise expired: it is the anonymous identity these ratings were left
+-- under, not a way in.
+-- ---------------------------------------------------------------------------------------------
+
+INSERT INTO guest_session (uid, restaurant_id, table_id, token, user_agent, expires_at, created_at)
+SELECT 'gst_demohistory', r.id, t.id, 'demoseedexpiredsessiontoken00000000000001',
+       'seed', NOW() - INTERVAL '12 hours', NOW() - INTERVAL '1 day'
+FROM restaurant r
+JOIN restaurant_table t ON t.restaurant_id = r.id AND t.uid = 'tbl_demo01'
+WHERE r.slug = 'spice-garden'
+ON CONFLICT (uid) DO NOTHING;
+
+INSERT INTO orders (
+    uid, restaurant_id, table_id, guest_session_id, order_number, business_date, status,
+    subtotal_minor, tax_minor, service_charge_minor, discount_minor, total_minor, currency,
+    payment_method, payment_status, placed_at, accepted_at, preparing_at, ready_at, served_at,
+    completed_at, created_at, updated_at
+)
+SELECT v.uid, r.id, t.id, g.id, v.order_number, (CURRENT_DATE - 1), 'completed',
+       v.subtotal, v.tax, 0, 0, v.subtotal + v.tax, 'INR',
+       'counter', 'paid',
+       NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day' + INTERVAL '2 min',
+       NOW() - INTERVAL '1 day' + INTERVAL '5 min', NOW() - INTERVAL '1 day' + INTERVAL '20 min',
+       NOW() - INTERVAL '1 day' + INTERVAL '25 min', NOW() - INTERVAL '1 day' + INTERVAL '70 min',
+       NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
+FROM restaurant r
+JOIN restaurant_table t ON t.restaurant_id = r.id AND t.uid = 'tbl_demo01'
+JOIN guest_session g ON g.uid = 'gst_demohistory'
+CROSS JOIN (VALUES
+    ('ord_demohist1', 'A-001', 88000, 4400),
+    ('ord_demohist2', 'A-002', 96000, 4800),
+    ('ord_demohist3', 'A-003', 74000, 3700)
+) AS v(uid, order_number, subtotal, tax)
+WHERE r.slug = 'spice-garden'
+ON CONFLICT (uid) DO NOTHING;
+
+-- Lines. Name, price and food type are snapshotted exactly as a real order would copy them
+-- (DECISIONS.md D8), so the admin feed shows the dish as the diner saw it.
+INSERT INTO order_item (
+    uid, order_id, menu_item_id, name_snapshot, unit_price_minor, food_type,
+    quantity, total_minor, status, created_at, updated_at
+)
+SELECT v.uid, o.id, m.id, m.name, m.price_minor, m.food_type,
+       1, m.price_minor, 'active', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
+-- The VALUES list leads, because both joins below key off it. Postgres resolves FROM items left
+-- to right, so a JOIN whose ON clause names `v` before `v` exists is a missing-FROM-clause error.
+FROM (VALUES
+    ('oit_demoh1a', 'ord_demohist1', 'itm_demopaneertikka'),
+    ('oit_demoh1b', 'ord_demohist1', 'itm_demobutterchicken'),
+    ('oit_demoh1c', 'ord_demohist1', 'itm_demovegpakora'),
+    ('oit_demoh2a', 'ord_demohist2', 'itm_demopaneertikka'),
+    ('oit_demoh2b', 'ord_demohist2', 'itm_demobutterchicken'),
+    ('oit_demoh2c', 'ord_demohist2', 'itm_demodalmakhani'),
+    ('oit_demoh3a', 'ord_demohist3', 'itm_demopaneertikka'),
+    ('oit_demoh3b', 'ord_demohist3', 'itm_demobutterchicken'),
+    ('oit_demoh3c', 'ord_demohist3', 'itm_demodalmakhani'),
+    ('oit_demoh3d', 'ord_demohist3', 'itm_demovegpakora'),
+    ('oit_demoh1d', 'ord_demohist1', 'itm_demochickentikka'),
+    ('oit_demoh2d', 'ord_demohist2', 'itm_demochickentikka'),
+    ('oit_demoh3e', 'ord_demohist3', 'itm_demochickentikka'),
+    ('oit_demoh1e', 'ord_demohist1', 'itm_demodalmakhani'),
+    ('oit_demoh2e', 'ord_demohist2', 'itm_demovegpakora')
+) AS v(uid, order_uid, item_uid)
+JOIN orders o ON o.uid = v.order_uid
+JOIN menu_item m ON m.uid = v.item_uid
+ON CONFLICT (uid) DO NOTHING;
+
+-- The ratings themselves. Spread deliberately rather than uniformly high, so the demo shows the
+-- feature doing its job in both directions: Paneer Tikka and Butter Chicken clear the "most loved"
+-- floor, Dal Makhani sits just under it, and Mixed Veg Pakora lands in "needs attention".
+INSERT INTO order_item_review (
+    uid, restaurant_id, order_id, order_item_id, menu_item_id, guest_session_id,
+    rating, tags, comment, created_at, updated_at
+)
+SELECT v.uid, o.restaurant_id, o.id, oi.id, oi.menu_item_id, o.guest_session_id,
+       v.rating, v.tags, v.comment, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
+FROM order_item oi
+JOIN orders o ON o.id = oi.order_id
+CROSS JOIN (VALUES
+    ('rev_demoh01', 'oit_demoh1a', 5, 'tasty,well_presented', ''),
+    ('rev_demoh02', 'oit_demoh2a', 5, 'tasty',               'Best paneer we have had.'),
+    ('rev_demoh03', 'oit_demoh3a', 5, 'fresh',               ''),
+    ('rev_demoh04', 'oit_demoh1b', 5, 'tasty,good_portion',  ''),
+    ('rev_demoh05', 'oit_demoh2b', 4, 'good_portion',        ''),
+    ('rev_demoh06', 'oit_demoh3b', 5, 'tasty',               'Rich and properly buttery.'),
+    ('rev_demoh07', 'oit_demoh2c', 4, 'good_portion',        ''),
+    ('rev_demoh08', 'oit_demoh3c', 4, '',                    ''),
+    ('rev_demoh09', 'oit_demoh1c', 2, 'served_cold',         'Came out lukewarm.'),
+    ('rev_demoh10', 'oit_demoh3d', 3, 'bland',               ''),
+    ('rev_demoh11', 'oit_demoh1d', 5, 'tasty',               ''),
+    ('rev_demoh12', 'oit_demoh2d', 4, 'well_presented',      ''),
+    ('rev_demoh13', 'oit_demoh3e', 5, 'tasty,fresh',         'Perfectly charred.'),
+    ('rev_demoh14', 'oit_demoh1e', 3, '',                    ''),
+    ('rev_demoh15', 'oit_demoh2e', 3, 'small_portion',       '')
+) AS v(uid, item_uid, rating, tags, comment)
+WHERE oi.uid = v.item_uid
+ON CONFLICT (uid) DO NOTHING;
+
+-- One service rating for the sitting (DECISIONS.md D17). UNIQUE on guest_session_id, so exactly
+-- one row however many orders the session placed -- which is the whole point of that key.
+INSERT INTO service_review (
+    uid, restaurant_id, guest_session_id, order_id, rating, tags, comment, created_at, updated_at
+)
+SELECT 'svc_demohistory', o.restaurant_id, o.guest_session_id, o.id,
+       4, 'friendly_staff', '', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
+FROM orders o
+WHERE o.uid = 'ord_demohist3'
+ON CONFLICT (uid) DO NOTHING;
+
+-- Totals recomputed FROM the lines, rather than left as the hand-written guesses in the VALUES
+-- above. A seeded bill whose subtotal does not equal its own items is the kind of detail that
+-- makes a demo look broken the moment anyone adds them up. 5% GST, matching Spice Garden's
+-- tax_bps.
+UPDATE orders o
+SET subtotal_minor = t.sum,
+    tax_minor      = ROUND(t.sum * 0.05),
+    total_minor    = t.sum + ROUND(t.sum * 0.05)
+FROM (SELECT order_id, SUM(total_minor) AS sum FROM order_item GROUP BY order_id) t
+WHERE o.id = t.order_id AND o.uid LIKE 'ord_demohist%';
+
+-- Rebuild the denormalised aggregate FROM the rows just inserted, rather than hand-writing the
+-- totals. This is migration 016's documented reconstruction query, and using it here means the
+-- seed cannot ship counters that disagree with the reviews they claim to summarise -- which is
+-- exactly what scripts/concurrency.sh section D asserts can never happen.
+UPDATE menu_item m
+SET rating_count = a.c, rating_sum = a.s
+FROM (
+    SELECT menu_item_id, COUNT(*) AS c, SUM(rating) AS s
+    FROM order_item_review
+    GROUP BY menu_item_id
+) a
+WHERE m.id = a.menu_item_id;
+
 COMMIT;
 
 -- A short confirmation, so `make seed` shows that it worked rather than staying silent.
@@ -274,4 +421,6 @@ SELECT
     (SELECT COUNT(*) FROM restaurant_table)                             AS tables,
     (SELECT COUNT(*) FROM menu_category)                                AS categories,
     (SELECT COUNT(*) FROM menu_item)                                    AS items,
-    (SELECT COUNT(*) FROM menu_item WHERE NOT is_available)              AS sold_out;
+    (SELECT COUNT(*) FROM menu_item WHERE NOT is_available)              AS sold_out,
+    (SELECT COUNT(*) FROM order_item_review)                            AS dish_ratings,
+    (SELECT COUNT(*) FROM service_review)                               AS service_ratings;

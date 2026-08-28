@@ -11,9 +11,11 @@ import type {
   CreateMenuItemRequest,
   CreateStaffRequest,
   CreateTableRequest,
-  ImageUploadResponse,
   ForgotPasswordRequest,
+  ImageUploadResponse,
   ListOrdersQuery,
+  ListReviewsQuery,
+  ListServiceReviewsQuery,
   MarkPaymentFailedRequest,
   OrderListResponse,
   OrderStatsView,
@@ -22,6 +24,9 @@ import type {
   RefreshTokenResponse,
   ResetPasswordRequest,
   RestaurantSettings,
+  ReviewListResponse,
+  ReviewSummaryResponse,
+  ServiceReviewListResponse,
   StaffListResponse,
   StaffLoginRequest,
   StaffLoginResponse,
@@ -313,6 +318,71 @@ export class AdminApi {
         from: query.from,
         to: query.to,
       },
+      auth: { kind: 'staff', token },
+      signal,
+    })
+  }
+
+  /**
+   * The reviews feed, newest first.
+   *
+   * `max_rating: 3` is the query this screen exists for -- the complaints, while the table is
+   * still sitting there. Open to every staff role, unlike menu editing: gating a complaint
+   * about a cold dish behind a manager login is how it gets read the next morning.
+   */
+  listReviews(
+    token: string,
+    query: ListReviewsQuery = {},
+    signal?: AbortSignal,
+  ): Promise<ReviewListResponse> {
+    return this.http.request(`${ADMIN}/reviews`, {
+      // Spelled out rather than spread, matching listOrders: a spread would silently forward
+      // any stray key a caller happened to put on the object, and the server binds by name.
+      query: {
+        page: query.page,
+        per_page: query.per_page,
+        menu_item_uid: query.menu_item_uid,
+        min_rating: query.min_rating,
+        max_rating: query.max_rating,
+        has_comment: query.has_comment,
+        from: query.from,
+        to: query.to,
+      },
+      auth: { kind: 'staff', token },
+      signal,
+    })
+  }
+
+  /**
+   * The service feed, newest first.
+   *
+   * A separate call from listReviews rather than a `kind` filter on it: a service rating has no
+   * dish, so one shared response type would carry item_name, food_type and menu_item_uid as
+   * always-absent keys in half the rows.
+   */
+  listServiceReviews(
+    token: string,
+    query: ListServiceReviewsQuery = {},
+    signal?: AbortSignal,
+  ): Promise<ServiceReviewListResponse> {
+    return this.http.request(`${ADMIN}/reviews/service`, {
+      query: {
+        page: query.page,
+        per_page: query.per_page,
+        min_rating: query.min_rating,
+        max_rating: query.max_rating,
+        has_comment: query.has_comment,
+        from: query.from,
+        to: query.to,
+      },
+      auth: { kind: 'staff', token },
+      signal,
+    })
+  }
+
+  /** The reviews dashboard: the food and service scores, their distributions, and the menu's ends. */
+  reviewSummary(token: string, signal?: AbortSignal): Promise<ReviewSummaryResponse> {
+    return this.http.request(`${ADMIN}/reviews/summary`, {
       auth: { kind: 'staff', token },
       signal,
     })

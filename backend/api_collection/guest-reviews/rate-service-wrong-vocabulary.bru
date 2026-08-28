@@ -1,0 +1,52 @@
+meta {
+  name: rate-service-wrong-vocabulary
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/service-review
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "rating": 4,
+    "tags": ["tasty"]
+  }
+}
+
+tests {
+  test("refuses a dish tag on a service rating", function () {
+    // A DELIBERATE REFUSAL. `tasty` is a perfectly valid tag -- on a dish. The two vocabularies
+    // are separate types in Go (models.ReviewTag and models.ServiceTag) precisely so one cannot
+    // be used where the other belongs.
+    expect(res.status).to.equal(422)
+  })
+
+  test("with the SERVICE vocabulary's own code", function () {
+    // Not TX_REV_003, which is the dish vocabulary's refusal. Distinct codes so a client is told
+    // which of the two closed sets it got wrong rather than left to guess.
+    expect(res.body.code).to.equal("TX_REV_009")
+  })
+
+  test("and the earlier rating is untouched", function () {
+    expect(res.body.data).to.be.undefined
+  })
+}
+
+docs {
+  # A dish tag on a service rating
+
+The dish and service vocabularies are separate closed sets, and crossing them is a 422 rather than
+a silent drop -- the value of a fixed vocabulary is that every stored tag can be counted.
+
+Both live in one place each: `backend/internal/models/review.go` (`ReviewTag`, `ServiceTag`) and
+`packages/shared/src/review.ts`.
+}

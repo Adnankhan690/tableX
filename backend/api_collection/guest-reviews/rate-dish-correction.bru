@@ -1,0 +1,64 @@
+meta {
+  name: rate-dish-correction
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/items/{{order_item_uid}}/review
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "rating": 4,
+    "tags": ["good_portion"],
+    "comment": "Lovely, just a little rich for me."
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("updates the existing review rather than adding a second", function () {
+    // Same uid as rate-dish returned. One review per order line, enforced by a unique index --
+    // which is also what keeps the dish's rating_count and rating_sum on menu_item reconcilable
+    // against this table.
+    expect(res.body.data.uid).to.equal(bru.getVar("review_uid"))
+  })
+
+  test("the correction replaced the rating, it did not average with it", function () {
+    expect(res.body.data.rating).to.equal(4)
+  })
+
+  test("tags are replaced wholesale, not merged", function () {
+    // "tasty" and "worth_the_wait" from the first call are gone. A diner correcting their mind
+    // is stating a new opinion, not appending to the old one.
+    expect(res.body.data.tags).to.deep.equal(["good_portion"])
+  })
+
+  test("the optional comment is stored", function () {
+    expect(res.body.data.comment).to.equal("Lovely, just a little rich for me.")
+  })
+}
+
+docs {
+  # Correct a rating
+
+The same endpoint as `rate-dish`, run a second time on the same line. This is what a diner
+re-tapping a different star does.
+
+The dish's aggregate on `menu_item` moves by the DIFFERENCE (here 5 -> 4, so the sum drops by one
+and the count does not move), rather than being recomputed. That arithmetic happens in SQL inside
+the same transaction as the review write: a read-modify-write in Go would let two diners rating the
+same dish in the same second each read the same starting value, and one rating would silently
+vanish.
+}

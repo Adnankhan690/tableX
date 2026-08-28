@@ -1,0 +1,65 @@
+meta {
+  name: list-reviews
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/reviews?per_page=25
+  body: none
+  auth: bearer
+}
+
+params:query {
+  per_page: 25
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns the review left by guest-reviews", function () {
+    expect(res.body.data.reviews).to.be.an("array").with.length.above(0)
+  })
+
+  test("carries the dish name the DINER saw, not the menu's current one", function () {
+    // Snapshotted from the order line (docs/DECISIONS.md D8). A dish renamed since is shown as
+    // it was ordered, or the review appears to be about something nobody ordered.
+    const review = res.body.data.reviews[0]
+    expect(review.item_name).to.be.a("string").and.not.empty
+    expect(review.rating).to.be.within(1, 5)
+  })
+
+  test("locates the review against a ticket staff can actually find", function () {
+    // The order NUMBER, not just its uid: this is the value staff shout across a kitchen
+    // (docs/DECISIONS.md D9), and a uid is unusable for finding a table.
+    expect(res.body.data.reviews[0].order_number).to.match(/^[A-Z]-\d{3}$/)
+  })
+
+  test("paginates", function () {
+    expect(res.body.data.meta.per_page).to.equal(25)
+    expect(res.body.data.meta.total).to.be.a("number")
+  })
+}
+
+docs {
+  # The reviews feed
+
+Newest first, one restaurant only.
+
+Filters, all optional and combinable:
+- `max_rating=3` -- the complaints, which is why a manager opens this screen mid-service. A
+  ceiling rather than an exact value, because "3 and below" is the real question.
+- `min_rating=5` -- the other end
+- `menu_item_uid` -- every review of one dish, the drill-down from the menu manager
+- `has_comment=true` -- only the ones somebody wrote prose on
+- `from` / `to` -- inclusive `YYYY-MM-DD` bounds, matching the stats endpoints
+
+A `menu_item_uid` belonging to another restaurant answers `TX_MNU_004` (404) rather than filtering
+across the tenant boundary.
+}

@@ -243,6 +243,7 @@ func (a *repositoryOrder) ListByGuestSession(ctx context.Context, sessionID int3
 	rows := make([]*models.Order, 0, 4)
 	if err := a.Db.WithContext(ctx).
 		Preload("Items", orderItemsInInsertOrder).
+		Preload("Items.Review").
 		Preload("Table").
 		Where("guest_session_id = ?", sessionID).
 		Order(orderByPlacedDesc).
@@ -609,6 +610,10 @@ func orderListScope(filter OrderListFilter) func(*gorm.DB) *gorm.DB {
 func withOrderDetail(q *gorm.DB) *gorm.DB {
 	return q.
 		Preload("Items", orderItemsInInsertOrder).
+		// The diner's own ratings, so the tracking screen renders the stars already given
+		// rather than an empty row to re-fill after every refresh. One extra query for the
+		// whole order, against one per line if the view builder fetched them itself.
+		Preload("Items.Review").
 		Preload("Events", func(db *gorm.DB) *gorm.DB {
 			return db.Order("created_at ASC, id ASC")
 		}).

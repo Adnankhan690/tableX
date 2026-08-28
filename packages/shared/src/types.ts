@@ -218,6 +218,15 @@ export interface MenuItemView {
   is_bestseller: boolean
   prep_time_mins?: number
   category_uid: string
+  /**
+   * The dish's aggregate score, absent rather than zeroed when there is nothing to report.
+   *
+   * On the DINER menu the server withholds this until the dish has enough ratings to mean
+   * something (`MIN_RATINGS_TO_PUBLISH`). A "5.0" from one tap is not a smaller truth, it is
+   * noise that ranks an untried dish above a consistently good one. The admin menu applies
+   * no threshold: staff are owed the raw count.
+   */
+  rating?: RatingSummary
 }
 
 export interface MenuCategoryView {
@@ -406,6 +415,217 @@ export interface OrderItemRequest {
   note?: string
 }
 
+// --- Rating and reviews ---
+//
+// The constraint that shapes these: a diner rates with ONE TAP and never sees a form. That
+// is why the write is a PUT of a single line's rating rather than a POST of a whole order's
+// worth -- a batch body would need a Submit button to know when it was complete, and that
+// button is the step diners abandon.
+
+/** A dish's aggregate score. */
+export interface RatingSummary {
+  /**
+   * Rounded to one decimal by the SERVER, so every client renders the same "4.3" without
+   * reimplementing the rule -- the same argument that puts a formatted `display` on Money.
+   */
+  average: number
+  count: number
+}
+
+/**
+ * The closed vocabulary of one-tap reasons.
+ *
+ * Mirrors `models.ReviewTag`. A fixed set rather than free text is what makes this feature
+ * answerable without typing, and the only form of the data a kitchen can act on in
+ * aggregate: "9 people said cold this week" is a service problem with an address, where
+ * nine sentences of prose are an afternoon of reading.
+ *
+ * The server REJECTS a tag outside this set rather than dropping it, so a typo here fails
+ * loudly in development instead of producing a bucket nobody looks in.
+ */
+export type ReviewTag =
+  | 'tasty'
+  | 'fresh'
+  | 'good_portion'
+  | 'well_presented'
+  | 'worth_the_wait'
+  | 'bland'
+  | 'too_spicy'
+  | 'served_cold'
+  | 'small_portion'
+  | 'not_as_described'
+
+/**
+ * The closed vocabulary for SERVICE ratings.
+ *
+ * A separate union from ReviewTag, mirroring `models.ServiceTag`. Sharing one type would make
+ * 'tasty' assignable to a service rating and 'slow_service' to a dish, with nothing but convention
+ * keeping them apart at the call site.
+ *
+ * Note 'slow_to_arrive' is gone from ReviewTag above and has no direct successor here: a diner
+ * saying their food was late is describing the floor, and it now has somewhere to say so.
+ */
+export type ServiceTag =
+  | 'quick_service'
+  | 'friendly_staff'
+  | 'attentive'
+  | 'clean_table'
+  | 'slow_service'
+  | 'hard_to_find_staff'
+  | 'table_not_clean'
+  | 'order_wrong'
+  | 'rushed'
+
+/** One tap on one dish. `rating` is the only required field. */
+export interface RateOrderItemRequest {
+  rating: number
+  tags?: ReviewTag[]
+  comment?: string
+}
+
+/** A diner's own rating, echoed back on the line it belongs to. */
+export interface OrderItemReviewView {
+  uid: string
+  rating: number
+  tags?: ReviewTag[]
+  comment?: string
+  /**
+   * Lets the client tell a rating it just wrote from one it loaded, which is what stops an
+   * in-flight optimistic update being overwritten by a slower refetch.
+   */
+  updated_at: string
+}
+
+/** One review as the admin feed renders it. */
+export interface ReviewView {
+  uid: string
+  rating: number
+  tags?: ReviewTag[]
+  comment?: string
+  menu_item_uid: string
+  /**
+   * The name SNAPSHOTTED on the order line, not the dish's current one
+   * (docs/DECISIONS.md D8). A dish renamed since is shown as the diner saw it, or the review
+   * appears to be about something they never ordered.
+   */
+  item_name: string
+  food_type: FoodType
+  order_uid: string
+  order_number: string
+  table_label?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ListReviewsQuery {
+  page?: number
+  per_page?: number
+  menu_item_uid?: string
+  /** A ceiling, because "3 and below" is the actual question a manager has. */
+  max_rating?: number
+  min_rating?: number
+  has_comment?: boolean
+  from?: string
+  to?: string
+}
+
+export interface ReviewListResponse {
+  reviews: ReviewView[]
+  meta: PageMeta
+}
+
+/** One dish in the best/worst tables on the reviews dashboard. */
+export interface RatedDishView {
+  menu_item_uid: string
+  name: string
+  food_type: FoodType
+  rating: RatingSummary
+}
+
+/**
+ * The reviews dashboard.
+ *
+ * TWO headline numbers, never one. A single blended average points at nobody: "you are a 3.8" is
+ * not something a manager can act on, where "food 4.6, service 3.2" names a team and a shift.
+ */
+export interface ReviewSummaryResponse {
+  /** Every DISH rating this restaurant has received. */
+  food: RatingSummary
+  /** Every SERVICE rating. Zero-count until diners leave them, which is its own signal. */
+  service: RatingSummary
+  /**
+   * Counts at each star, indexed 0..4 for 1..5.
+   *
+   * Sent as well as the average because the two answer different questions: a 3.0 of straight
+   * 3s is a dull menu, and a 3.0 of 5s and 1s is an inconsistent kitchen. Those need opposite
+   * responses, and an average alone cannot tell them apart.
+   */
+  distribution: [number, number, number, number, number]
+  /**
+   * The same shape for service, answering the sharper version of the same question: intermittently
+   * bad service (5s and 1s) is a staffing or shift problem, where uniformly mediocre service is a
+   * training one.
+   */
+  service_distribution: [number, number, number, number, number]
+  /** The lowest-rated dishes, worst first -- the working list. */
+  needs_attention: RatedDishView[]
+  top_rated: RatedDishView[]
+  /**
+   * The review count a dish needed to be ranked at all, sent so an empty list reads as "not
+   * enough data yet" rather than as a broken panel on a restaurant's first night.
+   */
+  min_reviews_for_ranking: number
+}
+
+/** One tap on the service row. `rating` is the only required field. */
+export interface RateServiceRequest {
+  rating: number
+  tags?: ServiceTag[]
+  comment?: string
+}
+
+/** The diner's own service rating, echoed back. */
+export interface ServiceReviewView {
+  uid: string
+  rating: number
+  tags?: ServiceTag[]
+  comment?: string
+  updated_at: string
+}
+
+/**
+ * One service rating as the admin feed renders it.
+ *
+ * Deliberately NOT ReviewView with optional fields. A service rating has no dish, so a shared type
+ * would carry item_name, food_type and menu_item_uid as always-absent keys in half the rows.
+ */
+export interface StaffServiceReviewView {
+  uid: string
+  rating: number
+  tags?: ServiceTag[]
+  comment?: string
+  order_uid: string
+  order_number: string
+  table_label?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ListServiceReviewsQuery {
+  page?: number
+  per_page?: number
+  min_rating?: number
+  max_rating?: number
+  has_comment?: boolean
+  from?: string
+  to?: string
+}
+
+export interface ServiceReviewListResponse {
+  reviews: StaffServiceReviewView[]
+  meta: PageMeta
+}
+
 export interface OrderItemView {
   uid: string
   name: string
@@ -415,6 +635,11 @@ export interface OrderItemView {
   food_type: FoodType
   note?: string
   status: OrderItemStatus
+  /**
+   * This diner's own rating of this line, when they have left one -- so the tracking screen
+   * renders the stars already given rather than an empty row to re-fill after a refresh.
+   */
+  review?: OrderItemReviewView
 }
 
 export interface OrderTotals {
@@ -463,6 +688,33 @@ export interface OrderView {
   next_statuses?: TransitionTarget[]
   /** Whether the diner may still withdraw this order themselves (docs/DECISIONS.md D6). */
   can_guest_cancel: boolean
+
+  /**
+   * Whether the diner may rate their food right now.
+   *
+   * Computed server-side for the same reason as the two flags above: the app renders the
+   * rating card exactly when submitting will work. Do NOT reimplement this as
+   * `status === 'served'` -- the window also opens on a settled counter payment, and on a
+   * timeout after the kitchen stops updating the order at all, precisely so that a diner at
+   * a restaurant whose floor staff forget that last tap is still asked.
+   * `backend/internal/services/review_window.go` is the single authority.
+   */
+  can_review: boolean
+  /**
+   * When the window will open, sent only while it is still shut. The diner app sets one timer
+   * for that instant rather than waiting to notice on its next poll.
+   */
+  review_opens_at?: string
+  /** When it shuts, so a late arrival is told "too late" rather than shown a card that fails. */
+  review_closes_at?: string
+  /**
+   * This SESSION's service rating, when it has left one -- not this order's.
+   *
+   * Service is rated once per sitting, so a diner with two open orders sees the same answer
+   * pre-filled on both and editing either updates the one row. Gated by the same `can_review`
+   * window; there is no separate flag, because the two would only ever disagree by accident.
+   */
+  service_review?: ServiceReviewView
 }
 
 export interface PlaceOrderResponse {
@@ -735,6 +987,7 @@ export type RealtimeEventType =
   | 'order.status_changed'
   | 'payment.updated'
   | 'menu.availability_changed'
+  | 'review.submitted'
   | 'ping'
 
 /**
@@ -749,5 +1002,12 @@ export interface RealtimeEvent {
   order_uid?: string
   status?: OrderStatus
   table_label?: string
+  /**
+   * Rides on `review.submitted`, and is the one payload field that is a value rather than an
+   * identifier. It earns the exception because the panel highlights a low rating on arrival,
+   * and a refetch-first round trip would spend the seconds in which staff could still walk
+   * over to the table.
+   */
+  rating?: number
   at: string
 }

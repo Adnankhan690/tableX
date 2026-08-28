@@ -1,0 +1,59 @@
+meta {
+  name: list-service-reviews
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/reviews/service?per_page=25
+  body: none
+  auth: bearer
+}
+
+params:query {
+  per_page: 25
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("returns the service rating left by guest-reviews", function () {
+    expect(res.body.data.reviews).to.be.an("array").with.length.above(0)
+  })
+
+  test("locates the sitting staff would need to find", function () {
+    // The order NUMBER, not just a uid: this is the value staff shout across a kitchen
+    // (docs/DECISIONS.md D9), and it is what leads to the table.
+    expect(res.body.data.reviews[0].order_number).to.match(/^[A-Z]-\d{3}$/)
+  })
+
+  test("carries no dish fields, because a service rating has no dish", function () {
+    // A separate response type from the dish feed rather than one with optional fields. Sharing
+    // would give every row three keys that are always absent in one of the two cases.
+    const review = res.body.data.reviews[0]
+    expect(review.item_name).to.be.undefined
+    expect(review.menu_item_uid).to.be.undefined
+  })
+
+  test("paginates", function () {
+    expect(res.body.data.meta.per_page).to.equal(25)
+  })
+}
+
+docs {
+  # The service feed
+
+Newest first, one restaurant only. Same filters as the dish feed minus `menu_item_uid`:
+`min_rating`, `max_rating`, `has_comment`, `from`, `to`.
+
+Deliberately a **separate route** from `GET /reviews` rather than a `kind=` filter on it. A service
+rating has no dish, so one shared response type would carry `item_name`, `food_type` and
+`menu_item_uid` as always-empty keys in half the rows, and a client would have to know which half
+it was holding before it could trust any field.
+}

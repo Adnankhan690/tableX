@@ -2,8 +2,10 @@ package services
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"tablex/internal/models"
 	"tablex/internal/storage"
@@ -21,6 +23,7 @@ var (
 	_ ServiceMenuMethods       = (*serviceMenu)(nil)
 	_ ServiceSessionMethods    = (*serviceSession)(nil)
 	_ ServiceOrderMethods      = (*ServiceOrder)(nil)
+	_ ServiceReviewMethods     = (*serviceReview)(nil)
 	_ ServicePaymentMethods    = (*servicePayment)(nil)
 	_ ServiceStatsMethods      = (*serviceStats)(nil)
 	_ ServicePlatformMethods   = (*servicePlatform)(nil)
@@ -135,6 +138,32 @@ func menuItemImageURL(item *models.MenuItem, store storage.Storage) string {
 	return item.ImageURL
 }
 
+// roundToOneDecimal is where a rating average becomes a display value.
+//
+// Done once, on the server, so every client renders the same "4.3" rather than each
+// reimplementing a rounding rule -- the same argument that puts a formatted Display string on
+// Money (DECISIONS.md D7). This is the only float that crosses the wire, and it is a computed
+// statistic rather than a stored quantity.
+func roundToOneDecimal(v float64) float64 {
+	return math.Round(v*10) / 10
+}
+
+// ratingSummary builds a dish's aggregate view, or nil when there is not enough to report.
+//
+// minCount is the audience's threshold: the diner menu withholds a score until a dish has
+// MinRatingsToPublish ratings, while staff see any dish that has one. Nil rather than a zeroed
+// struct, so a client cannot accidentally render "0.0" for a dish nobody has rated.
+func ratingSummary(item *models.MenuItem, minCount int) *types.RatingSummary {
+	avg, ok := item.AverageRating()
+	if !ok || item.RatingCount < minCount {
+		return nil
+	}
+	return &types.RatingSummary{
+		Average: roundToOneDecimal(avg),
+		Count:   int64(item.RatingCount),
+	}
+}
+
 func toMenuItemView(
 	item *models.MenuItem,
 	categoryUID, currency string,
@@ -152,6 +181,7 @@ func toMenuItemView(
 		IsBestseller: item.IsBestseller,
 		PrepTimeMins: item.PrepTimeMins,
 		CategoryUID:  categoryUID,
+		Rating:       ratingSummary(item, MinRatingsToPublish),
 	}
 }
 
@@ -160,11 +190,16 @@ func toAdminMenuItemView(
 	categoryUID, currency string,
 	store storage.Storage,
 ) types.AdminMenuItemView {
-	return types.AdminMenuItemView{
+	view := types.AdminMenuItemView{
 		MenuItemView: toMenuItemView(item, categoryUID, currency, store),
 		Status:       string(item.Status),
 		SortOrder:    item.SortOrder,
 	}
+	// Overridden without the publication threshold. Staff are owed the underlying data --
+	// "4.0 from 2 reviews" is exactly what a manager needs to see and exactly what a diner
+	// should not be shown as though it were settled.
+	view.Rating = ratingSummary(item, 1)
+	return view
 }
 
 // buildPublicMenu assembles the diner menu from separately-fetched categories and items.
@@ -222,6 +257,92 @@ func buildPublicMenu(
 
 // --- Orders ---
 
+// toOrderItemReviewView builds the diner's echo of their own rating. Nil in, nil out, so an
+// unrated line simply carries no review rather than an empty one the client must recognise.
+func toOrderItemReviewView(review *models.OrderItemReview) *types.OrderItemReviewView {
+	if review == nil {
+		return nil
+	}
+	return &types.OrderItemReviewView{
+		UID:       review.UID,
+		Rating:    review.Rating,
+		Tags:      review.Tags,
+		Comment:   review.Comment,
+		UpdatedAt: review.UpdatedAt,
+	}
+}
+
+// toReviewView builds the admin feed's row.
+//
+// menuItemUID is passed in rather than read from an association: the feed resolves every
+// dish uid once from the menu, because a page of 25 reviews of the same dish would otherwise
+// load that dish 25 times.
+func toReviewView(review *models.OrderItemReview, menuItemUID string) types.ReviewView {
+	view := types.ReviewView{
+		UID:         review.UID,
+		Rating:      review.Rating,
+		Tags:        review.Tags,
+		Comment:     review.Comment,
+		MenuItemUID: menuItemUID,
+		CreatedAt:   review.CreatedAt,
+		UpdatedAt:   review.UpdatedAt,
+	}
+
+	// The name and food type SNAPSHOTTED on the line, never the dish's current ones
+	// (DECISIONS.md D8). A dish renamed since is shown as the diner saw it, or the review
+	// appears to be about something they never ordered.
+	if review.OrderItem != nil {
+		view.ItemName = review.OrderItem.NameSnapshot
+		view.FoodType = string(review.OrderItem.FoodType)
+	}
+	if review.Order != nil {
+		view.OrderUID = review.Order.UID
+		view.OrderNumber = review.Order.OrderNumber
+		if review.Order.Table != nil {
+			view.TableLabel = review.Order.Table.Label
+		}
+	}
+	return view
+}
+
+// toServiceReviewView builds the diner's echo of their own service rating. Nil in, nil out, so a
+// session that has not rated service carries no review rather than an empty one.
+func toServiceReviewView(review *models.ServiceReview) *types.ServiceReviewView {
+	if review == nil {
+		return nil
+	}
+	return &types.ServiceReviewView{
+		UID:       review.UID,
+		Rating:    review.Rating,
+		Tags:      review.Tags,
+		Comment:   review.Comment,
+		UpdatedAt: review.UpdatedAt,
+	}
+}
+
+// toStaffServiceReviewView builds the admin service feed's row.
+//
+// Carries the order number rather than only its uid, for the same reason the dish feed does: that
+// is the value staff shout across a kitchen, and it is what finds the sitting (DECISIONS.md D9).
+func toStaffServiceReviewView(review *models.ServiceReview) types.StaffServiceReviewView {
+	view := types.StaffServiceReviewView{
+		UID:       review.UID,
+		Rating:    review.Rating,
+		Tags:      review.Tags,
+		Comment:   review.Comment,
+		CreatedAt: review.CreatedAt,
+		UpdatedAt: review.UpdatedAt,
+	}
+	if review.Order != nil {
+		view.OrderUID = review.Order.UID
+		view.OrderNumber = review.Order.OrderNumber
+		if review.Order.Table != nil {
+			view.TableLabel = review.Order.Table.Label
+		}
+	}
+	return view
+}
+
 func toOrderItemView(item *models.OrderItem, currency string) types.OrderItemView {
 	return types.OrderItemView{
 		UID:       item.UID,
@@ -232,6 +353,7 @@ func toOrderItemView(item *models.OrderItem, currency string) types.OrderItemVie
 		FoodType:  string(item.FoodType),
 		Note:      item.Note,
 		Status:    string(item.Status),
+		Review:    toOrderItemReviewView(item.Review),
 	}
 }
 
@@ -289,6 +411,15 @@ func toOrderView(
 		NextStatuses:   NextStatuses(order.Status, actor),
 		CanGuestCancel: CanGuestCancel(order.Status),
 	}
+
+	// The rating window, resolved server-side for the same reason as the two flags above: the
+	// diner app renders the card exactly when submitting will work. review_window.go is the
+	// single authority on when that is, and notably it is NOT "status is served" -- see the
+	// commentary there for the kitchens that would otherwise never be asked.
+	eligibility := ReviewEligibilityFor(order, time.Now().UTC())
+	view.CanReview = eligibility.Open
+	view.ReviewOpensAt = eligibility.OpensAt
+	view.ReviewClosesAt = eligibility.ClosesAt
 
 	if len(events) > 0 {
 		timeline := make([]types.OrderStatusEventView, 0, len(events))
