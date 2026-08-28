@@ -58,6 +58,7 @@ The ones a client must actually handle:
 | `TX_REV_001` | 409 | Rating window shut — usually *too early*, not forbidden. Refetch and re-read `can_review`; do not alarm the diner. |
 | `TX_REV_003` | 422 | Tag outside the **dish** vocabulary. A client bug: the set is in `packages/shared/src/review.ts`. |
 | `TX_REV_009` | 422 | Tag outside the **service** vocabulary. Distinct code so the client knows which of the two sets it got wrong. |
+| `TX_RST_008` | 409 | The restaurant is not taking orders right now. Temporary and expected — distinct from `TX_RST_002`, which means it is not on the platform at all. |
 
 ## Money
 
@@ -292,6 +293,7 @@ Roles: `owner` ⊃ `manager` ⊃ `staff`. Marked below where it differs.
 | `GET /staff` | any |
 | `POST /staff` · `PATCH /staff/:uid` | **owner** |
 | `GET /settings` | any |
+| `PATCH /settings/accepting-orders` | Open/close for orders ([D18](./DECISIONS.md)). **Every role**, unlike the rest of settings. |
 | `PATCH /settings` | manager |
 | `GET /menu` | any |
 | `POST /menu/categories` · `PATCH /menu/categories/:uid` | manager |

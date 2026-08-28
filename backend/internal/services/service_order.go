@@ -62,6 +62,18 @@ func (s *ServiceOrder) Place(
 		return nil, appErr
 	}
 
+	// The "we are open" switch (DECISIONS.md D18). Checked HERE and not on the scan, deliberately:
+	// a diner outside a closed restaurant may read the menu, and the honest place to stop them is
+	// the moment they try to order rather than the moment they look. The diner app is told through
+	// RestaurantSummary.accepting_orders, so it says so up front rather than letting somebody build
+	// a cart and meet this at checkout.
+	//
+	// It is the cheapest control against an order placed from outside the restaurant entirely,
+	// because at 11pm there is nobody to accept it and nobody to eat it.
+	if !restaurant.Open() {
+		return nil, response.ErrRestaurantClosed
+	}
+
 	var (
 		order     *models.Order
 		fromRetry bool

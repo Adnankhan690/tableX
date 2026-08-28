@@ -38,6 +38,16 @@ type Restaurant struct {
 	UPIPayeeName    string              `gorm:"column:upi_payee_name;size:128" json:"upi_payee_name,omitempty"`
 	PaymentProvider PaymentProviderName `gorm:"size:32;not null;default:'upi_static'" json:"payment_provider"`
 
+	// AcceptingOrders is the "we are open" switch staff flip during service; Status is the
+	// lifecycle flag. The same split menu_item makes between is_available and status, and for the
+	// same reason: closing up for the night must not archive the restaurant, orphan its order
+	// history and drop it out of the public directory.
+	//
+	// No `default` in the GORM tag, deliberately -- see the TaxBps note above. With one, GORM would
+	// omit the field from an INSERT whenever it held the zero value, so a restaurant onboarded as
+	// closed would silently come back open.
+	AcceptingOrders bool `gorm:"not null" json:"accepting_orders"`
+
 	Status    EntityStatus `gorm:"size:32;not null;default:'active'" json:"status"`
 	CreatedAt time.Time    `json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`
@@ -75,4 +85,13 @@ func istFallback() *time.Location {
 		return loc
 	}
 	return time.FixedZone("IST", 5*3600+30*60)
+}
+
+// Open reports whether the restaurant will take an order right now.
+//
+// Both conditions, because they answer different questions: Status is "does this restaurant exist
+// on the platform", AcceptingOrders is "is anyone here". A restaurant can be archived and still
+// have the switch on, and that must not be orderable.
+func (r *Restaurant) Open() bool {
+	return r.Status == EntityStatusActive && r.AcceptingOrders
 }

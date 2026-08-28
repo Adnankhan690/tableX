@@ -39,6 +39,7 @@ export {
   PasswordInput,
   Textarea,
 } from './field'
+export { SwitchTrack, type SwitchTrackProps } from './switch'
 export {
   SearchInput,
   type SearchInputProps,

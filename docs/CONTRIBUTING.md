@@ -67,6 +67,18 @@ forgets to scope itself does not compile; and transaction-aware methods take a `
 - **A dish tag on a service rating, or the reverse.** `models.ReviewTag` and `models.ServiceTag`
   are separate types with separate vocabularies and separate refusal codes, precisely so one
   cannot be used where the other belongs.
+- **A new "is this thing switched on" boolean folded into a `status` column.** `menu_item` splits
+  `is_available` from `status` and `restaurant` splits `accepting_orders` from `status`, both for
+  the same reason: the day-to-day toggle and the lifecycle flag have different owners, different
+  frequencies and different blast radii ([D18](./DECISIONS.md)).
+- **A control rendered twice behind a breakpoint.** One element that MOVES, never two behind
+  `sm:hidden` / `hidden sm:flex` -- it doubles the tab stops and gives assistive technology two
+  names for one action. Note also that `PageHeader` is hidden below `sm` on the order board, so
+  anything in its `actions` slot is unreachable on a phone.
+- **Anything added to the shell's top bar without measuring it at 375px.** The brand is a flex
+  item, so a neighbour that does not fit shrinks the restaurant name rather than wrapping below it.
+  Check both that the name is unclipped (`scrollWidth`, not `innerText` -- `truncate` is CSS) and
+  that the bar is still one row ([D18](./DECISIONS.md)).
 - **A realtime publish inside a transaction.** It would announce a state a rollback then
   discards. Publish after commit, always.
 - **A tenant-scoped query that ignores its `restaurantID`.** A data-isolation bug, not a style note.
@@ -104,12 +116,12 @@ Bottom-up, so each step compiles:
 ```bash
 make test                    # Go tests + frontend unit tests
 make -C backend test-race    # the hub and order locking only misbehave under -race
-make smoke                   # 143 API assertions against a running server
+make smoke                   # 151 API assertions against a running server
 make concurrency             # the four races that happen in a real restaurant
-make api-collection          # 183 assertions, the Bruno collection end to end
+make api-collection          # 186 assertions, the Bruno collection end to end
 cd apps/diner && node e2e/diner-journey.mjs    # 47 assertions, real browser
 cd apps/diner && node e2e/rating-journey.mjs   # 20 assertions, real browser
-cd apps/admin && node e2e/admin-journey.mjs    # 69 assertions, real browser
+cd apps/admin && node e2e/admin-journey.mjs    # 81 assertions, real browser
 ```
 
 `make api-collection` reseeds before running, and judges on assertion results rather than Bruno's

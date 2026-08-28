@@ -120,6 +120,9 @@ export function MenuScreen() {
    *     recommendations strip above their results is in the way. The veg filter is different: it
    *     narrows, it does not seek.
    */
+  // One source for "can anything be ordered right now", so the banner and every row agree.
+  const closed = menu !== null && !menu.restaurant.accepting_orders
+
   const mostLoved = useMemo(() => {
     if (query.trim() !== '') return []
 
@@ -278,6 +281,26 @@ export function MenuScreen() {
       </div>
 
       <main className="pb-bar">
+        {/*
+          Said BEFORE the menu, not at checkout.
+
+          The server refuses placement when the restaurant is closed (TX_RST_008), but meeting that
+          after choosing four dishes is the same information delivered at the worst possible moment.
+          The menu stays readable on purpose -- someone looking up what a restaurant serves is a
+          perfectly good reason to scan, and hiding it would be worse than saying so.
+        */}
+        {menu !== null && !menu.restaurant.accepting_orders ? (
+          <p
+            role="status"
+            className="border-b border-line bg-surface-sunken px-4 py-3 text-[0.875rem] leading-snug text-muted"
+          >
+            <span className="font-semibold text-ink">
+              {menu.restaurant.name} is not taking orders right now.
+            </span>{' '}
+            You can still look through the menu.
+          </p>
+        ) : null}
+
         {filtered.length === 0 ? (
           <div className="px-4 py-16">
             <EmptyState
@@ -326,6 +349,7 @@ export function MenuScreen() {
                       key={`loved-${item.uid}`}
                       item={item}
                       quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      closed={closed}
                       onAdd={() => add(item)}
                       onSetQuantity={(next) => setQuantity(item.uid, next)}
                     />
@@ -352,6 +376,7 @@ export function MenuScreen() {
                       key={item.uid}
                       item={item}
                       quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      closed={closed}
                       onAdd={() => add(item)}
                       onSetQuantity={(next) => setQuantity(item.uid, next)}
                     />
@@ -365,7 +390,7 @@ export function MenuScreen() {
 
       {/* The bar appears only once there is something to review, so it does not cover the menu
           while the diner is still browsing. */}
-      {count > 0 && preview !== null ? (
+      {count > 0 && preview !== null && !closed ? (
         <BottomBar>
           <Link href="/cart" className="block">
             <div className="flex min-h-tap items-center justify-between rounded-card bg-accent px-4 py-3 text-accent-ink">
@@ -435,11 +460,14 @@ function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> })
 function DishRow({
   item,
   quantity,
+  closed,
   onAdd,
   onSetQuantity,
 }: {
   item: MenuItemView
   quantity: number
+  /** The whole restaurant is not taking orders. Distinct from this dish being sold out. */
+  closed: boolean
   onAdd: () => void
   onSetQuantity: (next: number) => void
 }) {
@@ -450,6 +478,18 @@ function DishRow({
    * a restaurant that ran out.
    */
   const unavailable = !item.is_available
+
+  /**
+   * Two different reasons a dish cannot be added, kept apart on purpose.
+   *
+   * A closed restaurant does NOT get the "Unavailable today" label -- that means the kitchen ran
+   * out of this dish, and stamping it on all forty would be a lie the diner can disprove by
+   * reading it. The banner at the top of the menu already says why, once, in the right words.
+   *
+   * The Add control disappears either way, matching how a sold-out dish behaves: an addable
+   * control that cannot result in an order is worse than no control.
+   */
+  const addable = !unavailable && !closed
 
   return (
     <li
@@ -498,7 +538,7 @@ function DishRow({
 
       <div className="flex flex-col items-end justify-between gap-2">
         <DishImage name={item.name} {...(item.image_url ? { url: item.image_url } : {})} />
-        {!unavailable ? (
+        {addable ? (
           <QuantityStepper
             quantity={quantity}
             label={item.name}

@@ -3,6 +3,7 @@
 import { cn } from '@tablex/ui'
 import { Bell, BellOff } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { SwitchTrack } from '@/components/ui'
 import * as announce from '@/lib/announce'
 import * as chime from '@/lib/chime'
 import { readChimeEnabled, writeChimeEnabled } from '@/lib/chime-preference'
@@ -78,20 +79,7 @@ export function SoundSetting() {
           </span>
         </span>
         {/* A track, not the word "on": the state is what matters and it is read at a glance. */}
-        <span
-          aria-hidden="true"
-          className={cn(
-            'relative h-5 w-9 shrink-0 rounded-full transition-colors',
-            enabled ? 'bg-accent' : 'bg-line-strong',
-          )}
-        >
-          <span
-            className={cn(
-              'absolute top-0.5 h-4 w-4 rounded-full bg-surface transition-[left] duration-200 ease-out motion-reduce:transition-none',
-              enabled ? 'left-[1.125rem]' : 'left-0.5',
-            )}
-          />
-        </span>
+        <SwitchTrack on={enabled} />
       </button>
 
       {blocked ? (

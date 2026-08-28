@@ -696,3 +696,107 @@ paying on a hot path.**
 
 **Reversal cost.** Low. One table, three routes, one row on the diner card and one chip group in the
 admin panel. Dropping it leaves the dish ratings exactly as they were, minus one tag.
+
+---
+
+## D18 — Open/close is a floor switch, not a schedule and not the lifecycle flag
+
+**Not a PRD question.** A QR sticker works at 3am. Nothing in the system knew what time it was, so
+an order placed from a photographed QR at midnight landed on the same board as a real one, and the
+first person to see it was whoever opened up in the morning.
+
+**Decision.** `restaurant.accepting_orders` — a switch staff flip at the start and end of service.
+Placement is refused when it is off (`TX_RST_008`); browsing is not.
+
+### Three things it is deliberately not
+
+**Not `status`.** That is the restaurant's lifecycle on the platform — active, inactive, archived —
+and collapsing the two would mean closing up for the night *archives* the restaurant, orphaning its
+order history and dropping it out of the public directory. Reopening would then be an operator
+action rather than a staff one. This is exactly the split `menu_item` already makes between
+`is_available` ("we ran out tonight") and `status` ("this dish exists"), for exactly the same
+reason.
+
+**Not manager-gated.** It is the only write under `/settings` open to every role. Closing up is
+done by whoever is standing there at the end of service, and routing it through a manager would
+mean orders keep arriving after the kitchen has gone home — the failure the switch exists to
+prevent. The same argument already leaves menu availability in every role's hands.
+
+**Not a gate on browsing.** A closed restaurant still serves its menu. Someone looking up what a
+place serves is a perfectly good reason to scan, and the honest place to stop them is the moment
+they try to order. `accepting_orders` rides on the public `RestaurantSummary`, so the diner app
+says so at the top of the menu and hides every Add control — rather than letting somebody choose
+four dishes and meet the refusal at checkout.
+
+### It is a floor control, not a security boundary
+
+Stated plainly because the distinction matters: **a manual switch protects nothing on the night
+somebody forgets to flip it**, and forgetting is the normal case rather than the exceptional one.
+
+The intended follow-up is scheduled service hours with this switch as the manual override on top:
+the schedule closes the restaurant when everyone has gone home, and the switch handles closing
+early, a kitchen failure, or a private event. Until that lands, this reduces the window rather than
+closing it.
+
+### The UI is asymmetric on purpose
+
+Open is quiet; closed is loud. The dangerous mistake is one-directional — a restaurant accidentally
+left *closed* is a silent outage whose victims are not in the room to complain, while one
+accidentally left *open* merely takes an order a human then rejects. So the band the switch sits in
+escalates around it: an unremarkable row when open, red with an explanation when closed.
+
+The control is a **switch, not a button, and its label does not change.** A button reading "Closed"
+is ambiguous in the worst direction: it reads as an instruction — press this to close — as easily
+as a description. Naming the thing being controlled ("Taking orders") and letting the track carry
+the state removes that entirely, because a track's position cannot be read as a verb.
+
+### One control, and it lives in the shell beside Sign out
+
+Three bugs came out of placing this wrong, and they are worth recording because the shape recurs.
+
+**It started in `PageHeader`'s `actions` slot on the order board, and that header carries
+`hidden sm:flex`.** Below 640px the header is `display:none`, so the switch went with it. The
+closed-state banner sat outside the header with its own Reopen button — which left a phone able to
+**reopen** a restaurant but never to **close** one. Invisible on a laptop.
+
+**The reflex fix — a second copy behind `sm:hidden` — is wrong**, and [app-shell.tsx](../apps/admin/src/components/app-shell.tsx)
+already argues why for the sign-out button: it doubles the tab stops, hands assistive technology two
+identically-named controls where the page has one action, and makes any test targeting it ambiguous.
+So the control *moved* rather than being duplicated into the gap.
+
+**It now lives in the shell's account footer, beside Sign out**, which is the right home for a
+second reason beyond reachability: this is restaurant-level state, as global as the restaurant's
+name in the corner. A manager on the Menu page has the same reason to close up as one on Orders, and
+the shell already performs the movement — inline beside Sign out on a phone or tablet, stacked above
+it in the laptop rail. The shell owns the fetch, so there is one source of truth rather than a copy
+per page.
+
+**A switch plus a Reopen button is two controls for one action** — the same duplication rotated
+ninety degrees. The banner became a `ClosedNotice` that carries no control at all: it explains, the
+switch acts.
+
+**And adding it beside Sign out truncated the restaurant name to "Spice G…"** on a phone, because
+the brand block is `min-w-0 flex-1`: a flex item with no floor shrinks to nothing before the line
+ever wraps, so a neighbour that does not fit silently eats the name rather than moving below it.
+
+Two changes fixed that, and the order matters. The label went from "Taking orders" to **"Open"** —
+short enough that brand, switch and Sign out fit one row, and the word a restaurant actually uses
+about itself. Then the brand got `min-w-[11rem]`, which reverses the shrink-before-wrap behaviour:
+below that floor the header wraps by CONTENT instead of clipping, rather than by a breakpoint
+guessed in advance.
+
+Measured rather than eyeballed: single row with the name intact from **375px** up — iPhone SE and
+mini, every current iPhone and Android, tablet, laptop. At 320 and 360 it wraps to two rows with the
+name still complete, which is the right way round.
+
+The label stays **constant**, which is what every platform switch does: the label names the thing,
+the track carries the state. A label flipping to "Closed" is redundant with the track at best, and
+at worst reads as an instruction.
+
+The regression tests assert **visibility at 390px** (not presence — the element was in the DOM the
+entire time it was unreachable), that the name is **not clipped** (checked with `scrollWidth`, since
+`truncate` is CSS ellipsis and `innerText` still returns the full string), and that the bar is still
+**one row**. All three, because they trade against each other and asserting one lets the others
+regress silently.
+
+**Reversal cost.** Trivial. One boolean column, one route, one switch.

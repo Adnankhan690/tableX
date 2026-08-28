@@ -107,6 +107,16 @@ export interface RestaurantSummary {
   address?: string
   phone?: string
   currency: string
+  /**
+   * The "we are open" switch staff flip during service.
+   *
+   * Distinct from the restaurant's lifecycle `status`: closing for the night must not archive the
+   * restaurant. Already combines both server-side, so a client can render it directly.
+   *
+   * The diner menu goes read-only on this rather than letting somebody build a cart and meet the
+   * refusal at checkout.
+   */
+  accepting_orders: boolean
 }
 
 /** The staff-only view, including the payout and tax configuration. */
@@ -1010,4 +1020,9 @@ export interface RealtimeEvent {
    */
   rating?: number
   at: string
+}
+
+/** The one-tap open/close staff use at the start and end of service. */
+export interface SetAcceptingOrdersRequest {
+  accepting_orders: boolean
 }
