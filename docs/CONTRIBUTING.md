@@ -107,7 +107,7 @@ make -C backend test-race    # the hub and order locking only misbehave under -r
 make smoke                   # 143 API assertions against a running server
 make concurrency             # the four races that happen in a real restaurant
 make api-collection          # 183 assertions, the Bruno collection end to end
-cd apps/diner && node e2e/diner-journey.mjs    # 37 assertions, real browser
+cd apps/diner && node e2e/diner-journey.mjs    # 47 assertions, real browser
 cd apps/diner && node e2e/rating-journey.mjs   # 20 assertions, real browser
 cd apps/admin && node e2e/admin-journey.mjs    # 69 assertions, real browser
 ```

@@ -588,6 +588,28 @@ simultaneous ratings at one dish and asserts the counters still equal the rows.
 not a smaller truth — it ranks an untried dish above one with forty ratings averaging 4.6, and
 the next diner to leave a 3 visibly halves it. Staff are owed the underlying data instead.
 
+### How the score is shown on the menu
+
+The menu leads with a **Most loved** strip: the three highest-rated dishes, above the categories and
+never a re-sort of them. Re-sorting would throw away the restaurant's own `sort_order`, which is a
+decision a manager made and is what a diner sees as the menu's arrangement.
+
+It is computed from the menu **already in memory**. The whole menu arrives in one response (PRD 7),
+so asking the server for a ranking it could only build from the same rows would add a round trip to
+the screen whose latency is a product requirement. Three rules keep it honest: a dish must clear
+`MIN_RATINGS_TO_PUBLISH`, must average at least 4 (without a floor the section quietly becomes
+"least bad"), and must be available — leading with a dish the kitchen has run out of is the one
+recommendation guaranteed to disappoint. It is hidden entirely during a search, where a diner is
+seeking rather than browsing.
+
+**The rating count is revealed on hover, and only where hovering exists.** The score is what a diner
+scans for; the count is what they check before trusting it, and showing both at full weight on every
+row makes a long menu noisier without making any dish clearer. The reveal is gated on
+`(hover: hover) and (pointer: fine)` in CSS rather than on Tailwind's `hover:` variant — that
+variant compiles to `:hover`, which a touch browser fires on tap and then leaves stuck. On touch the
+count is simply always visible: this app is mobile-first by mandate, and a fact hidden behind an
+interaction the device cannot perform is a fact nobody gets.
+
 **Reversal cost.** Low. Two tables' worth of migration (one new table, two columns), three
 routes, and one card on the tracking screen. Dropping it leaves every existing screen unchanged.
 

@@ -57,7 +57,9 @@ Admin panel at **http://localhost:3001**:
 The seed ships **two** restaurants, which is the smallest number that proves the tenant scoping
 works — with one, every query returns the right rows by accident:
 
-- **Spice Garden** — 28 items, 7 categories, 8 tables, 3 staff at the three roles, 5% GST. Two
+- **Spice Garden** — 28 items, 7 categories, 8 tables, 3 staff at the three roles, 5% GST, plus a
+  backdated evening of ratings so the menu, the "Most loved" strip and the reviews screen all have
+  something to show on a fresh seed. Two
   items are deliberately sold out, so the availability path is visible without configuring anything.
 - **Coastal Curry** — 14 items, 4 categories, 4 tables, 2 staff, 5% GST **plus a 10% service
   charge**, so the cart renders a line the first restaurant never shows.
@@ -107,6 +109,11 @@ watch the status update live.
 
 No login, ever. A guest session token in `localStorage` is the whole identity, and it is
 scoped to the table ([D5](docs/DECISIONS.md)).
+
+The menu leads with **Most loved** — the three highest-rated dishes, computed from the menu already
+in memory rather than a second request. Each dish carries its score; the number of diners behind
+that score is revealed on hover where a pointer exists and shown outright on touch, because a phone
+has no hover to hide it behind.
 
 Once the food has reached the table the tracking screen offers a rating: **one tap per dish,
 no Submit button, nothing typed** ([D16](docs/DECISIONS.md)). The window that decides when to
@@ -237,7 +244,7 @@ Everything below runs against a real Postgres and a real browser — no mocks, n
 | Go unit tests | State machine matrix (every from-state x to-state x actor), UPI link construction, Razorpay HMAC, provider registry |
 | API smoke | 143 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection, the rating window at both its edges, and that a service rating is one row per sitting |
 | Concurrency | 8 simultaneous accepts resolve to exactly one winner; 20 simultaneous checkouts get 20 distinct order numbers; 10 duplicate submits produce one order; 8 simultaneous ratings of one dish all reach its running aggregate |
-| Diner journey | 37 assertions in a real iPhone viewport: scan → menu → cart → checkout → live tracking |
+| Diner journey | 47 assertions in a real iPhone viewport: scan → menu → cart → checkout → live tracking, plus a second desktop context proving the rating count reveals on hover *and* stays visible on touch |
 | Rating journey | 20 assertions: a served order → one tap per dish → polarity-matched tags → the service row → survives a reload |
 | Admin journey | 69 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions, the reviews feed, its drill-down, and the food/service split |
 | Bruno collection | 70 requests over 14 folders, all 59 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
