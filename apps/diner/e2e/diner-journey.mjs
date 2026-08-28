@@ -61,7 +61,10 @@ ck('table label is shown in the header', await page.locator('text=Table 3').firs
 await page.screenshot({ path: `${SHOT}/1-menu.png`, fullPage: false })
 
 console.log('=== 2. The menu renders ===')
-const dishCount = await page.locator('li:has(button:text("Add"))').count()
+// Selected on aria-label, not on the visible word. The button's text is styling -- it has
+// already changed once from "Add" to a split "ADD +" -- while `aria-label="Add {dish}"` is the
+// contract the stepper actually promises, and what a voice-control user says out loud.
+const dishCount = await page.locator('li:has(button[aria-label^="Add "])').count()
 ck('dish rows with Add buttons rendered', dishCount > 10, `found ${dishCount}`)
 ck('a category heading is present', await page.locator('h2:text("Starters")').first().isVisible())
 ck(
@@ -113,14 +116,14 @@ ck(
 )
 ck(
   'sold-out dish has no Add control',
-  (await soldOut.first().locator('button:text("Add")').count()) === 0,
+  (await soldOut.first().locator('button[aria-label^="Add "]').count()) === 0,
 )
 
 console.log('=== 3. Search and filter (client-side, no request) ===')
 await page.fill('input[type="search"]', 'paneer')
 await page.waitForTimeout(300)
 const paneerRows = await page
-  .locator('li:has(button:text("Add")), li:has-text("Unavailable")')
+  .locator('li:has(button[aria-label^="Add "]), li:has-text("Unavailable")')
   .count()
 ck('search narrows the menu', paneerRows < dishCount, `${paneerRows} vs ${dishCount}`)
 ck('Paneer Tikka matched', await page.locator('text=Paneer Tikka').first().isVisible())
@@ -136,7 +139,7 @@ await page.waitForTimeout(300)
 
 console.log('=== 4. Add to cart ===')
 const paneerRow = page.locator('li', { hasText: 'Paneer Tikka' }).first()
-await paneerRow.locator('button:text("Add")').click()
+await paneerRow.locator('button[aria-label^="Add "]').click()
 await page.waitForTimeout(250)
 ck(
   'stepper replaces Add after adding',
@@ -146,7 +149,7 @@ await paneerRow.locator('button[aria-label*="One more"]').click()
 await page.waitForTimeout(250)
 
 const naanRow = page.locator('li', { hasText: 'Garlic Naan' }).first()
-await naanRow.locator('button:text("Add")').click()
+await naanRow.locator('button[aria-label^="Add "]').click()
 await page.waitForTimeout(250)
 
 const bar = page.locator('text=View cart').first()

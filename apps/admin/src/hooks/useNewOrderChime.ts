@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as announce from '@/lib/announce'
 import * as chime from '@/lib/chime'
 import { readChimeEnabled } from '@/lib/chime-preference'
-import { arrivalPhrase, scanForArrivals } from '@/lib/new-arrivals'
+import { arrivalPhrase, scanForArrivals, stalePhrase } from '@/lib/new-arrivals'
 
 /**
  * How long after the chime the spoken line starts.
@@ -45,7 +45,12 @@ export interface Announcement {
 }
 
 /**
- * Sounds a chime when an order the staff member has not seen arrives needing acknowledgement.
+ * Sounds a chime when an order needs a human -- either because it just arrived, or because it has
+ * been sitting unacknowledged for too long.
+ *
+ * The second case is why this hook is not just about arrivals. An order used to announce itself
+ * exactly once, at the moment it appeared, which is when a kitchen is least able to look; after
+ * that the only escalation was the card's colour, and a red that never changes stops being read.
  *
  * `orders` must be the FILTER-INDEPENDENT open set -- the board's `queue`, not its `orders`. If it
  * were the visible list, filtering to Ready would silence every new order precisely when the person
@@ -80,6 +85,15 @@ export function useNewOrderChime(orders: OrderView[] | null): NewOrderChime {
    * records them silently; only what shows up after that is news.
    */
   const primed = useRef(false)
+  /**
+   * Orders already re-alerted for having gone unacknowledged.
+   *
+   * Separate from `seen`, and it has to be: `seen` records that the board has MET an order, while
+   * this records that it has COMPLAINED about one. Sharing a set would make the arrival chime
+   * suppress the staleness chime, which is the exact pairing that produced the original bug --
+   * announce once, then silence for as long as it sits.
+   */
+  const reAlerted = useRef<Set<string>>(new Set())
   /** Pending spoken line, so unmounting the board silences it mid-sentence. */
   const speakTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -119,21 +133,36 @@ export function useNewOrderChime(orders: OrderView[] | null): NewOrderChime {
 
     // The decision itself is a pure function in lib/new-arrivals.ts, where its false-positive
     // cases -- a search filter narrowing the board, a colleague accepting first -- are tested.
-    const { unseen, arrived } = scanForArrivals(seen.current, orders, primed.current)
+    const { unseen, arrived, stale } = scanForArrivals(
+      seen.current,
+      orders,
+      primed.current,
+      reAlerted.current,
+    )
 
     // Recorded whether or not it sounds. Muting must not build a backlog that fires all at once
     // the moment sound is switched back on.
     for (const uid of unseen) seen.current.add(uid)
+    for (const order of stale) reAlerted.current.add(order.uid)
     primed.current = true
 
-    if (arrived.length === 0) return
+    if (arrived.length === 0 && stale.length === 0) return
+
+    /**
+     * ARRIVALS WIN when both land on the same scan.
+     *
+     * Not a tie-break for its own sake: a new order still needs a human, while a stale one has
+     * already failed to get one, so the actionable half is the arrival. The stale orders keep
+     * their place in `reAlerted` either way, which is a deliberate trade -- they lose this round's
+     * chime rather than queueing up to interrupt the next one. The board is still showing them.
+     */
+    const phrase = arrived.length > 0 ? arrivalPhrase(arrived) : stalePhrase(stale)
 
     /**
      * The live region updates even when sound is off, and that is deliberate: it is the only
      * arrival signal available to someone who cannot hear, so it must not sit behind an audio
      * preference.
      */
-    const phrase = arrivalPhrase(arrived)
     setAnnouncement((previous) => ({ text: phrase, seq: previous.seq + 1 }))
 
     if (!enabled) return

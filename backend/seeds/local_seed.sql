@@ -308,9 +308,14 @@ FROM restaurant r
 JOIN restaurant_table t ON t.restaurant_id = r.id AND t.uid = 'tbl_demo01'
 JOIN guest_session g ON g.uid = 'gst_demohistory'
 CROSS JOIN (VALUES
-    ('ord_demohist1', 'A-001', 88000, 4400),
-    ('ord_demohist2', 'A-002', 96000, 4800),
-    ('ord_demohist3', 'A-003', 74000, 3700)
+    -- A-1xx rather than A-001, deliberately. Order numbers are unique per (restaurant,
+    -- business_date), so yesterday's A-001 and today's A-001 coexist happily -- until somebody
+    -- reverses migration 013, whose down restores a unique index on (restaurant_id, order_number)
+    -- alone and then correctly refuses on the duplicate. That refusal is the right behaviour and
+    -- should stay; it just should not be something the demo data hands a developer for free.
+    ('ord_demohist1', 'A-101', 88000, 4400),
+    ('ord_demohist2', 'A-102', 96000, 4800),
+    ('ord_demohist3', 'A-103', 74000, 3700)
 ) AS v(uid, order_number, subtotal, tax)
 WHERE r.slug = 'spice-garden'
 ON CONFLICT (uid) DO NOTHING;

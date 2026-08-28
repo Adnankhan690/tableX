@@ -81,6 +81,10 @@ func toRestaurantSummary(r *models.Restaurant) types.RestaurantSummary {
 		Address:     r.Address,
 		Phone:       r.Phone,
 		Currency:    r.Currency,
+		// Open(), not the raw column: an archived restaurant with the switch still on is not
+		// orderable, and a client that renders the column directly would offer an Add button that
+		// the server refuses.
+		AcceptingOrders: r.Open(),
 	}
 }
 

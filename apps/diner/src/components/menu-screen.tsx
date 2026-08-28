@@ -120,6 +120,9 @@ export function MenuScreen() {
    *     recommendations strip above their results is in the way. The veg filter is different: it
    *     narrows, it does not seek.
    */
+  // One source for "can anything be ordered right now", so the banner and every row agree.
+  const closed = menu !== null && !menu.restaurant.accepting_orders
+
   const mostLoved = useMemo(() => {
     if (query.trim() !== '') return []
 
@@ -278,6 +281,26 @@ export function MenuScreen() {
       </div>
 
       <main className="pb-bar">
+        {/*
+          Said BEFORE the menu, not at checkout.
+
+          The server refuses placement when the restaurant is closed (TX_RST_008), but meeting that
+          after choosing four dishes is the same information delivered at the worst possible moment.
+          The menu stays readable on purpose -- someone looking up what a restaurant serves is a
+          perfectly good reason to scan, and hiding it would be worse than saying so.
+        */}
+        {menu !== null && !menu.restaurant.accepting_orders ? (
+          <p
+            role="status"
+            className="border-b border-line bg-surface-sunken px-4 py-3 text-[0.875rem] leading-snug text-muted"
+          >
+            <span className="font-semibold text-ink">
+              {menu.restaurant.name} is not taking orders right now.
+            </span>{' '}
+            You can still look through the menu.
+          </p>
+        ) : null}
+
         {filtered.length === 0 ? (
           <div className="px-4 py-16">
             <EmptyState
@@ -310,14 +333,13 @@ export function MenuScreen() {
                   className="flex items-center gap-1.5 bg-accent-soft px-4 py-2 text-[0.8125rem] font-semibold uppercase tracking-wide text-accent"
                 >
                   <svg
-                    width="14"
-                    height="14"
+                    width="13"
+                    height="13"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                     aria-hidden="true"
-                    className="text-accent"
                   >
-                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                    <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
                   </svg>
                   Most loved
                 </h2>
@@ -327,6 +349,7 @@ export function MenuScreen() {
                       key={`loved-${item.uid}`}
                       item={item}
                       quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      closed={closed}
                       onAdd={() => add(item)}
                       onSetQuantity={(next) => setQuantity(item.uid, next)}
                     />
@@ -353,6 +376,7 @@ export function MenuScreen() {
                       key={item.uid}
                       item={item}
                       quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      closed={closed}
                       onAdd={() => add(item)}
                       onSetQuantity={(next) => setQuantity(item.uid, next)}
                     />
@@ -366,7 +390,7 @@ export function MenuScreen() {
 
       {/* The bar appears only once there is something to review, so it does not cover the menu
           while the diner is still browsing. */}
-      {count > 0 && preview !== null ? (
+      {count > 0 && preview !== null && !closed ? (
         <BottomBar>
           <Link href="/cart" className="block">
             <div className="flex min-h-tap items-center justify-between rounded-card bg-accent px-4 py-3 text-accent-ink">
@@ -386,124 +410,75 @@ export function MenuScreen() {
 
 /** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
 /**
+ * The dish blurb.
+ *
+ * Extracted rather than inlined because the row already carries six other things and this is the
+ * only one that is prose. Clamped to two lines: a long description pushes the price and the rating
+ * apart, and those two are what a diner is actually comparing between rows.
+ */
+function DishDescription({ description }: { description: string }) {
+  return <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">{description}</p>
+}
+
+/**
  * A dish's score on the menu, as one line.
  *
  * One filled star and a number rather than five stars: at this size a five-star row is a
  * cluster of ambiguous shapes on a scrolling list, and the number is what a diner actually
  * reads. The count rides along because "4.6" alone invites the question.
  */
-/**
- * Dynamic tone based on industry-standard thresholds:
- * - >= 4.0: Deep emerald green (high satisfaction)
- * - 3.5 - 3.9: Warm amber / honey (good)
- * - 3.0 - 3.4: Warm orange (average)
- * - < 3.0: Coral red (below average)
- */
-function getRatingTone(score: number) {
-  if (score >= 4.0) {
-    return {
-      badge: 'bg-[#15803d] text-white shadow-emerald-950/10',
-    }
-  }
-  if (score >= 3.5) {
-    return {
-      badge: 'bg-[#d97706] text-white shadow-amber-950/10',
-    }
-  }
-  if (score >= 3.0) {
-    return {
-      badge: 'bg-[#ea580c] text-white shadow-orange-950/10',
-    }
-  }
-  return {
-    badge: 'bg-[#dc2626] text-white shadow-rose-950/10',
-  }
-}
-
-function formatRatingCount(count: number): string {
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`
-  }
-  return String(count)
-}
-
 function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> }) {
-  const tone = getRatingTone(rating.average)
-
   return (
-    <div
+    <span
+      // role="img" with a label, rather than a bare span carrying aria-label -- which is both an
+      // accessibility bug and a biome error. The label spells out what "4.8 (12)" means, since
+      // read aloud those two numbers are ambiguous.
       role="img"
       aria-label={`Rated ${formatRating(rating.average)} out of 5 by ${rating.count} ${
         rating.count === 1 ? 'diner' : 'diners'
       }`}
-      className="inline-flex items-center gap-1.5 align-middle select-none"
+      className="flex items-center gap-1 text-[0.8125rem] text-muted"
     >
-      <span
-        className={cn(
-          'inline-flex items-center gap-0.5 rounded-[5px] px-1.5 py-[2px] text-[0.6875rem] font-bold leading-none tracking-tight shadow-sm',
-          tone.badge,
-        )}
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+        className="text-accent"
       >
-        <span className="tabular-nums leading-none">{formatRating(rating.average)}</span>
-        <svg
-          width="9"
-          height="9"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          aria-hidden="true"
-          className="shrink-0 -translate-y-[0.5px]"
-        >
-          <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
-        </svg>
+        <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+      </svg>
+      <span aria-hidden="true" className="font-medium tabular-nums text-ink">
+        {formatRating(rating.average)}
       </span>
-      <span className="text-[0.75rem] text-muted font-medium tabular-nums" aria-hidden="true">
-        ({formatRatingCount(rating.count)})
+      {/*
+        How many diners are behind the score. Hidden until hover on a pointer device and simply
+        always visible on touch -- see the .rating-count note in globals.css for why that is a
+        media query rather than a Tailwind hover: variant.
+
+        The score is the thing a diner is scanning for; the count is what they check before
+        trusting it. Showing both at full weight on every row makes a long menu noisier without
+        making any single dish clearer.
+      */}
+      <span aria-hidden="true" className="rating-count tabular-nums">
+        ({rating.count})
       </span>
-    </div>
-  )
-}
-
-function DishDescription({ description }: { description: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const words = useMemo(() => description.trim().split(/\s+/).filter(Boolean), [description])
-  const isLong = words.length > 9
-
-  if (!isLong) {
-    return (
-      <p className="mt-1.5 max-w-[190px] sm:max-w-[220px] text-[0.8125rem] leading-relaxed text-muted">
-        {description}
-      </p>
-    )
-  }
-
-  const shortText = words.slice(0, 9).join(' ')
-  const remainingText = words.slice(9).join(' ')
-
-  return (
-    <p
-      onClick={() => setExpanded((v) => !v)}
-      className="mt-1.5 max-w-[190px] sm:max-w-[220px] cursor-pointer select-none text-[0.8125rem] leading-relaxed text-muted transition-all duration-300 ease-in-out hover:text-ink"
-    >
-      <span>{shortText}</span>
-      {!expanded ? (
-        <span className="transition-opacity duration-300">...</span>
-      ) : (
-        <span className="transition-opacity duration-300 ease-in-out">
-          {' ' + remainingText}
-        </span>
-      )}
-    </p>
+    </span>
   )
 }
 
 function DishRow({
   item,
   quantity,
+  closed,
   onAdd,
   onSetQuantity,
 }: {
   item: MenuItemView
   quantity: number
+  /** The whole restaurant is not taking orders. Distinct from this dish being sold out. */
+  closed: boolean
   onAdd: () => void
   onSetQuantity: (next: number) => void
 }) {
@@ -515,16 +490,28 @@ function DishRow({
    */
   const unavailable = !item.is_available
 
+  /**
+   * Two different reasons a dish cannot be added, kept apart on purpose.
+   *
+   * A closed restaurant does NOT get the "Unavailable today" label -- that means the kitchen ran
+   * out of this dish, and stamping it on all forty would be a lie the diner can disprove by
+   * reading it. The banner at the top of the menu already says why, once, in the right words.
+   *
+   * The Add control disappears either way, matching how a sold-out dish behaves: an addable
+   * control that cannot result in an order is worse than no control.
+   */
+  const addable = !unavailable && !closed
+
   return (
     <li
       className={cn(
-        'rating-hover flex gap-3.5 border-b border-line px-4 pt-4 pb-6 items-start justify-between',
+        'rating-hover flex gap-3 border-b border-line px-4 py-3',
         unavailable && 'opacity-55',
       )}
     >
-      <div className="min-w-0 flex-1 pr-2">
-        <div className="flex items-center gap-2">
-          <FoodTypeBadge type={item.food_type} size={15} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <FoodTypeBadge type={item.food_type} size={14} />
           {item.is_bestseller && !unavailable ? (
             <span className="rounded-md bg-amber-100 border border-amber-300/50 px-2 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-amber-800">
               Bestseller
@@ -532,11 +519,18 @@ function DishRow({
           ) : null}
         </div>
 
-        <p className="mt-1.5 text-dish-name font-bold text-ink leading-tight">{item.name}</p>
+        <p className="mt-1 text-dish-name">{item.name}</p>
 
-        <p className="mt-1 text-base font-bold text-ink tabular-nums">{item.price.display}</p>
+        <p className="mt-1 text-base font-bold tabular-nums text-ink">{item.price.display}</p>
 
-        {/* Rating placed directly below price according to industry standard */}
+        {/*
+          Rating directly under the price, which is where every food app puts it -- the two are
+          read as one unit when deciding.
+
+          Absent, not zeroed, for a dish without enough ratings: the server omits the field below
+          its publication threshold. A "5.0" from one tap would rank an untried dish above a
+          consistently good one, so no score is the honest rendering (PRD 6.2).
+        */}
         {item.rating ? (
           <div className="mt-1">
             <DishRating rating={item.rating} />
@@ -555,16 +549,24 @@ function DishRow({
         ) : null}
       </div>
 
-      <div className="relative shrink-0 flex flex-col items-center select-none pt-0.5">
-        <div className="relative overflow-hidden rounded-2xl shadow-sm">
-          <DishImage
-            name={item.name}
-            url={item.image_url}
-            className="w-[140px] h-[126px] sm:w-[152px] sm:h-[136px] rounded-2xl"
-          />
-        </div>
-        {!unavailable ? (
-          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-[1]">
+      {/*
+        `self-start` is load-bearing, not tidiness. This is a flex child, so without it the
+        default `align-items: stretch` makes it as tall as the whole row -- and the stepper's
+        `-bottom-3` then anchors to the bottom of the row rather than to the photo, leaving it
+        floating a hundred pixels below the image it is supposed to sit on.
+
+        `relative` is what the overlay positions against, and `mb-3` is what stops it colliding
+        with the row divider: it hangs 12px below the photo, which is exactly the row's padding.
+      */}
+      <div className="relative mb-3 shrink-0 self-start">
+        <DishImage name={item.name} {...(item.image_url ? { url: item.image_url } : {})} />
+        {/*
+          `addable`, not `!unavailable`. The two differ when the restaurant itself is closed
+          (DECISIONS.md D18) -- a sold-out dish and a shut kitchen both mean "cannot be ordered",
+          and only one of them is about this dish.
+        */}
+        {addable ? (
+          <div className="absolute -bottom-3 left-1/2 z-[1] -translate-x-1/2">
             <QuantityStepper
               quantity={quantity}
               label={item.name}

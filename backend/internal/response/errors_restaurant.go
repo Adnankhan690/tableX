@@ -11,6 +11,7 @@ const (
 	ErrCodeRestaurantCreateFailed ErrorCode = "TX_RST_005"
 	ErrCodeRestaurantFetchFailed  ErrorCode = "TX_RST_006"
 	ErrCodeUPINotConfigured       ErrorCode = "TX_RST_007"
+	ErrCodeRestaurantClosed       ErrorCode = "TX_RST_008"
 
 	ErrCodeTableNotFound      ErrorCode = "TX_TBL_001"
 	ErrCodeTableInactive      ErrorCode = "TX_TBL_002"
@@ -111,5 +112,17 @@ var (
 		ErrorCode:    ErrCodeQRRenderFailed,
 		ErrorMessage: "failed to render QR code",
 		HttpCode:     http.StatusInternalServerError,
+	}
+	// ErrRestaurantClosed is the restaurant not taking orders right now.
+	//
+	// DISTINCT from ErrRestaurantInactive, which means the restaurant is not on the platform. This
+	// one is temporary and expected -- a diner who scans at 11pm has done nothing wrong and should
+	// be told the kitchen is shut, not that the restaurant does not exist.
+	//
+	// 409 rather than 403: the request was well formed and would have been legal an hour ago.
+	ErrRestaurantClosed = &ApplicationError{
+		ErrorCode:    ErrCodeRestaurantClosed,
+		ErrorMessage: "this restaurant is not taking orders right now",
+		HttpCode:     http.StatusConflict,
 	}
 )

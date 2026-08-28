@@ -448,7 +448,121 @@ ck(
 )
 await page.screenshot({ path: `${SHOT}/a13-reviews-dish.png`, fullPage: true })
 
-console.log('=== 18. No unexpected console errors ===')
+console.log('=== 18. The open/close switch (D18) ===')
+// Still signed in as FLOOR STAFF from section 14, deliberately. Closing up is a floor action, and
+// running this as the least-privileged user is what proves the role rule rather than assuming it.
+//
+// The switch is SHELL CHROME, not part of any page -- it sits beside Sign out at every width and on
+// every screen -- so this deliberately does not navigate to the board first.
+const openSwitch = page.locator('[role="switch"]')
+await openSwitch.waitFor({ timeout: 15000 })
+
+ck(
+  'the switch reports state, not an instruction',
+  (await openSwitch.getAttribute('aria-checked')) === 'true',
+)
+ck(
+  'its label names the thing, not the state',
+  // The label must NOT flip between "Open" and "Closed". A label that changes is redundant with
+  // the track at best, and at worst reads as an instruction -- "Closed" is as easily
+  // press-this-to-close as we-are-closed.
+  /^Open$/.test((await openSwitch.innerText()).trim()),
+  await openSwitch.innerText(),
+)
+
+await openSwitch.click()
+// Not scoped to <main>: the banner sits above it, in the same band as the stats strip -- page
+// level state is chrome, the ticket list is the content.
+await page.waitForSelector('text=Not taking orders', { timeout: 10000 })
+ck('floor staff can close for orders', (await openSwitch.getAttribute('aria-checked')) === 'false')
+ck(
+  'and the label still does not change',
+  /^Open$/.test((await openSwitch.innerText()).trim()),
+  await openSwitch.innerText(),
+)
+await page.screenshot({ path: `${SHOT}/a15-closed.png` })
+
+// The banner is the loud half: a small control reading "off" is easy to walk past at the start of
+// a shift, and every minute it stays that way is an outage nobody is being told about.
+ck(
+  'a closed restaurant says so loudly',
+  // Anchored on the substantive claim rather than a whole sentence: the wording moved once already
+  // when this notice went from the order board to the shell, and a test of the copy would have
+  // gone red for a change no user could perceive.
+  /placing an order is refused/i.test(await page.locator('body').innerText()),
+)
+
+const refused = await (
+  await fetch(`${API}/api/guest/v1/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Guest-Token': gToken },
+    body: JSON.stringify({
+      items: [{ menu_item_uid: item, quantity: 1 }],
+      payment_method: 'counter',
+    }),
+  })
+).json()
+ck('and a diner really cannot order', refused.code === 'TX_RST_008', refused.code)
+
+// Reopened before leaving, so this journey does not hand the next run a closed restaurant.
+await openSwitch.click()
+await page.waitForTimeout(1200)
+ck('reopening restores ordering', (await openSwitch.getAttribute('aria-checked')) === 'true')
+
+/**
+ * THE SAME CONTROL, ON A PHONE.
+ *
+ * This is a real bug that shipped and was caught by hand. The switch lived in PageHeader's
+ * `actions`, and this screen's header carries `hidden sm:flex` -- so below 640px it was
+ * display:none. The closed-state banner sat outside the header and kept its own Reopen button,
+ * which left a phone able to REOPEN a restaurant but never to CLOSE one.
+ *
+ * Asserted at a phone width because that is the only width where it was ever wrong, and asserted
+ * on VISIBILITY rather than presence: the element was in the DOM the whole time.
+ */
+await page.setViewportSize({ width: 390, height: 844 })
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForSelector('[role="switch"]', { timeout: 15000 })
+const phoneSwitch = page.locator('[role="switch"]')
+/**
+ * The name must be intact AND the bar must be one row.
+ *
+ * Both, because they trade against each other: the brand is a flex item, so a neighbour that does
+ * not fit either truncates the restaurant's name or pushes itself onto a second line. Asserting
+ * only one of them lets the other regress silently -- and the name is what tells a staff member
+ * which restaurant they are signed into.
+ *
+ * Clipping is checked with scrollWidth rather than by reading the text: `truncate` is CSS ellipsis,
+ * so innerText still returns the full string on an element that is visibly cut off.
+ */
+const brandName = page.locator('header span.block.truncate').first()
+ck(
+  'the restaurant name is not squeezed out to make room for it',
+  !(await brandName.evaluate((el) => el.scrollWidth > el.clientWidth + 1)),
+  await brandName.innerText(),
+)
+
+const brandBox = await brandName.boundingBox()
+const switchBox = await phoneSwitch.boundingBox()
+ck(
+  'and the bar is still a single row',
+  Math.abs(brandBox.y + brandBox.height / 2 - (switchBox.y + switchBox.height / 2)) < 30,
+  `brand y=${Math.round(brandBox.y)} switch y=${Math.round(switchBox.y)}`,
+)
+ck('the switch is reachable on a phone', await phoneSwitch.isVisible())
+ck(
+  'and there is exactly one of it, not a duplicate behind a breakpoint',
+  (await phoneSwitch.count()) === 1,
+  `${await phoneSwitch.count()} found`,
+)
+ck(
+  'so an open restaurant can actually be closed from a phone',
+  (await phoneSwitch.getAttribute('aria-checked')) === 'true',
+)
+await page.screenshot({ path: `${SHOT}/a16-phone-switch.png` })
+await page.setViewportSize({ width: 1280, height: 900 })
+
+console.log('=== 19. No unexpected console errors ===')
 const real = consoleErrors.filter(
   (e) =>
     !/favicon|Download the React DevTools/i.test(e) &&

@@ -235,3 +235,35 @@ func (s *serviceRestaurant) GetPublicQR(
 		PNGBase64: png,
 	}, nil
 }
+
+// SetAcceptingOrders flips the "we are open" switch (DECISIONS.md D18).
+//
+// No role check, deliberately, and it is the only settings write without one. Closing up is a
+// floor action taken by whoever is actually standing there at the end of service; requiring a
+// manager would mean orders keep arriving after the kitchen has gone home, which is the exact
+// failure the switch exists to prevent. The same reasoning already puts menu availability in every
+// role's hands.
+func (s *serviceRestaurant) SetAcceptingOrders(
+	ctx context.Context,
+	actor *StaffPrincipal,
+	req *types.RequestSetAcceptingOrders,
+) (*types.RestaurantSettings, *response.ApplicationError) {
+	log := s.Access.Logger.With(ctx)
+
+	restaurant, err := s.Access.Repositories.Restaurant.UpdateFields(
+		ctx, actor.RestaurantID, map[string]any{"accepting_orders": req.AcceptingOrders})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, response.ErrRestaurantNotFound
+		}
+		log.Errorf("[SetAcceptingOrders] restaurant=%d: %+v", actor.RestaurantID, err)
+		return nil, response.ErrRestaurantUpdateFailed
+	}
+
+	// Said out loud in the log, because it is the one setting whose effect is invisible on the
+	// admin panel until a diner complains that they cannot order.
+	log.Infof("[SetAcceptingOrders] restaurant=%d accepting=%t by staff=%s",
+		actor.RestaurantID, req.AcceptingOrders, actor.StaffUID)
+
+	return toRestaurantSettings(restaurant), nil
+}

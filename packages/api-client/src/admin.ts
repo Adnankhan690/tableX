@@ -27,6 +27,7 @@ import type {
   ReviewListResponse,
   ReviewSummaryResponse,
   ServiceReviewListResponse,
+  SetAcceptingOrdersRequest,
   StaffListResponse,
   StaffLoginRequest,
   StaffLoginResponse,
@@ -143,6 +144,22 @@ export class AdminApi {
   }
 
   // --- Menu ---
+
+  /**
+   * Flips the "we are open" switch.
+   *
+   * A separate call from updateSettings, matching setAvailability: closing up mid-service must not
+   * submit whatever else a settings form was holding. Open to every staff role, unlike the rest of
+   * settings -- closing up is a floor action.
+   */
+  setAcceptingOrders(token: string, accepting: boolean): Promise<RestaurantSettings> {
+    const body: SetAcceptingOrdersRequest = { accepting_orders: accepting }
+    return this.http.request(`${ADMIN}/settings/accepting-orders`, {
+      method: 'PATCH',
+      body,
+      auth: { kind: 'staff', token },
+    })
+  }
 
   getMenu(token: string, signal?: AbortSignal): Promise<AdminMenuResponse> {
     return this.http.request(`${ADMIN}/menu`, {

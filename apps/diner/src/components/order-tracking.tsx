@@ -5,6 +5,7 @@ import type { OrderView, PaymentStatusResponse } from '@tablex/shared'
 import {
   DINER_PROGRESS_STEPS,
   DINER_STATUS_LABEL,
+  elapsedSeconds,
   isTerminal,
   progressFraction,
 } from '@tablex/shared'
@@ -17,6 +18,16 @@ import { CenteredMessage, ScreenHeader } from '@/components/screen'
 import { useGatedSession } from '@/components/session-gate'
 import { useOrderStream } from '@/hooks/useOrderStream'
 import { api } from '@/lib/api'
+import { unconfirmedStage } from '@/lib/order-waiting'
+
+/**
+ * How often the screen re-reads the clock while an order sits unconfirmed.
+ *
+ * Needed because nothing else re-renders here: with the socket connected there is no polling, so
+ * without a tick the notice would appear only when the order itself changed -- which, for an order
+ * nobody is touching, is never.
+ */
+const CLOCK_TICK_MS = 30_000
 
 /** The order progress screen (PRD 6.5). */
 export function OrderTracking({ orderUid }: { orderUid: string }) {
@@ -51,6 +62,20 @@ export function OrderTracking({ orderUid }: { orderUid: string }) {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  /**
+   * A clock that ticks only while it is needed.
+   *
+   * Gated on the order still being unconfirmed, so a completed order on a phone left on the table
+   * is not waking a timer every thirty seconds for the rest of the evening.
+   */
+  const [now, setNow] = useState(() => Date.now())
+  const unconfirmed = order?.status === 'placed'
+  useEffect(() => {
+    if (!unconfirmed) return
+    const timer = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS)
+    return () => clearInterval(timer)
+  }, [unconfirmed])
 
   const terminal = order !== null && isTerminal(order.status)
 
@@ -190,6 +215,25 @@ export function OrderTracking({ orderUid }: { orderUid: string }) {
           </div>
         </section>
 
+        {/*
+          Said plainly, once waiting has stopped being normal.
+
+          DELIBERATELY NOT A COUNTDOWN, and not a second progress bar. A countdown puts a clock on
+          the restaurant's failure and hands the diner the anxiety, and it promises something that
+          is not true -- staff may accept at any moment, and then the number was a lie. A progress
+          bar means "this is advancing"; nothing is advancing, and the bar above is already telling
+          that story honestly.
+
+          Elapsed time is a fact the diner can act on. Remaining time is a threat.
+        */}
+        {unconfirmed ? (
+          <UnconfirmedNotice
+            placedAt={order.placed_at}
+            now={now}
+            orderNumber={order.order_number}
+          />
+        ) : null}
+
         {notice !== null ? (
           <p
             role="status"
@@ -310,6 +354,62 @@ export function OrderTracking({ orderUid }: { orderUid: string }) {
         ) : null}
       </main>
     </>
+  )
+}
+
+/**
+ * What the diner is told while nobody has picked up their order.
+ *
+ * Two stages, because they call for different things. At eight minutes the useful information is
+ * that this is not normal, and that cancelling is available -- the state machine already permits it
+ * while the order is `placed` (docs/DECISIONS.md D6), it was simply never framed as the answer to
+ * anything. At twenty minutes waiting longer cannot help, so the screen stops offering options and
+ * gives an instruction, with the number staff search by.
+ */
+function UnconfirmedNotice({
+  placedAt,
+  now,
+  orderNumber,
+}: {
+  placedAt: string
+  now: number
+  orderNumber: string
+}) {
+  const waited = elapsedSeconds(placedAt, now)
+  const stage = unconfirmedStage(waited)
+  if (stage === 'none') return null
+
+  const minutes = Math.floor(waited / 60)
+  const escalated = stage === 'escalated'
+
+  return (
+    <section
+      // Polite, not assertive: it must not interrupt whatever a screen-reader user is reading, and
+      // nothing here is an emergency.
+      aria-live="polite"
+      className={cn(
+        'rounded-card border p-4',
+        escalated ? 'border-nonveg bg-surface' : 'border-line bg-surface-sunken',
+      )}
+    >
+      <p className={cn('text-[0.9375rem] font-semibold', escalated && 'text-nonveg')}>
+        {escalated ? 'Still not confirmed' : 'The kitchen has not confirmed this yet'}
+      </p>
+      <p className="mt-1 text-[0.875rem] leading-snug text-muted">
+        {escalated ? (
+          <>
+            It has been {minutes} minutes. Please show order{' '}
+            <span className="font-semibold tabular-nums text-ink">{orderNumber}</span> to a staff
+            member — they can find it straight away.
+          </>
+        ) : (
+          <>
+            It has been {minutes} minutes, which is longer than usual. It may still come through —
+            or you can cancel below and speak to someone.
+          </>
+        )}
+      </p>
+    </section>
   )
 }
 

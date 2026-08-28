@@ -66,6 +66,13 @@ type ServiceRestaurantMethods interface {
 	ListPublic(ctx context.Context) (*types.ResponseRestaurantDirectory, *response.ApplicationError)
 	// GetPublicQR renders a restaurant's own QR code, encoding its /r/{slug} landing page.
 	GetPublicQR(ctx context.Context, slug string, size int) (*types.RestaurantQRView, *response.ApplicationError)
+	// SetAcceptingOrders is the one-tap open/close staff use at the start and end of service.
+	//
+	// Open to every role, unlike the rest of settings. Closing up is a floor action taken by
+	// whoever is actually there, and routing it through a manager would mean orders keep arriving
+	// after the kitchen has gone home -- the same argument that puts menu availability in every
+	// role's hands.
+	SetAcceptingOrders(ctx context.Context, actor *StaffPrincipal, req *types.RequestSetAcceptingOrders) (*types.RestaurantSettings, *response.ApplicationError)
 }
 
 // ServiceTableMethods handles tables and their QR codes.

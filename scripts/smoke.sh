@@ -407,7 +407,44 @@ scored=[i['rating'] for i in items if i.get('rating')]
 print('yes' if all(r['count'] >= 3 for r in scored) else 'no')")"
 
 echo
-echo "=============== 9. UPI PAYMENT (D2) ==============="
+echo "=============== 9. THE OPEN/CLOSE SWITCH (D18) ==============="
+# The cheapest control against an order placed from outside the restaurant: at 11pm there is
+# nobody to accept it and nobody to eat it.
+CLOSE=$(curl -s -X PATCH $ADM/settings/accepting-orders -H "Authorization: Bearer $JWT" \
+  -H 'Content-Type: application/json' -d '{"accepting_orders":false}')
+ck "staff can close for orders"          "False" "$(echo "$CLOSE" | j data.accepting_orders)"
+
+echo "--- a closed restaurant refuses orders, but still shows the menu ---"
+SHUT=$(curl -s -X POST $GST/orders -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"items\":[{\"menu_item_uid\":\"$PANEER\",\"quantity\":1}],\"payment_method\":\"counter\"}")
+ck "placing while closed -> TX_RST_008"  "TX_RST_008" "$(echo "$SHUT" | j code)"
+# Browsing stays open on purpose. Someone looking up what a restaurant serves is a good reason to
+# scan, and hiding the menu would be worse than saying the kitchen is shut.
+ck "the menu is still readable"          "200" "$(curl -s -o /dev/null -w "%{http_code}" $GST/menu -H "X-Guest-Token: $TOKEN")"
+# ...and it says so, so nobody builds a cart before finding out at checkout.
+ck "and the menu says it is closed"      "False" "$(curl -s $GST/menu -H "X-Guest-Token: $TOKEN" | j data.restaurant.accepting_orders)"
+
+echo "--- closing is not archiving ---"
+# The whole reason accepting_orders is a separate column from status: closing up for the night must
+# not drop the restaurant out of the public directory or orphan its order history.
+ck "still active on the platform"        "active" "$(curl -s $ADM/settings -H "Authorization: Bearer $JWT" | j data.status)"
+ck "still in the public directory"       "yes" "$(curl -s $PUB/restaurants | grep -q 'spice-garden' && echo yes || echo no)"
+
+echo "--- every role may flip it, because closing up is a floor action ---"
+STAFFJWT=$(curl -s -X POST $ADM/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"staff@spicegarden.test","password":"password123"}' | j data.access_token)
+ck "floor staff can reopen"              "True" "$(curl -s -X PATCH $ADM/settings/accepting-orders \
+  -H "Authorization: Bearer $STAFFJWT" -H 'Content-Type: application/json' \
+  -d '{"accepting_orders":true}' | j data.accepting_orders)"
+# Assigned first rather than inlined into ck: the nested quoting of a -w format string inside a
+# command substitution inside a quoted argument does not survive, and mangles the body into a 400.
+REOPENED=$(curl -s -o /dev/null -w "%{http_code}" -X POST $GST/orders \
+  -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"items\":[{\"menu_item_uid\":\"$PANEER\",\"quantity\":1}],\"payment_method\":\"counter\"}")
+ck "and ordering works again"            "201" "$REOPENED"
+
+echo
+echo "=============== 10. UPI PAYMENT (D2) ==============="
 UPIORD=$(curl -s -X POST $GST/orders -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"items\":[{\"menu_item_uid\":\"$PANEER\",\"quantity\":1}],\"payment_method\":\"online_upi\"}")
 UUID=$(echo "$UPIORD" | j data.order.uid)
@@ -424,7 +461,7 @@ ck "scannable QR rendered server-side"   "yes" "$HASQR"
 ck "static UPI admits it cannot confirm" "True" "$MANUAL"
 
 echo
-echo "=============== 10. ROLES (D3) ==============="
+echo "=============== 11. ROLES (D3) ==============="
 SLOGIN=$(curl -s -X POST $ADM/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"staff@spicegarden.test","password":"password123"}')
 SJWT=$(echo "$SLOGIN" | j data.access_token)
@@ -486,7 +523,7 @@ ck "the menu says whether uploads exist" "yes" "$(curl -s $ADM/menu -H "Authoriz
   | python3 -c "import sys,json;print('yes' if 'image_upload_enabled' in json.load(sys.stdin)['data'] else 'no')")"
 
 echo
-echo "=============== 11. QR & TABLES (D4) ==============="
+echo "=============== 12. QR & TABLES (D4) ==============="
 TABLES=$(curl -s $ADM/tables -H "Authorization: Bearer $JWT")
 NTAB=$(echo "$TABLES" | python3 -c "import sys,json;print(len(json.load(sys.stdin)['data']['tables']))")
 T3UID=$(echo "$TABLES" | python3 -c "
@@ -509,7 +546,7 @@ print(','.join(bad) if bad else 'none')")
 ck "no staff-only field leaks publicly"  "none" "$LEAKS"
 
 echo
-echo "=============== 12. STATS (PRD 3) ==============="
+echo "=============== 13. STATS (PRD 3) ==============="
 ST=$(curl -s $ADM/stats/today -H "Authorization: Bearer $JWT")
 ck "orders counted today"                "yes" "$([ "$(echo "$ST" | j orders_placed)" != "" ] || [ "$(echo "$ST" | j data.orders_placed)" != "" ] && echo yes || echo no)"
 echo "  stats: $(echo "$ST" | python3 -c "
@@ -521,7 +558,7 @@ print('placed=%s live=%s completed=%s revenue=%s unpaid=%s accept_avg=%s' % (
  d.get('avg_accept_secs')))" 2>/dev/null)"
 
 echo
-echo "=============== 13. WEBHOOK SECURITY (D2) ==============="
+echo "=============== 14. WEBHOOK SECURITY (D2) ==============="
 UNSIGNED=$(curl -s -o /dev/null -w "%{http_code}" -X POST $PUB/webhooks/payments/razorpay \
   -H 'Content-Type: application/json' -d '{"event":"payment.captured"}')
 ck "unsigned razorpay webhook rejected"  "409" "$UNSIGNED"
@@ -529,7 +566,7 @@ BOGUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST $PUB/webhooks/payments/no
 ck "unknown provider rejected"           "409" "$BOGUS"
 
 echo
-echo "=============== 14. ONBOARDING A RESTAURANT (D14) ==============="
+echo "=============== 15. ONBOARDING A RESTAURANT (D14) ==============="
 # The operator surface. Gated on a platform token, so the section skips itself rather than
 # failing when this deployment has none -- a server started without TABLEX_PLATFORM_TOKEN does
 # not mount the group at all, and reporting that as a broken feature would be wrong.
