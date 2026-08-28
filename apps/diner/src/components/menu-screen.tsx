@@ -392,27 +392,51 @@ export function MenuScreen() {
  * reads. The count rides along because "4.6" alone invites the question.
  */
 /**
- * A dish's score on the menu, formatted as a star rating pill matching the reference design.
+ * Dynamic tone based on industry-standard thresholds:
+ * - >= 4.0: Emerald green (high satisfaction)
+ * - 3.0 - 3.9: Amber / mustard (good/average)
+ * - < 3.0: Coral red (below average)
  */
+function getRatingTone(score: number) {
+  if (score >= 4.0) {
+    return {
+      badge: 'bg-[#24963f] text-white',
+    }
+  }
+  if (score >= 3.0) {
+    return {
+      badge: 'bg-[#d97706] text-white',
+    }
+  }
+  return {
+    badge: 'bg-[#dc2626] text-white',
+  }
+}
+
 function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> }) {
-  const fullStars = Math.min(5, Math.max(0, Math.round(rating.average)))
+  const tone = getRatingTone(rating.average)
 
   return (
-    <span
+    <div
       role="img"
       aria-label={`Rated ${formatRating(rating.average)} out of 5 by ${rating.count} ${
         rating.count === 1 ? 'diner' : 'diners'
       }`}
-      className="inline-flex items-center gap-1.5 rounded-md border border-amber-300/80 bg-amber-50/50 px-2 py-0.5 text-xs text-ink/80"
+      className="inline-flex items-center gap-1.5 align-middle"
     >
-      <span className="flex items-center text-amber-500 tracking-[-1px] text-[0.8125rem]" aria-hidden="true">
-        {'★'.repeat(fullStars)}
-        {'☆'.repeat(5 - fullStars)}
+      <span
+        className={cn(
+          'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[0.6875rem] font-bold leading-none tracking-tight shadow-sm',
+          tone.badge,
+        )}
+      >
+        <span aria-hidden="true" className="text-[0.625rem] leading-none">★</span>
+        <span className="tabular-nums leading-none">{formatRating(rating.average)}</span>
       </span>
-      <span className="font-medium tabular-nums text-muted text-[0.75rem]" aria-hidden="true">
-        {rating.count} {rating.count === 1 ? 'rating' : 'ratings'}
+      <span className="text-[0.75rem] text-muted font-medium tabular-nums" aria-hidden="true">
+        ({rating.count})
       </span>
-    </span>
+    </div>
   )
 }
 
@@ -487,13 +511,14 @@ function DishRow({
 
         <p className="mt-1.5 text-dish-name font-bold text-ink leading-tight">{item.name}</p>
 
+        <p className="mt-1 text-base font-bold text-ink tabular-nums">{item.price.display}</p>
+
+        {/* Rating placed directly below price according to industry standard */}
         {item.rating ? (
-          <div className="mt-1.5">
+          <div className="mt-1">
             <DishRating rating={item.rating} />
           </div>
         ) : null}
-
-        <p className="mt-1.5 text-base font-bold text-ink tabular-nums">{item.price.display}</p>
 
         {item.description ? <DishDescription description={item.description} /> : null}
 
