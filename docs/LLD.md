@@ -104,7 +104,30 @@ is retained for analytics only.
 is scoped per restaurant; rather than `SELECT COUNT(*)` because two concurrent diners would compute
 the same count.
 
-### 1.5 Payments
+### 1.5 Ratings
+
+**`order_item_review`** — one diner's rating of one dish, keyed to the **order line** rather than
+the menu item. The same dish ordered on two nights is two ratings, because it was two platings;
+collapsing them would let a dish that has got worse hide behind the night it was good.
+`UNIQUE (order_item_id)`, so a diner correcting a mis-tapped star updates rather than accumulates —
+which is also what keeps the counters below reconcilable. `restaurant_id` is denormalised from
+`orders`: every admin-side read is "this restaurant's reviews", so carrying the tenant here makes
+that an index scan rather than a join whose only purpose is the `WHERE`.
+
+`tags` is a comma-separated list from a closed vocabulary in one `TEXT` column — not a child table,
+because the vocabulary is fixed and small and the list is never queried by element; and not a
+Postgres array, because the unit tests run on SQLite.
+
+**`menu_item.rating_count` / `rating_sum`** — the running aggregate, and **the one denormalised
+pair in this schema.** The diner menu is the hottest read in the product and must not carry a
+`GROUP BY` that grows with every review ever left. Sum and count rather than a stored average:
+an average is lossy, is a float in a schema that has none ([D7](./DECISIONS.md)), and cannot be
+updated without a read-modify-write, which silently loses one of two concurrent ratings. Both move
+by delta *in SQL*, inside the review transaction. Migration 016 carries the reconstruction query;
+`scripts/concurrency.sh` §D asserts the counters still equal the rows under eight simultaneous
+ratings. See [D16](./DECISIONS.md) for the eligibility rule, which is the substantive part.
+
+### 1.6 Payments
 
 **`payment`** — one attempt. `provider` (`upi_static` / `razorpay` / `mock` / `counter`),
 `reference` (the short string echoed in the UPI note, which is the entire reconciliation mechanism
@@ -141,6 +164,8 @@ erDiagram
     orders ||--o{ payment : "settled by"
 
     menu_item ||--o{ order_item : "snapshotted into"
+    order_item ||--o| order_item_review : "rated by"
+    menu_item ||--o{ order_item_review : "aggregated onto"
     payment ||--o{ payment_webhook_event : "confirmed by"
 ```
 
@@ -154,6 +179,8 @@ erDiagram
 | `orders` → `order_item` | 1 → many | |
 | `orders` → `payment` | 1 → **many** | A failed UPI attempt then cash is two rows. |
 | `menu_item` → `order_item` | 1 → many | Analytics only; display and pricing use the snapshot. |
+| `order_item` → `order_item_review` | 1 → **0 or 1** | Unique, so a correction updates in place. |
+| `menu_item` → `order_item_review` | 1 → many | What the running aggregate on `menu_item` sums. |
 | `payment` → `payment_webhook_event` | 1 → many | Several events per payment: authorized, captured, refunded. |
 
 ### 2.2 Delete rules, and why each was chosen
@@ -168,6 +195,8 @@ The `ON DELETE` rule is where a schema quietly decides what history it is willin
 | `payment` → `orders` | `CASCADE` | Same. |
 | `orders` → `restaurant_table` | **`RESTRICT`** | Deleting a table must not delete the orders taken at it. Tables are archived (`status`), not deleted. |
 | `order_item` → `menu_item` | **`RESTRICT`** | Deleting a dish must not delete the record of having sold it. Dishes are archived. |
+| `order_item_review` → `menu_item` | **`RESTRICT`** | Same reason: deleting a dish must not delete the evidence of how it was received. |
+| `order_item_review` → `guest_session` | **`SET NULL`** | The rating outlives the anonymous identity that left it. Cascading would lose a night's ratings to session cleanup. |
 | `menu_item` → `menu_category` | **`RESTRICT`** | A dish cannot be orphaned into no section. |
 | `orders` → `guest_session` | **`SET NULL`** | Sessions are ephemeral and reaped on expiry; the order must survive its session. This is what lets the sweeper in §6 run safely. |
 | `payment_webhook_event` → `payment` | `SET NULL` | A webhook naming a payment we never created is still worth recording. |

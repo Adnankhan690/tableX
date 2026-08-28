@@ -109,6 +109,7 @@ type Controllers struct {
 	Scan     *ControllerScan
 	Menu     *ControllerMenu
 	Order    *ControllerOrder
+	Review   *ControllerReview
 	Payment  *ControllerPayment
 	Table    *ControllerTable
 	Settings *ControllerSettings
@@ -135,6 +136,7 @@ func NewControllers(
 		Scan:     NewControllerScan(access),
 		Menu:     NewControllerMenu(access),
 		Order:    NewControllerOrder(access),
+		Review:   NewControllerReview(access),
 		Payment:  NewControllerPayment(access),
 		Table:    NewControllerTable(access),
 		Settings: NewControllerSettings(access),

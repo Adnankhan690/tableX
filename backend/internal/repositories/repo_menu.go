@@ -365,3 +365,41 @@ func (a *repositoryMenu) SetAvailability(ctx context.Context, restaurantID, id i
 	}
 	return &item, nil
 }
+
+// AdjustRating moves a dish's review aggregate by a delta.
+//
+// The arithmetic is in SQL, not Go, and that is the whole point of the method. The obvious
+// implementation -- read rating_count and rating_sum, add in Go, write them back -- is a
+// read-modify-write: two diners rating the same dish in the same second each read the same
+// starting value, and whichever writes second silently discards the other's rating. Expressed
+// as `rating_sum = rating_sum + ?` the database serialises the two updates and both land.
+//
+// Correct only inside the transaction that wrote the review, which is why tx is not optional
+// in practice: a committed review whose counters never moved is a permanently wrong average
+// with nothing left to point at.
+func (a *repositoryMenu) AdjustRating(
+	ctx context.Context, tx *gorm.DB, menuItemID int32, countDelta int, sumDelta int64,
+) error {
+	if countDelta == 0 && sumDelta == 0 {
+		// A diner re-tapping the star they already gave. Nothing to move, and an UPDATE with
+		// an empty SET is a syntax error.
+		return nil
+	}
+
+	res := a.conn(tx).WithContext(ctx).Model(&models.MenuItem{}).
+		Where(whereID, menuItemID).
+		Updates(map[string]any{
+			"rating_count": gorm.Expr("rating_count + ?", countDelta),
+			"rating_sum":   gorm.Expr("rating_sum + ?", sumDelta),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("adjust menu item rating id=%d: %w", menuItemID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		// The dish vanished between the order line being written and this review. Reported
+		// rather than swallowed: the caller is inside a transaction that must roll back, or
+		// the review would commit against counters that never moved.
+		return fmt.Errorf("adjust menu item rating id=%d: %w", menuItemID, gorm.ErrRecordNotFound)
+	}
+	return nil
+}

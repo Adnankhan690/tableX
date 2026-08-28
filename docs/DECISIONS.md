@@ -490,3 +490,103 @@ change for a deployment that has moved entirely to uploaded photos.
 **Reversal cost.** Low. The routes, the `internal/storage` package and one nullable column.
 Dropping it leaves `image_url` working exactly as it did before.
 
+
+---
+
+## D16 — Dish ratings open on evidence the food arrived, not on staff tapping "served"
+
+**Not a PRD question.** The product had no way for a diner to say whether the food was any
+good, and no way for a restaurant to find out which dish was failing.
+
+**Decision.** A diner rates each dish they were served, one tap per dish, from the order
+tracking screen. Three routes carry it:
+
+| | |
+| --- | --- |
+| `PUT /guest/v1/orders/:uid/items/:item_uid/review` | Rate one dish. Idempotent. |
+| `GET /admin/v1/reviews` | The feed, filterable by rating, dish, date, has-a-note. |
+| `GET /admin/v1/reviews/summary` | Overall score, distribution, and the two ends of the menu. |
+
+### The eligibility rule is the whole design, and it is not `status == 'served'`
+
+The obvious rule — reviewable once the order reaches `served` — makes the diner's ability to
+rate depend on a staff member tapping a button *after* the food has already left the pass. In
+a real kitchen mid-service that tap is the first thing to go: the order is marked ready, the
+runner takes the plates, and nobody walks back to the tablet. Under that rule those diners are
+never asked, and **the restaurants with the loosest floor discipline — the ones whose service
+most needs measuring — collect the least feedback.** The rule quietly selects against itself.
+
+So eligibility is derived from several independent signals, and **the earliest one to fire
+wins**:
+
+| Signal | Why it is evidence |
+| --- | --- |
+| `served_at` / `completed_at` | The explicit tap. Instant, and the happy path. |
+| A settled **counter** payment | The diner paid on the way out, so the meal is over. |
+| `ready_at` + 10 min | Plated, and the kitchen stopped tapping. The commonest real gap. |
+| `accepted_at` + 45 min | The kitchen stopped tapping much earlier. The backstop. |
+
+Earliest rather than latest, because these are alternative pieces of evidence for one event
+rather than stages of it. Taking the maximum would make a diligent restaurant that taps every
+status wait out the same 45-minute backstop as one that taps none, which is precisely
+backwards.
+
+**A settled payment counts only for `payment_method = counter`.** An `online_upi` order is paid
+at checkout, *before* the food is cooked, so there "paid" carries no information about whether
+it ever arrived. Treating it as evidence would ask a diner to rate a dish nobody has started —
+the single worst failure this feature can have, since a rating collected that way describes
+anticipation rather than a meal.
+
+**Two states never become reviewable, however long they sit.** `placed`, because the kitchen
+has not acknowledged the order and no elapsed time proves anything; and `cancelled`/`rejected`,
+because no food was served. An order whose every line was individually voided is excluded for
+the same reason.
+
+The window closes 24 hours after placement. A rating left the next morning is a memory rather
+than an observation, and leaving it open forever means an old uid keeps a writable endpoint for
+the life of the deployment.
+
+All of this lives in `services.ReviewEligibilityFor` and reaches the client as `can_review`,
+`review_opens_at` and `review_closes_at` on `OrderView` — the same pattern as `can_guest_cancel`
+([D6](./DECISIONS.md)). **The client renders the card from that flag and must not re-derive it.**
+
+### One tap is the entire interaction
+
+`PUT`, not `POST`, and the verb is the product decision showing through: there is no Submit
+button anywhere in the flow, so every tap has to be safe to repeat. A double-tap on a stalled
+phone and a genuine correction from four stars to five take the same path and land on the same
+row, guaranteed by a unique index on `order_item_id` rather than by an idempotency key — this
+endpoint cannot create a second row in the first place.
+
+`rating` is the only required field. Tags come from a **closed vocabulary** and a note is capped
+at 280 characters; both are optional, and a diner who supplies neither has still submitted a
+complete review. The vocabulary is polarity-matched to the rating on the client, because
+offering "Tasty" to someone who just tapped one star reads as not listening.
+
+Free text was rejected as the primary input. Typing on a phone in a restaurant is the step
+people abandon, and prose is not countable: *"9 people said cold this week"* is a service
+problem with an address, where nine sentences are an afternoon of reading. An unrecognised tag
+is a **422 rather than a silent drop** — the value of a fixed vocabulary is that every stored
+tag can be counted, and quietly discarding a typo produces a bucket nobody looks in.
+
+### Identity is the order line, and the aggregate is denormalised
+
+A review belongs to an `order_item`, not to a `menu_item`. The same dish ordered on two nights
+is two ratings, because it was two platings; collapsing them would let a dish that has got worse
+hide behind the night it was good.
+
+`menu_item.rating_count` and `rating_sum` carry the running aggregate — **the one denormalised
+pair in this schema.** The diner menu is the hottest read in the product (PRD 7 makes its
+latency a requirement), and the honest alternative is a `GROUP BY` over every review ever left,
+which gets steadily worse for exactly the restaurants that succeed. Sum and count rather than a
+stored average, because an average is lossy, is a float in a schema that has none, and cannot be
+updated without a read-modify-write — which loses one of two concurrent ratings silently. Both
+move by delta inside the review transaction, in SQL. `scripts/concurrency.sh` §D fires eight
+simultaneous ratings at one dish and asserts the counters still equal the rows.
+
+**Diners see no score below three ratings; staff see every one.** A "5.0" from a single tap is
+not a smaller truth — it ranks an untried dish above one with forty ratings averaging 4.6, and
+the next diner to leave a 3 visibly halves it. Staff are owed the underlying data instead.
+
+**Reversal cost.** Low. Two tables' worth of migration (one new table, two columns), three
+routes, and one card on the tracking screen. Dropping it leaves every existing screen unchanged.

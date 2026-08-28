@@ -11,6 +11,11 @@
 #      several of them the same one.
 #   C. One diner double-taps Place Order on a stalled connection.
 #      Every duplicate must resolve to the SAME order, with no error surfaced.
+#   D. A table of diners rates the same dish at the same moment.
+#      Every rating must land in menu_item's running aggregate. This is the race that a
+#      read-modify-write on those counters loses silently -- each request reads the same
+#      starting value and the last write discards the others -- and it leaves no error
+#      behind, only a permanently wrong average.
 #
 # These pass only against Postgres. SQLite has no SELECT ... FOR UPDATE, which is why the
 # unit tests use SQLite for speed and this runs against the real thing.
@@ -115,7 +120,65 @@ echo "    distinct orders created: $IDU   errors: $IDE"
   || echo "    FAIL  the double-tap created $IDU orders"
 
 echo
-echo "=== D. Database-level confirmation ==="
+echo "=== D. Concurrent ratings of one dish must all reach the aggregate ==="
+echo "    Eight diners rate the same dish at once. menu_item.rating_count/rating_sum are"
+echo "    maintained by delta in SQL, so every one must be counted."
+
+# Each diner is a separate session on a separate table with their own order, which is what a
+# real table of eight produces -- and it is the case where nothing but the SQL-side arithmetic
+# stops the counters from disagreeing with the rows.
+RATE_ITEM=$(curl -s $PUB/t/demolocaltablequrtoken0000000001 | j data.session.token | { read t; \
+  curl -s $GST/menu -H "X-Guest-Token: $t" | python3 -c "
+import sys,json
+print(json.load(sys.stdin)['data']['categories'][0]['items'][0]['uid'])"; })
+
+rm -f /tmp/tx_rate_*.txt
+for n in $(seq 1 8); do
+  (
+    T=$(curl -s $PUB/t/demolocaltablequrtoken000000000$(( (n % 5) + 1 )) | j data.session.token)
+    O=$(curl -s -X POST $GST/orders -H "X-Guest-Token: $T" -H 'Content-Type: application/json' \
+      -d "{\"items\":[{\"menu_item_uid\":\"$RATE_ITEM\",\"quantity\":1}],\"payment_method\":\"counter\"}" | j data.order.uid)
+    # Walk it to served so the rating window is open. This is the happy path; the window also
+    # opens on the time-based fallbacks, which no test can exercise without waiting.
+    for st in accepted preparing ready served; do
+      curl -s -o /dev/null -X POST $ADM/orders/$O/transition -H "Authorization: Bearer $JWT" \
+        -H 'Content-Type: application/json' -d "{\"status\":\"$st\"}"
+    done
+    I=$(curl -s $GST/orders/$O -H "X-Guest-Token: $T" | j data.items.0.uid)
+    echo "$T $O $I" > /tmp/tx_rate_$n.txt
+  ) &
+done
+wait
+
+# Now fire the eight ratings simultaneously, which is the actual race.
+rm -f /tmp/tx_rated_*.txt
+n=0
+for f in /tmp/tx_rate_*.txt; do
+  n=$((n+1))
+  read -r T O I < "$f"
+  ( curl -s -o /dev/null -w "%{http_code}" -X PUT $GST/orders/$O/items/$I/review \
+      -H "X-Guest-Token: $T" -H 'Content-Type: application/json' \
+      -d '{"rating":5}' > /tmp/tx_rated_$n.txt ) &
+done
+wait
+
+RATED_OK=$(grep -l '^200$' /tmp/tx_rated_*.txt 2>/dev/null | wc -l | tr -d ' ')
+echo "    ratings accepted: $RATED_OK of 8"
+
+# The check that matters: the denormalised counters must equal the rows they summarise. A lost
+# update shows up here and nowhere else -- every request having returned 200 proves nothing.
+DRIFT=$(docker exec tablex-postgres psql -U postgres -d tablex -tAc "
+SELECT COUNT(*) FROM menu_item m
+LEFT JOIN (SELECT menu_item_id, COUNT(*) c, SUM(rating) s
+             FROM order_item_review GROUP BY menu_item_id) a
+  ON a.menu_item_id = m.id
+WHERE m.rating_count <> COALESCE(a.c, 0) OR m.rating_sum <> COALESCE(a.s, 0);" | tr -d ' ')
+echo "    dishes whose counters disagree with their reviews: $DRIFT"
+[ "$DRIFT" = "0" ] && echo "    PASS  every rating reached the aggregate" \
+  || echo "    FAIL  $DRIFT dish(es) have counters that lost an update"
+
+echo
+echo "=== E. Database-level confirmation ==="
 docker exec tablex-postgres psql -U postgres -d tablex -tAc "
 SELECT '    orders: ' || COUNT(*) || ',  distinct order_numbers: ' || COUNT(DISTINCT order_number)
 FROM orders;"

@@ -50,11 +50,31 @@ type MenuItem struct {
 	PrepTimeMins *int `json:"prep_time_mins,omitempty"`
 	SortOrder    int  `gorm:"not null;default:0" json:"sort_order"`
 
+	// RatingCount and RatingSum are the running review aggregate, maintained by delta
+	// inside the review transaction rather than recomputed on read. The diner menu is the
+	// hot path in this product (PRD 7) and must not carry a GROUP BY that grows with every
+	// review ever left. Sum and count rather than a stored average: an average is lossy and
+	// cannot be updated without a read-modify-write, which loses one of two concurrent
+	// reviews. See migration 016 for the full argument and the reconstruction query.
+	RatingCount int   `gorm:"not null;default:0" json:"rating_count"`
+	RatingSum   int64 `gorm:"not null;default:0" json:"rating_sum"`
+
 	Status    EntityStatus `gorm:"size:32;not null;default:'active'" json:"status"`
 	CreatedAt time.Time    `json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`
 
 	Category *MenuCategory `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+}
+
+// AverageRating returns the mean rating, and false when the dish has none.
+//
+// The boolean is the point: zero is not a rating, and a caller that treats an unrated dish
+// as 0.0 sorts every new dish below the worst-reviewed one on the menu.
+func (m *MenuItem) AverageRating() (float64, bool) {
+	if m.RatingCount <= 0 {
+		return 0, false
+	}
+	return float64(m.RatingSum) / float64(m.RatingCount), true
 }
 
 func (MenuItem) TableName() string { return TableNameMenuItem }

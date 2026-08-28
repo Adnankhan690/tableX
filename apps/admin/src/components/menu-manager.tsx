@@ -8,9 +8,10 @@ import type {
   FoodType,
   SpiceLevel,
 } from '@tablex/shared'
-import { FOOD_TYPE_LABEL } from '@tablex/shared'
+import { FOOD_TYPE_LABEL, formatRating, isLowRating } from '@tablex/shared'
 import { cn, ErrorState, FoodTypeBadge } from '@tablex/ui'
-import { ChevronDown, ImagePlus, UtensilsCrossed } from 'lucide-react'
+import { ChevronDown, ImagePlus, Star, UtensilsCrossed } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth, useRequireAuth } from '@/components/auth-provider'
 import { DishPhoto } from '@/components/dish-photo'
@@ -743,6 +744,36 @@ export function MenuManager() {
                             </p>
                             {item.description ? (
                               <p className="truncate text-sm text-muted">{item.description}</p>
+                            ) : null}
+                            {/*
+                              How diners have received this dish, next to what it costs them.
+
+                              No publication threshold here, unlike the diner menu: staff are owed
+                              the raw count, and "4.0 from 2" is exactly the signal a manager wants
+                              on a dish they are unsure about.
+
+                              A link, because the useful next question is always "what did they
+                              say" and this is the only route to that filter.
+                            */}
+                            {item.rating ? (
+                              <Link
+                                href={`/reviews?menu_item_uid=${encodeURIComponent(item.uid)}`}
+                                className={cn(
+                                  'mt-0.5 inline-flex items-center gap-1 rounded-control text-xs',
+                                  'transition-colors hover:text-ink',
+                                  isLowRating(item.rating.average) ? 'text-danger' : 'text-muted',
+                                )}
+                              >
+                                <Star
+                                  aria-hidden="true"
+                                  className="h-3 w-3 fill-current"
+                                  strokeWidth={1.5}
+                                />
+                                <span className="figures font-medium">
+                                  {formatRating(item.rating.average)}
+                                </span>
+                                <span className="figures">({item.rating.count})</span>
+                              </Link>
                             ) : null}
                           </div>
 

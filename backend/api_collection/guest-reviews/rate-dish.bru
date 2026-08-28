@@ -1,0 +1,70 @@
+meta {
+  name: rate-dish
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/items/{{order_item_uid}}/review
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "rating": 5,
+    "tags": ["tasty", "worth_the_wait"]
+  }
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data) {
+    bru.setVar("review_uid", res.body.data.uid)
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("echoes the rating back", function () {
+    expect(res.body.data.rating).to.equal(5)
+    expect(res.body.data.tags).to.deep.equal(["tasty", "worth_the_wait"])
+  })
+
+  test("carries no comment, because none was sent", function () {
+    // The whole point of the interaction: a complete review with no prose in it. A diner who
+    // taps a star and nothing else has submitted everything this feature asks for.
+    expect(res.body.data.comment).to.be.undefined
+  })
+}
+
+docs {
+  # Rate a dish
+
+Sets `review_uid`.
+
+**PUT, not POST, and that is the product decision showing through the verb.** The diner rates with
+one tap and there is no Submit button, so every tap has to be safe to repeat. Send this request
+twice: the second call returns the same `uid` and does not create a second review. The unique index
+on `order_item_id` is what guarantees that -- no idempotency key is involved, unlike order
+placement, because this endpoint cannot create a second row in the first place.
+
+`rating` is the only required field. `tags` come from a closed vocabulary and `comment` is capped at
+280 characters; both are optional, and a client that never sends either is not sending a partial
+review.
+
+Worth provoking:
+- `"rating": 6` or `0` -> `TX_REV_002` (422)
+- `"tags": ["delicious"]` -> `TX_REV_003` (422). An unrecognised tag is rejected rather than
+  silently dropped: the value of a fixed vocabulary is that every stored tag can be counted, and a
+  quietly discarded typo produces a count nobody can account for.
+- an item uid from another order -> `TX_REV_004` (404), matching the 404 on a foreign order uid
+- running this before `admin-orders / mark-served` -> `TX_REV_001` (409)
+}

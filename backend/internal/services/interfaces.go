@@ -148,6 +148,18 @@ type ServiceOrderMethods interface {
 	MarkPaidBySystem(ctx context.Context, orderID int32, actorID string) *response.ApplicationError
 }
 
+// ServiceReviewMethods handles dish ratings and the reviews a restaurant reads back.
+type ServiceReviewMethods interface {
+	// RateItem records one diner's rating of one dish. Idempotent: it is a PUT of a single
+	// line's rating, so a double-tap and a correction both resolve to the same row.
+	RateItem(ctx context.Context, guest *GuestPrincipal, orderUID, itemUID string, req *types.RequestRateOrderItem) (*types.OrderItemReviewView, *response.ApplicationError)
+	// ListForStaff backs the admin reviews feed.
+	ListForStaff(ctx context.Context, actor *StaffPrincipal, req *types.RequestListReviews) (*types.ResponseReviewList, *response.ApplicationError)
+	// SummaryForStaff is the reviews dashboard: the overall score, its distribution, and the
+	// two ends of the menu.
+	SummaryForStaff(ctx context.Context, actor *StaffPrincipal) (*types.ResponseReviewSummary, *response.ApplicationError)
+}
+
 // ServicePaymentMethods handles payment intents, confirmation and webhooks (DECISIONS.md D2).
 type ServicePaymentMethods interface {
 	// CreateForOrder starts a payment against an already-placed order.

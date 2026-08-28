@@ -109,6 +109,17 @@ export function OrderList() {
                         : 'Payment pending'}
                     </p>
                   ) : null}
+
+                  {/*
+                    The second way into the rating card, for a diner who left the tracking
+                    screen before the food arrived -- which is most of them, because the
+                    window opens after they have started eating and put the phone down.
+
+                    Without this the feature depends on the diner happening to still have one
+                    screen open, and the whole reason the window has time-based fallbacks is
+                    that we cannot depend on timing going right.
+                  */}
+                  {order.can_review ? <ReviewPrompt order={order} /> : null}
                 </Link>
               </li>
             ))}
@@ -116,5 +127,51 @@ export function OrderList() {
         )}
       </main>
     </>
+  )
+}
+
+/**
+ * The nudge on an order that can be rated.
+ *
+ * Says which state it is in rather than always inviting: a diner who has already rated
+ * everything should see that it landed, not be asked again. "Rate" on an order they have
+ * already rated reads as the first tap not having worked.
+ */
+function ReviewPrompt({ order }: { order: OrderView }) {
+  const rateable = order.items.filter((item) => item.status !== 'cancelled')
+  const rated = rateable.filter((item) => item.review).length
+
+  if (rated === 0) {
+    return (
+      <p className="mt-2 flex items-center gap-1.5 text-[0.8125rem] font-medium text-accent">
+        <Star />
+        How was it? Rate your food
+      </p>
+    )
+  }
+
+  if (rated < rateable.length) {
+    return (
+      <p className="mt-2 flex items-center gap-1.5 text-[0.8125rem] font-medium text-accent">
+        <Star />
+        {rated} of {rateable.length} dishes rated
+      </p>
+    )
+  }
+
+  return (
+    <p className="mt-2 flex items-center gap-1.5 text-[0.8125rem] text-muted">
+      <Star />
+      Thanks for rating
+    </p>
+  )
+}
+
+/** Inline SVG: this app ships no icon library, by design (PRD 7). */
+function Star() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+    </svg>
   )
 }

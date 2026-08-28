@@ -11,9 +11,10 @@ import type {
   CreateMenuItemRequest,
   CreateStaffRequest,
   CreateTableRequest,
-  ImageUploadResponse,
   ForgotPasswordRequest,
+  ImageUploadResponse,
   ListOrdersQuery,
+  ListReviewsQuery,
   MarkPaymentFailedRequest,
   OrderListResponse,
   OrderStatsView,
@@ -22,6 +23,8 @@ import type {
   RefreshTokenResponse,
   ResetPasswordRequest,
   RestaurantSettings,
+  ReviewListResponse,
+  ReviewSummaryResponse,
   StaffListResponse,
   StaffLoginRequest,
   StaffLoginResponse,
@@ -313,6 +316,44 @@ export class AdminApi {
         from: query.from,
         to: query.to,
       },
+      auth: { kind: 'staff', token },
+      signal,
+    })
+  }
+
+  /**
+   * The reviews feed, newest first.
+   *
+   * `max_rating: 3` is the query this screen exists for -- the complaints, while the table is
+   * still sitting there. Open to every staff role, unlike menu editing: gating a complaint
+   * about a cold dish behind a manager login is how it gets read the next morning.
+   */
+  listReviews(
+    token: string,
+    query: ListReviewsQuery = {},
+    signal?: AbortSignal,
+  ): Promise<ReviewListResponse> {
+    return this.http.request(`${ADMIN}/reviews`, {
+      // Spelled out rather than spread, matching listOrders: a spread would silently forward
+      // any stray key a caller happened to put on the object, and the server binds by name.
+      query: {
+        page: query.page,
+        per_page: query.per_page,
+        menu_item_uid: query.menu_item_uid,
+        min_rating: query.min_rating,
+        max_rating: query.max_rating,
+        has_comment: query.has_comment,
+        from: query.from,
+        to: query.to,
+      },
+      auth: { kind: 'staff', token },
+      signal,
+    })
+  }
+
+  /** The reviews dashboard: the overall score, its distribution, and the two ends of the menu. */
+  reviewSummary(token: string, signal?: AbortSignal): Promise<ReviewSummaryResponse> {
+    return this.http.request(`${ADMIN}/reviews/summary`, {
       auth: { kind: 'staff', token },
       signal,
     })

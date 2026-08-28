@@ -7,7 +7,7 @@ Mobile-first by mandate — the diner app is designed for a phone held one-hande
 restaurant lighting, and desktop is not a v1 target.
 
 - **Requirements:** [docs/PRD.md](docs/PRD.md)
-- **Why it is built this way:** [docs/DECISIONS.md](docs/DECISIONS.md) — D1–D12, including
+- **Why it is built this way:** [docs/DECISIONS.md](docs/DECISIONS.md) — D1–D16, including
   answers to every open question the PRD left
 - **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Low-level design:** [docs/LLD.md](docs/LLD.md) — schema, table relationships, the session
@@ -108,9 +108,17 @@ watch the status update live.
 No login, ever. A guest session token in `localStorage` is the whole identity, and it is
 scoped to the table ([D5](docs/DECISIONS.md)).
 
+Once the food has reached the table the tracking screen offers a rating: **one tap per dish,
+no Submit button, nothing typed** ([D16](docs/DECISIONS.md)). The window that decides when to
+ask is deliberately not "staff tapped served" — it also opens on a settled counter payment and
+on a timeout, so a diner at a restaurant whose floor staff stop tapping mid-service still gets
+asked.
+
 **Staff** — sign in → the live order board, grouped by status, where an order waiting too
 long gets visually louder → open one → accept, start preparing, mark ready, mark served,
-close → confirm payment for cash and static-UPI orders.
+close → confirm payment for cash and static-UPI orders → read what diners said on the
+**Reviews** screen, where the default filter is the complaints and each dish carries its
+running score.
 
 ---
 
@@ -222,11 +230,12 @@ Everything below runs against a real Postgres and a real browser — no mocks, n
 | | |
 | --- | --- |
 | Go unit tests | State machine matrix (every from-state x to-state x actor), UPI link construction, Razorpay HMAC, provider registry |
-| API smoke | 93 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection |
-| Concurrency | 8 simultaneous accepts resolve to exactly one winner; 20 simultaneous checkouts get 20 distinct order numbers; 10 duplicate submits produce one order |
+| API smoke | 128 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection, the rating window at both its edges |
+| Concurrency | 8 simultaneous accepts resolve to exactly one winner; 20 simultaneous checkouts get 20 distinct order numbers; 10 duplicate submits produce one order; 8 simultaneous ratings of one dish all reach its running aggregate |
 | Diner journey | 37 assertions in a real iPhone viewport: scan → menu → cart → checkout → live tracking |
-| Admin journey | 53 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions |
-| Bruno collection | 55 requests over 12 folders, all 48 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
+| Rating journey | 12 assertions: a served order → one tap per dish → polarity-matched tags → survives a reload |
+| Admin journey | 65 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions, the reviews feed and its drill-down |
+| Bruno collection | 67 requests over 14 folders, all 57 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
 | Migrations | CI applies every down migration in reverse, asserts zero tables remain, then re-applies forwards |
 
 Three real bugs were found this way, which is why the suites are shaped as they are:

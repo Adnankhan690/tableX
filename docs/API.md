@@ -37,7 +37,7 @@ of a night's logs.
 ### Error codes
 
 `TX_<AREA>_<NNN>`. Areas: `COM` common, `AUT` staff auth, `SES` guest session, `RST` restaurant,
-`TBL` table/QR, `MNU` menu, `ORD` order, `PAY` payment.
+`TBL` table/QR, `MNU` menu, `ORD` order, `PAY` payment, `REV` rating/review, `IMG` dish photo.
 
 The ones a client must actually handle:
 
@@ -55,6 +55,8 @@ The ones a client must actually handle:
 | `TX_PAY_006` | 409 | Webhook amount ≠ order total. **Never settled.** Needs a human. |
 | `TX_AUT_004` | 401 | Access token expired — refresh, distinct from `TX_AUT_003` invalid. |
 | `TX_AUT_009` | 401 | Platform token missing or wrong. One code for both; see [D14](./DECISIONS.md). |
+| `TX_REV_001` | 409 | Rating window shut — usually *too early*, not forbidden. Refetch and re-read `can_review`; do not alarm the diner. |
+| `TX_REV_003` | 422 | Tag outside the vocabulary. A client bug: the set is in `packages/shared/src/review.ts`. |
 
 ## Money
 
@@ -149,6 +151,7 @@ All require `X-Guest-Token`. Every order read verifies the session owns the orde
 | `POST /orders/:uid/cancel` | Withdraw, only while `placed` ([D6](./DECISIONS.md)). |
 | `POST /orders/:uid/payment` | Start or restart a payment. |
 | `GET /orders/:uid/payment` | Poll payment **and** order status in one request. |
+| `PUT /orders/:uid/items/:item_uid/review` | Rate one dish ([D16](./DECISIONS.md)). See below. |
 | `GET /orders/:uid/stream` | WebSocket. See *Realtime*. |
 
 ### `POST /orders`
@@ -186,13 +189,57 @@ Also handled: duplicate lines for the same item are merged rather than rejected,
   "timeline": [ { "status": "placed", "actor_type": "guest", "at": "…" } ],
 
   "next_statuses": ["accepted", "cancelled", "rejected"],
-  "can_guest_cancel": true
+  "can_guest_cancel": true,
+
+  "can_review": false,
+  "review_opens_at": "…",              // only while the window is still shut
+  "review_closes_at": "…"
 }
 ```
 
 `next_statuses` and `can_guest_cancel` are computed server-side from the state machine.
 **Render buttons from them; never hard-code which transitions are legal.** That is the whole point
 of sending them — it is what stops the UI drifting from the server ([D1](./DECISIONS.md)).
+
+`can_review` is the same contract for the rating window, and it is the one most likely to be
+"simplified" into a client-side check. **It is not `status === 'served'`.** The window also opens
+on a settled counter payment, and on a timeout after the kitchen stops updating the order at all
+— precisely so a diner at a restaurant whose staff forget that last tap is still asked
+([D16](./DECISIONS.md)). `review_opens_at` is sent while the window is shut so a client can set
+one timer for that instant instead of discovering the change on its next poll.
+
+Each line in `items` carries `review` once the diner has rated it, so a refresh re-renders the
+stars already given rather than an empty row.
+
+### `PUT /orders/:uid/items/:item_uid/review`
+
+```jsonc
+// Headers: X-Guest-Token
+{
+  "rating": 5,                          // required, 1-5
+  "tags": ["tasty", "worth_the_wait"],  // optional, closed vocabulary
+  "comment": "…"                        // optional, max 280
+}
+```
+
+**`PUT`, and that is deliberate.** The diner rates with one tap and there is no Submit button, so
+every tap has to be safe to repeat: a double-tap on a stalled connection and a correction from
+four stars to five both resolve to the same row. No `Idempotency-Key` is involved, unlike order
+placement — a unique index on the order line means this endpoint cannot create a second row.
+
+`rating` is the only required field; a client that sends nothing else has not sent a partial
+review. Tags outside the vocabulary are a **422, not a silent drop**: the point of a fixed
+vocabulary is that every stored tag can be counted.
+
+| Failure | Code |
+| --- | --- |
+| Window shut — too early, or the order is a day old | `TX_REV_001` (409) |
+| Rating outside 1–5 | `TX_REV_002` (422) |
+| Unrecognised tag | `TX_REV_003` (422) |
+| No such line on this order | `TX_REV_004` (404) |
+| The kitchen cancelled that line | `TX_REV_005` (409) |
+
+`data`: `OrderItemReviewView`
 
 ---
 
@@ -309,6 +356,30 @@ Settles a payment no gateway can confirm — cash, or a static-UPI transfer staf
 a **trust-the-staff** action, the same model as cash, and it is attributed to the signed-in user.
 It goes through the same code path as a gateway webhook, so both produce identical audit trails,
 identical realtime events, and identical order completion.
+
+### `GET /reviews` · `GET /reviews/summary`
+
+What diners said, and the roll-up ([D16](./DECISIONS.md)). Open to **every** staff role, unlike
+menu editing: a complaint about a cold dish is most useful to whoever is on the floor right now,
+and gating it behind a manager login is how it gets read the next morning instead.
+
+`GET /reviews` takes `page`, `per_page`, `menu_item_uid`, `min_rating`, `max_rating`,
+`has_comment`, `from`, `to`. **`max_rating=3` is the query this screen exists for** — a ceiling
+rather than an exact value, because "3 and below" is the real question. A `menu_item_uid` from
+another restaurant answers `TX_MNU_004`, never rows.
+
+Each `ReviewView` carries `item_name` **snapshotted from the order line**, not the dish's current
+name ([D8](./DECISIONS.md)), plus `order_number` — the value staff shout across a kitchen and the
+only one that finds the ticket.
+
+`GET /reviews/summary` returns `overall`, a five-bucket `distribution`, and `needs_attention` /
+`top_rated`. The distribution is sent *as well as* the average because the two answer different
+questions: a 3.0 of straight 3s is a dull menu, a 3.0 of 5s and 1s is an inconsistent kitchen, and
+an average cannot tell them apart. Both rankings exclude dishes below `min_reviews_for_ranking`,
+which is echoed so an empty list reads as "not enough data yet" rather than as a broken panel.
+
+Dish ratings also ride on `MenuItemView.rating` wherever a menu is returned — **withheld from
+diners until a dish has three ratings, never withheld from staff.**
 
 ### `GET /stats/today` · `GET /stats/range?from=&to=`
 

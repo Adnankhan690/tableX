@@ -346,7 +346,72 @@ ck(
 ck('read-only notice shown', /Read only/i.test(await page.locator('header').last().innerText()))
 await page.screenshot({ path: `${SHOT}/a11-staff-role-menu.png` })
 
-console.log('=== 15. No unexpected console errors ===')
+console.log('=== 15. Reviews reach the restaurant (PRD 6.5) ===')
+// Continues on the floor-staff session section 14 left behind, deliberately. Reading reviews is
+// open to every role -- a complaint about a cold dish is most useful to whoever is on the floor
+// right now -- and running this section as the least-privileged user is what proves it.
+
+// The diner rates the order this journey settled in section 7. Done over the API rather than
+// by driving the diner app, which has its own journey -- what is under test here is that a
+// rating left on one side arrives on the other.
+const rated = await (
+  await fetch(`${API}/api/guest/v1/orders/${orderUid}`, {
+    headers: { 'X-Guest-Token': gToken },
+  })
+).json()
+ck(
+  'a settled order is reviewable',
+  rated.data.can_review === true,
+  JSON.stringify(rated.data.can_review),
+)
+const lineUid = rated.data.items[0].uid
+await fetch(`${API}/api/guest/v1/orders/${orderUid}/items/${lineUid}/review`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json', 'X-Guest-Token': gToken },
+  body: JSON.stringify({ rating: 2, tags: ['served_cold'], comment: 'Arrived lukewarm.' }),
+})
+
+await page.click('a[href="/reviews"]')
+await page.waitForURL('**/reviews')
+await page.waitForSelector('main >> text=Arrived lukewarm.', { timeout: 15000 })
+const reviewsText = await page.locator('main').innerText()
+ck('the rating reaches the panel', /Arrived lukewarm\./.test(reviewsText))
+ck('the tag is shown in words', /Served cold/.test(reviewsText))
+ck('the ticket can be found from it', new RegExp(orderNumber).test(reviewsText))
+// Scoped to the page, not to <main>: the summary band sits above it, in the same place the
+// order board puts its stats strip -- page-level summary is chrome, the list is the content.
+// Case-insensitive: the label is uppercased in CSS, and innerText returns what is RENDERED,
+// so a case-sensitive match here asserts against the stylesheet rather than the content.
+ck('the overall score is summarised', /overall/i.test(await page.locator('body').innerText()))
+await page.screenshot({ path: `${SHOT}/a12-reviews.png`, fullPage: true })
+
+// The filter this screen exists for.
+await page.click('button:has-text("Needs attention")')
+await page.waitForTimeout(800)
+ck(
+  'the complaints filter keeps it',
+  /Arrived lukewarm\./.test(await page.locator('main').innerText()),
+)
+
+console.log('=== 16. The menu carries the score, and links to it ===')
+await page.click('a[href="/menu"]')
+await page.waitForURL('**/menu')
+await page.waitForSelector('main >> text=Starters', { timeout: 15000 })
+// Staff see a score from a single review; diners do not until it means something. This asserts
+// the staff half -- the diner half is asserted in scripts/smoke.sh.
+const ratingLink = page.locator('a[href^="/reviews?menu_item_uid="]').first()
+ck('a rated dish shows its score on the menu', (await ratingLink.count()) > 0)
+await ratingLink.click()
+await page.waitForURL('**/reviews**')
+// Same reason: the drill-down banner replaces the summary band, above <main>.
+await page.waitForSelector('text=Showing reviews of', { timeout: 15000 })
+ck(
+  'and drills through to that dish only',
+  /Showing reviews of/.test(await page.locator('body').innerText()),
+)
+await page.screenshot({ path: `${SHOT}/a13-reviews-dish.png`, fullPage: true })
+
+console.log('=== 17. No unexpected console errors ===')
 const real = consoleErrors.filter(
   (e) =>
     !/favicon|Download the React DevTools/i.test(e) &&

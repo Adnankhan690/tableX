@@ -178,6 +178,16 @@ NEXTS=$(echo "$LIST" | python3 -c "import sys,json;print(','.join(json.load(sys.
 ck "live orders visible to staff"        "yes" "$([ "$NLIVE" -ge 1 ] && echo yes || echo no)"
 ck "server dictates the legal buttons"   "accepted,cancelled,rejected" "$NEXTS"
 
+echo "--- the rating window is shut on an order the kitchen has not started ---"
+# Asserted BEFORE the lifecycle runs, because this is the half of the review policy that is
+# easy to get wrong in the other direction: prompting early collects a rating of the diner's
+# anticipation rather than their meal.
+FRESH=$(curl -s $GST/orders/$OUID -H "X-Guest-Token: $TOKEN")
+ck "placed order is not reviewable"      "False" "$(echo "$FRESH" | j data.can_review)"
+EARLY=$(curl -s -X PUT $GST/orders/$OUID/items/$(echo "$FRESH" | j data.items.0.uid)/review \
+  -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' -d '{"rating":5}')
+ck "and rating it is refused"            "TX_REV_001" "$(echo "$EARLY" | j code)"
+
 echo
 echo "=============== 5. THE ORDER LIFECYCLE (D1) ==============="
 tr() { curl -s -X POST $ADM/orders/$1/transition -H "Authorization: Bearer $JWT" \
@@ -247,7 +257,94 @@ ck "other session -> 404 not 403"        "404" "$STEAL"
 ck "existence not confirmed"             "TX_ORD_009" "$STEALC"
 
 echo
-echo "=============== 8. UPI PAYMENT (D2) ==============="
+echo "=============== 8. RATING THE FOOD ==============="
+# The order is completed by now, so the window is open. Note what opened it: this run tapped
+# `served`, but the policy does not require that -- it also opens on a settled counter payment
+# or on a timeout after the kitchen stops updating an order, so a restaurant whose floor staff
+# never tap `served` still collects ratings. See services/review_window.go.
+REVORD=$(curl -s $GST/orders/$OUID -H "X-Guest-Token: $TOKEN")
+ck "a completed order is reviewable"     "True" "$(echo "$REVORD" | j data.can_review)"
+ck "and advertises when it shuts"        "yes" "$(echo "$REVORD" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data'].get('review_closes_at') else 'no')")"
+
+IUID=$(echo "$REVORD" | j data.items.0.uid)
+rate() { curl -s -X PUT $GST/orders/$1/items/$2/review -H "X-Guest-Token: ${4:-$TOKEN}" \
+  -H 'Content-Type: application/json' -d "$3"; }
+
+echo "--- one tap is a complete review ---"
+R1=$(rate "$OUID" "$IUID" '{"rating":5}')
+RUID=$(echo "$R1" | j data.uid)
+ck "rating with no prose accepted"       "5" "$(echo "$R1" | j data.rating)"
+ck "and gets its own uid"                "yes" "$(echo "$RUID" | grep -q '^rev_' && echo yes || echo no)"
+
+echo "--- a second tap corrects rather than duplicates ---"
+# PUT, so a double-tap on a stalled phone and a genuine correction take the same path. The
+# unique index on order_item_id is what guarantees there is only ever one row per line.
+R2=$(rate "$OUID" "$IUID" '{"rating":4,"tags":["good_portion"],"comment":"A little rich."}')
+ck "same review row"                     "$RUID" "$(echo "$R2" | j data.uid)"
+ck "rating replaced"                     "4" "$(echo "$R2" | j data.rating)"
+ck "tags replaced wholesale"             "good_portion" "$(echo "$R2" | python3 -c "import sys,json;print(','.join(json.load(sys.stdin)['data'].get('tags') or []))")"
+
+echo "--- the rating comes back with the order, so a refresh does not lose it ---"
+BACK=$(curl -s $GST/orders/$OUID -H "X-Guest-Token: $TOKEN")
+ck "line carries its review"             "4" "$(echo "$BACK" | j data.items.0.review.rating)"
+ck "unrated line carries none"           "yes" "$(echo "$BACK" | python3 -c "import sys,json;print('no' if json.load(sys.stdin)['data']['items'][1].get('review') else 'yes')")"
+
+echo "--- validation ---"
+ck "rating 6 -> TX_REV_002"              "TX_REV_002" "$(rate "$OUID" "$IUID" '{"rating":6}' | j code)"
+ck "rating 0 -> 422"                     "422" "$(curl -s -o /dev/null -w "%{http_code}" -X PUT $GST/orders/$OUID/items/$IUID/review -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' -d '{"rating":0}')"
+# Rejected, not silently dropped: the value of a closed vocabulary is that every stored tag can
+# be counted, and a quietly discarded typo produces a count nobody can account for.
+ck "unknown tag -> TX_REV_003"           "TX_REV_003" "$(rate "$OUID" "$IUID" '{"rating":4,"tags":["delicious"]}' | j code)"
+ck "an unknown line -> TX_REV_004"       "TX_REV_004" "$(rate "$OUID" "itm_nosuchline" '{"rating":4}' | j code)"
+
+echo "--- another table's session cannot rate this order ---"
+# 404, matching the read path: confirming the order exists would let someone enumerate other
+# tables' orders by uid (D4).
+ck "foreign session -> TX_ORD_009"       "TX_ORD_009" "$(rate "$OUID" "$IUID" '{"rating":1}' "$OTHER" | j code)"
+
+echo "--- staff read it back ---"
+REVLIST=$(curl -s "$ADM/reviews" -H "Authorization: Bearer $JWT")
+NREV=$(echo "$REVLIST" | python3 -c "import sys,json;print(len(json.load(sys.stdin)['data']['reviews']))")
+ck "the review reaches the admin feed"   "yes" "$([ "$NREV" -ge 1 ] && echo yes || echo no)"
+ck "with the name the diner saw"         "yes" "$(echo "$REVLIST" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data']['reviews'][0]['item_name'] else 'no')")"
+ck "and the order number to find it by"  "yes" "$(echo "$REVLIST" | j data.reviews.0.order_number | grep -qE '^[A-Z]-[0-9]{3}$' && echo yes || echo no)"
+
+echo "--- the complaints filter ---"
+LOWN=$(curl -s "$ADM/reviews?max_rating=3" -H "Authorization: Bearer $JWT" | python3 -c "
+import sys,json
+print(len([r for r in json.load(sys.stdin)['data']['reviews'] if r['rating'] > 3]))")
+ck "max_rating=3 excludes the 4s"        "0" "$LOWN"
+
+echo "--- the dashboard ---"
+SUM=$(curl -s "$ADM/reviews/summary" -H "Authorization: Bearer $JWT")
+ck "summary counts the review"           "yes" "$(echo "$SUM" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data']['overall']['count'] >= 1 else 'no')")"
+# The distribution and the headline count are read from the same rows in one pass, so a chart
+# whose bars do not add up to its own caption is impossible rather than merely unlikely.
+ck "distribution adds up to the count"   "yes" "$(echo "$SUM" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)['data']
+print('yes' if sum(d['distribution']) == d['overall']['count'] else 'no')")"
+ck "and states its ranking threshold"    "yes" "$(echo "$SUM" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data']['min_reviews_for_ranking'] > 0 else 'no')")"
+
+echo "--- the aggregate lands on the dish, and is withheld from diners until it means something ---"
+ADMENU=$(curl -s $ADM/menu -H "Authorization: Bearer $JWT")
+ck "staff see a rating after one review" "yes" "$(echo "$ADMENU" | python3 -c "
+import sys,json
+items=[i for c in json.load(sys.stdin)['data']['categories'] for i in c['items']]
+print('yes' if any(i.get('rating') for i in items) else 'no')")"
+# A '4.0 from 1 review' on the diner menu is not a smaller truth, it is misinformation: it ranks
+# a dish nobody has really tried above one with forty ratings averaging 4.6.
+# Checks the dishes that DO carry a score, not every dish: an unrated dish correctly has no
+# rating field at all, and folding that into the same comparison made this assert that every
+# dish on the menu has been rated three times.
+ck "diners see none below the threshold" "yes" "$(curl -s $GST/menu -H "X-Guest-Token: $TOKEN" | python3 -c "
+import sys,json
+items=[i for c in json.load(sys.stdin)['data']['categories'] for i in c['items']]
+scored=[i['rating'] for i in items if i.get('rating')]
+print('yes' if all(r['count'] >= 3 for r in scored) else 'no')")"
+
+echo
+echo "=============== 9. UPI PAYMENT (D2) ==============="
 UPIORD=$(curl -s -X POST $GST/orders -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"items\":[{\"menu_item_uid\":\"$PANEER\",\"quantity\":1}],\"payment_method\":\"online_upi\"}")
 UUID=$(echo "$UPIORD" | j data.order.uid)
@@ -264,7 +361,7 @@ ck "scannable QR rendered server-side"   "yes" "$HASQR"
 ck "static UPI admits it cannot confirm" "True" "$MANUAL"
 
 echo
-echo "=============== 9. ROLES (D3) ==============="
+echo "=============== 10. ROLES (D3) ==============="
 SLOGIN=$(curl -s -X POST $ADM/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"staff@spicegarden.test","password":"password123"}')
 SJWT=$(echo "$SLOGIN" | j data.access_token)
@@ -326,7 +423,7 @@ ck "the menu says whether uploads exist" "yes" "$(curl -s $ADM/menu -H "Authoriz
   | python3 -c "import sys,json;print('yes' if 'image_upload_enabled' in json.load(sys.stdin)['data'] else 'no')")"
 
 echo
-echo "=============== 10. QR & TABLES (D4) ==============="
+echo "=============== 11. QR & TABLES (D4) ==============="
 TABLES=$(curl -s $ADM/tables -H "Authorization: Bearer $JWT")
 NTAB=$(echo "$TABLES" | python3 -c "import sys,json;print(len(json.load(sys.stdin)['data']['tables']))")
 T3UID=$(echo "$TABLES" | python3 -c "
@@ -349,7 +446,7 @@ print(','.join(bad) if bad else 'none')")
 ck "no staff-only field leaks publicly"  "none" "$LEAKS"
 
 echo
-echo "=============== 11. STATS (PRD 3) ==============="
+echo "=============== 12. STATS (PRD 3) ==============="
 ST=$(curl -s $ADM/stats/today -H "Authorization: Bearer $JWT")
 ck "orders counted today"                "yes" "$([ "$(echo "$ST" | j orders_placed)" != "" ] || [ "$(echo "$ST" | j data.orders_placed)" != "" ] && echo yes || echo no)"
 echo "  stats: $(echo "$ST" | python3 -c "
@@ -361,7 +458,7 @@ print('placed=%s live=%s completed=%s revenue=%s unpaid=%s accept_avg=%s' % (
  d.get('avg_accept_secs')))" 2>/dev/null)"
 
 echo
-echo "=============== 12. WEBHOOK SECURITY (D2) ==============="
+echo "=============== 13. WEBHOOK SECURITY (D2) ==============="
 UNSIGNED=$(curl -s -o /dev/null -w "%{http_code}" -X POST $PUB/webhooks/payments/razorpay \
   -H 'Content-Type: application/json' -d '{"event":"payment.captured"}')
 ck "unsigned razorpay webhook rejected"  "409" "$UNSIGNED"
@@ -369,7 +466,7 @@ BOGUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST $PUB/webhooks/payments/no
 ck "unknown provider rejected"           "409" "$BOGUS"
 
 echo
-echo "=============== 13. ONBOARDING A RESTAURANT (D14) ==============="
+echo "=============== 14. ONBOARDING A RESTAURANT (D14) ==============="
 # The operator surface. Gated on a platform token, so the section skips itself rather than
 # failing when this deployment has none -- a server started without TABLEX_PLATFORM_TOKEN does
 # not mount the group at all, and reporting that as a broken feature would be wrong.

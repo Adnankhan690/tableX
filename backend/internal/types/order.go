@@ -36,6 +36,10 @@ type OrderItemView struct {
 	FoodType  string `json:"food_type"`
 	Note      string `json:"note,omitempty"`
 	Status    string `json:"status"`
+	// Review is this diner's own rating of this line, when they have left one, so the
+	// tracking screen renders the stars already given instead of an empty row to re-fill
+	// after every refresh.
+	Review *OrderItemReviewView `json:"review,omitempty"`
 }
 
 // OrderTotals is the price breakdown the cart and the bill both render.
@@ -89,6 +93,23 @@ type OrderView struct {
 	NextStatuses []string `json:"next_statuses,omitempty"`
 	// CanGuestCancel encodes the guest cancel window the same way (DECISIONS.md D6).
 	CanGuestCancel bool `json:"can_guest_cancel"`
+
+	// CanReview is the rating window, computed server-side for the same reason as the two
+	// flags above: the client renders the card exactly when submitting will work, rather
+	// than reimplementing the eligibility rules and drifting from them.
+	//
+	// Deliberately NOT a status comparison the client could make itself. The window opens on
+	// whichever of several signals fires first -- staff marking the order served, a counter
+	// payment settling, or a timeout after the kitchen stopped tapping -- because tying it to
+	// `status == served` alone would silently exclude every diner whose restaurant forgets
+	// that last tap. services.ReviewEligibilityFor is the single authority.
+	CanReview bool `json:"can_review"`
+	// ReviewOpensAt is when the window will open, sent only while it is still shut. The diner
+	// app sets one timer for that instant instead of waiting to notice on its next poll.
+	ReviewOpensAt *time.Time `json:"review_opens_at,omitempty"`
+	// ReviewClosesAt is when it shuts, so a late arrival can be told "too late" rather than
+	// being shown a card that will fail.
+	ReviewClosesAt *time.Time `json:"review_closes_at,omitempty"`
 }
 
 // ResponsePlaceOrder is returned once the order is committed.

@@ -2,7 +2,7 @@
 
 import { isApiError } from '@tablex/api-client'
 import type { MenuItemView, MenuResponse } from '@tablex/shared'
-import { computeTotals, formatINR } from '@tablex/shared'
+import { computeTotals, formatINR, formatRating } from '@tablex/shared'
 import { cn, EmptyState, ErrorState, FoodTypeBadge, Spinner } from '@tablex/ui'
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -271,6 +271,32 @@ export function MenuScreen() {
 }
 
 /** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
+/**
+ * A dish's score on the menu, as one line.
+ *
+ * One filled star and a number rather than five stars: at this size a five-star row is a
+ * cluster of ambiguous shapes on a scrolling list, and the number is what a diner actually
+ * reads. The count rides along because "4.6" alone invites the question.
+ */
+function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> }) {
+  return (
+    <span className="flex items-center gap-1 text-[0.8125rem] text-muted">
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+        className="text-accent"
+      >
+        <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+      </svg>
+      <span className="font-medium tabular-nums text-ink">{formatRating(rating.average)}</span>
+      <span className="tabular-nums">({rating.count})</span>
+    </span>
+  )
+}
+
 function DishRow({
   item,
   quantity,
@@ -303,7 +329,16 @@ function DishRow({
         </div>
 
         <p className="mt-1 text-dish-name">{item.name}</p>
-        <p className="mt-0.5 text-price tabular-nums">{item.price.display}</p>
+
+        <div className="mt-0.5 flex items-center gap-2">
+          <p className="text-price tabular-nums">{item.price.display}</p>
+          {/*
+            Absent, not zeroed, for a dish without enough ratings -- the server omits the field
+            below its publication threshold. A "5.0" from one tap would rank an untried dish
+            above a consistently good one, so no score is the honest rendering (PRD 6.2).
+          */}
+          {item.rating ? <DishRating rating={item.rating} /> : null}
+        </div>
 
         {item.description ? (
           <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">

@@ -17,6 +17,7 @@ const (
 	TableNamePayment             = "payment"
 	TableNamePaymentWebhookEvent = "payment_webhook_event"
 	TableNameOrderCounter        = "order_counter"
+	TableNameOrderItemReview     = "order_item_review"
 	TableNamePasswordResetCode   = "password_reset_code"
 )
 

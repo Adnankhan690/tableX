@@ -2,11 +2,13 @@ import type {
   CreatePaymentRequest,
   GuestOrdersResponse,
   MenuResponse,
+  OrderItemReviewView,
   OrderView,
   PaymentStatusResponse,
   PaymentView,
   PlaceOrderRequest,
   PlaceOrderResponse,
+  RateOrderItemRequest,
   RestaurantDirectoryResponse,
   RestaurantLandingResponse,
   RestaurantQR,
@@ -139,6 +141,31 @@ export class DinerApi {
       body,
       auth: { kind: 'guest', token },
     })
+  }
+
+  /**
+   * Rates one dish. This is the whole diner-side review write.
+   *
+   * PUT rather than POST, and that is the product decision showing through the verb: the diner
+   * rates with a single tap and there is no Submit button, so every tap has to be safe to
+   * repeat. A double-tap on a stalled connection and a genuine correction from four stars to
+   * five both resolve to the same row -- guaranteed by a unique index on the order line rather
+   * than by an idempotency key, because this endpoint cannot create a second row at all.
+   *
+   * Fails with a 409 (`TX_REV_001`) when the window is shut. Callers should treat that as
+   * "refetch the order and re-read `can_review`", not as an error worth alarming the diner
+   * about -- the commonest cause is simply being early.
+   */
+  rateOrderItem(
+    token: string,
+    orderUid: string,
+    itemUid: string,
+    body: RateOrderItemRequest,
+  ): Promise<OrderItemReviewView> {
+    return this.http.request(
+      `${GUEST}/orders/${encodeURIComponent(orderUid)}/items/${encodeURIComponent(itemUid)}/review`,
+      { method: 'PUT', body, auth: { kind: 'guest', token } },
+    )
   }
 
   /** One poll answers both "did my payment land" and "has the kitchen started". */

@@ -1,0 +1,64 @@
+meta {
+  name: review-summary
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/admin/v1/reviews/summary
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("reports an overall score", function () {
+    expect(res.body.data.overall.count).to.be.above(0)
+    expect(res.body.data.overall.average).to.be.within(1, 5)
+  })
+
+  test("the average is rounded server-side to one decimal", function () {
+    // Rounded once, on the server, so every client renders the same "4.3" rather than each
+    // reimplementing the rule -- the same argument that puts a formatted `display` string on
+    // every Money value (docs/DECISIONS.md D7).
+    const avg = res.body.data.overall.average
+    expect(Math.round(avg * 10) / 10).to.equal(avg)
+  })
+
+  test("carries the distribution, not just the mean", function () {
+    // Five buckets, 1..5 stars. Sent alongside the average because the two answer different
+    // questions: a 3.0 of straight 3s is a dull menu, and a 3.0 of 5s and 1s is an
+    // inconsistent kitchen. Those need opposite responses and an average cannot tell them apart.
+    expect(res.body.data.distribution).to.be.an("array").with.length(5)
+  })
+
+  test("the distribution adds up to the overall count", function () {
+    const total = res.body.data.distribution.reduce((a, b) => a + b, 0)
+    expect(total).to.equal(res.body.data.overall.count)
+  })
+
+  test("explains the threshold behind its rankings", function () {
+    // Sent so an empty needs_attention list reads as "not enough data yet" rather than as a
+    // broken panel on a restaurant's first night.
+    expect(res.body.data.min_reviews_for_ranking).to.be.a("number").and.above(0)
+  })
+}
+
+docs {
+  # The reviews dashboard
+
+One number a manager can act on, the shape of the distribution behind it, and the two ends of the
+menu.
+
+`needs_attention` and `top_rated` are built from the running counters on `menu_item` rather than a
+GROUP BY over every review ever left, and both exclude dishes below `min_reviews_for_ranking`. One
+1-star rating would otherwise put a brand-new dish at the top of a list titled "needs attention",
+and send a kitchen to fix something no evidence says is broken.
+}

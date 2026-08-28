@@ -117,6 +117,11 @@ type OrderItem struct {
 	Status     OrderItemStatus `gorm:"size:32;not null;default:'active'" json:"status"`
 	CreatedAt  time.Time       `json:"created_at"`
 	UpdatedAt  time.Time       `json:"updated_at"`
+
+	// Review is the diner's own rating of this line, when they have left one. Preloaded
+	// with the order so the tracking screen can render the stars already given rather than
+	// offering an empty row the diner has to re-fill after a refresh.
+	Review *OrderItemReview `gorm:"foreignKey:OrderItemID" json:"review,omitempty"`
 }
 
 func (OrderItem) TableName() string { return TableNameOrderItem }

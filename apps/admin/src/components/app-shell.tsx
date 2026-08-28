@@ -5,6 +5,7 @@ import {
   ClipboardList,
   type LucideIcon,
   Settings,
+  Star,
   Table2,
   Users,
   UtensilsCrossed,
@@ -18,6 +19,9 @@ import { Button } from '@/components/ui'
 const NAV: readonly { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/orders', label: 'Orders', icon: ClipboardList },
   { href: '/menu', label: 'Menu', icon: UtensilsCrossed },
+  // Directly after Menu, because that is what it is about: the reviews screen answers "which
+  // dish is failing", and a manager arrives at it from the menu rather than from the floor.
+  { href: '/reviews', label: 'Reviews', icon: Star },
   { href: '/tables', label: 'Tables', icon: Table2 },
   { href: '/settings', label: 'Settings', icon: Settings },
   { href: '/staff', label: 'Staff', icon: Users },

@@ -80,6 +80,15 @@ func (a *App) addGuestRoutes(engine *gin.Engine) {
 	guest.POST("/orders/:uid/payment", a.controllers.Payment.CreatePayment)
 	guest.GET("/orders/:uid/payment", a.controllers.Payment.GetPaymentStatus)
 
+	// Rating a dish. PUT, because the diner rates with one tap and no Submit button, so every
+	// tap has to be safe to repeat -- a double-tap on a stalled phone and a correction from
+	// four stars to five must both land on the same row (PRD 6.5).
+	//
+	// No idempotency middleware, unlike placement: that mechanism exists to stop a retry
+	// creating a SECOND row, and this endpoint cannot create one. The unique index on
+	// order_item_id is what guarantees it.
+	guest.PUT("/orders/:uid/items/:item_uid/review", a.controllers.Review.RateMyOrderItem)
+
 	guest.GET("/orders/:uid/stream", a.controllers.Realtime.GuestStream)
 }
 
@@ -153,6 +162,12 @@ func (a *App) addAdminRoutes(engine *gin.Engine) {
 	// way: the actor is recorded on the settlement (DECISIONS.md D2).
 	admin.POST("/orders/:uid/payment/confirm", a.controllers.Payment.ConfirmPayment)
 	admin.POST("/orders/:uid/payment/fail", a.controllers.Payment.MarkPaymentFailed)
+
+	// Reading reviews is open to every role. A complaint about a cold dish is most useful to
+	// whoever is on the floor right now, and gating it behind a manager login is how it gets
+	// read the next morning instead of while the table is still sitting there.
+	admin.GET("/reviews", a.controllers.Review.ListReviews)
+	admin.GET("/reviews/summary", a.controllers.Review.ReviewSummary)
 
 	admin.GET("/stats/today", a.controllers.Stats.Today)
 	admin.GET("/stats/range", a.controllers.Stats.Range)
