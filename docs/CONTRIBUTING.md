@@ -67,6 +67,9 @@ forgets to scope itself does not compile; and transaction-aware methods take a `
 - **A dish tag on a service rating, or the reverse.** `models.ReviewTag` and `models.ServiceTag`
   are separate types with separate vocabularies and separate refusal codes, precisely so one
   cannot be used where the other belongs.
+- **A new model that is not added to `models.All()`.** Readiness compares that list against the
+  live schema, and a model missing from it is simply not checked -- so a forgotten migration stops
+  being caught ([DEPLOYMENT.md](./DEPLOYMENT.md)).
 - **A new "is this thing switched on" boolean folded into a `status` column.** `menu_item` splits
   `is_available` from `status` and `restaurant` splits `accepting_orders` from `status`, both for
   the same reason: the day-to-day toggle and the lifecycle flag have different owners, different
@@ -116,7 +119,7 @@ Bottom-up, so each step compiles:
 ```bash
 make test                    # Go tests + frontend unit tests
 make -C backend test-race    # the hub and order locking only misbehave under -race
-make smoke                   # 151 API assertions against a running server
+make smoke                   # 154 API assertions against a running server
 make concurrency             # the four races that happen in a real restaurant
 make api-collection          # 186 assertions, the Bruno collection end to end
 cd apps/diner && node e2e/diner-journey.mjs    # 47 assertions, real browser

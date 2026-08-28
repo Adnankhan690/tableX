@@ -243,13 +243,13 @@ Everything below runs against a real Postgres and a real browser — no mocks, n
 | | |
 | --- | --- |
 | Go unit tests | State machine matrix (every from-state x to-state x actor), UPI link construction, Razorpay HMAC, provider registry |
-| API smoke | 151 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection, the rating window at both its edges, that a service rating is one row per sitting, and that a closed restaurant refuses orders while still serving its menu |
+| API smoke | 154 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection, the rating window at both its edges, that a service rating is one row per sitting, and that a closed restaurant refuses orders while still serving its menu |
 | Concurrency | 8 simultaneous accepts resolve to exactly one winner; 20 simultaneous checkouts get 20 distinct order numbers; 10 duplicate submits produce one order; 8 simultaneous ratings of one dish all reach its running aggregate |
 | Diner journey | 47 assertions in a real iPhone viewport: scan → menu → cart → checkout → live tracking, plus a second desktop context proving the rating count reveals on hover *and* stays visible on touch |
 | Rating journey | 20 assertions: a served order → one tap per dish → polarity-matched tags → the service row → survives a reload |
 | Admin journey | 81 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions, the reviews feed, its drill-down, the food/service split, and the open/close switch, including that it is reachable at 390px, keeps the header to one row, and does not clip the restaurant name |
 | Bruno collection | 71 requests over 14 folders, all 60 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
-| Migrations | CI applies every down migration in reverse, asserts zero tables remain, then re-applies forwards |
+| Migrations | CI applies every down migration in reverse, asserts zero tables remain, then re-applies forwards. At runtime `/health/ready` compares the live schema against the binary and returns 503 if a migration has not been run, so a deploy that is ahead of its database never takes traffic |
 
 Three real bugs were found this way, which is why the suites are shaped as they are:
 
