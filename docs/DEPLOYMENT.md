@@ -56,12 +56,54 @@ Expect, on a fresh database:
 
 ```
 applied 001_create_restaurant
-... 14 lines ...
-applied 14 migration(s)
+... 19 lines ...
+applied 19 migration(s)
+```
+
+On a database that is only *behind*, it applies the gap and leaves the rest alone -- so after
+shipping the ratings work it prints the four it was missing:
+
+```
+applied 015_create_order_item_review
+applied 016_add_menu_item_rating
+applied 017_create_service_review
+applied 018_add_restaurant_accepting_orders
+applied 4 migration(s)
 ```
 
 It is safe to re-run. Applied versions are recorded in `schema_migration`, and a second run
 prints `schema is up to date; nothing to apply`.
+
+### Restart the service afterwards
+
+Adding a column changes the result shape of statements the running server has already prepared, and
+Postgres refuses those with `cached plan must not change result type` (SQLSTATE 0A000). Connections
+opened before the migration therefore throw for as long as they stay in the pool -- which surfaces
+to a diner as `TX_COM_003` on the very next request, and clears by itself only once those
+connections cycle.
+
+**Restart the API after migrating** (Render dashboard -> the service -> Manual Deploy -> Restart).
+It drops the pool and skips the window entirely. On the free tier that costs a cold start, which is
+cheaper than serving 500s while connections churn.
+
+### What happens if you forget to migrate
+
+The server refuses to serve rather than half-working. `/health/ready` compares the live schema
+against what the binary expects and answers **503** with `"schema": "N gap(s); run the migration"`,
+naming the missing tables and columns in the logs. Render routes on that probe, so a deploy whose
+migrations have not been run never takes traffic and the previous instance keeps serving.
+
+That guard exists because the failure is otherwise invisible in one direction and silent in the
+other. GORM issues `SELECT *`, so:
+
+* a **missing table** fails loudly -- a preload queries a relation that is not there and the request
+  500s (this is how a missing `order_item_review` reached diners as a broken order screen);
+* a **missing column** does not fail at all. The query succeeds and the field is left at its zero
+  value. Had `restaurant.accepting_orders` been missing on its own, every restaurant would have read
+  as CLOSED and quietly refused every order, with nothing in the logs to explain it.
+
+Once the migration is applied the next probe passes on its own; the instance does not need
+restarting for readiness to recover, only for the cached-plan window above.
 
 To see what would happen without writing anything — safe against production:
 

@@ -40,6 +40,16 @@ ck() { # ck <label> <expected> <actual>
   else echo "  FAIL  $1 -- expected [$2] got [$3]"; FAIL=$((FAIL+1)); fi
 }
 
+echo "=============== 0. THE SERVER IS FIT TO SERVE ==============="
+READY=$(curl -s $PUB/health/ready)
+ck "readiness is ok"                     "ok" "$(echo "$READY" | j status)"
+ck "database reachable"                  "ok" "$(echo "$READY" | j database)"
+# Readiness checks the SCHEMA, not just the connection. A binary deployed ahead of its migrations
+# would otherwise pass a ping, take traffic, and then either 500 on a missing table or -- worse --
+# read a missing COLUMN as its zero value and misbehave silently. Both of those reached production.
+ck "schema matches this binary"          "ok" "$(echo "$READY" | j schema)"
+
+echo
 echo "=============== 1. DINER: scan the table QR ==============="
 SCAN=$(curl -s $PUB/t/$QR)
 TOKEN=$(echo "$SCAN" | j data.session.token)
