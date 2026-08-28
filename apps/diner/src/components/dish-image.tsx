@@ -1,3 +1,4 @@
+import { cn } from '@tablex/ui'
 import Image from 'next/image'
 
 /**
@@ -35,25 +36,45 @@ function initials(name: string): string {
   return (first + second).toUpperCase()
 }
 
-export function DishImage({ name, url, size = 76 }: { name: string; url?: string; size?: number }) {
+export function DishImage({
+  name,
+  url,
+  size,
+  className,
+}: {
+  name: string
+  url?: string
+  size?: number
+  className?: string
+}) {
+  const defaultSize = size ?? 76
+  const customDimensions = className && (className.includes('w-') || className.includes('h-'))
+
   if (!url) {
     return (
       <div
-        className={`flex shrink-0 items-center justify-center rounded-card font-semibold ${tintFor(name)}`}
-        style={{ width: size, height: size }}
+        className={cn(
+          'flex shrink-0 items-center justify-center font-semibold rounded-2xl select-none',
+          tintFor(name),
+          className,
+        )}
+        style={customDimensions ? undefined : { width: defaultSize, height: defaultSize }}
         // aria-hidden because the dish name is already adjacent in the DOM; announcing
         // "PT" after it would just be noise.
         aria-hidden="true"
       >
-        {initials(name)}
+        <span className="text-2xl font-bold tracking-wider opacity-80">{initials(name)}</span>
       </div>
     )
   }
 
   return (
     <div
-      className="relative shrink-0 overflow-hidden rounded-card bg-surface-sunken"
-      style={{ width: size, height: size }}
+      className={cn(
+        'relative shrink-0 overflow-hidden rounded-2xl bg-surface-sunken',
+        className,
+      )}
+      style={customDimensions ? undefined : { width: defaultSize, height: defaultSize }}
     >
       <Image
         src={url}
@@ -62,7 +83,7 @@ export function DishImage({ name, url, size = 76 }: { name: string; url?: string
         // An explicit sizes value, because `fill` otherwise makes Next request the largest
         // candidate -- which on a photo-heavy menu over 3G is exactly the payload PRD 7 is
         // about.
-        sizes={`${size * 2}px`}
+        sizes={customDimensions ? '280px' : `${defaultSize * 2}px`}
         className="object-cover"
         // Menus are long; only the images actually scrolled to should be fetched.
         loading="lazy"

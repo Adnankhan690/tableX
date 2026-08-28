@@ -230,7 +230,7 @@ export function MenuScreen() {
       />
 
       {/* Search and filter, sticky under the header so they stay reachable down a long menu. */}
-      <div className="sticky top-[3.75rem] z-10 border-b border-line bg-bg px-4 py-2">
+      <div className="sticky top-[3.75rem] z-20 border-b border-line bg-bg px-4 py-2">
         <div className="flex items-center gap-2">
           <input
             type="search"
@@ -391,44 +391,61 @@ export function MenuScreen() {
  * cluster of ambiguous shapes on a scrolling list, and the number is what a diner actually
  * reads. The count rides along because "4.6" alone invites the question.
  */
+/**
+ * A dish's score on the menu, formatted as a star rating pill matching the reference design.
+ */
 function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> }) {
+  const fullStars = Math.min(5, Math.max(0, Math.round(rating.average)))
+
   return (
     <span
-      // role="img" with a label, rather than a bare span carrying aria-label -- which is both an
-      // accessibility bug and a biome error. The label spells out what "4.8 (12)" means, since
-      // read aloud those two numbers are ambiguous.
       role="img"
       aria-label={`Rated ${formatRating(rating.average)} out of 5 by ${rating.count} ${
         rating.count === 1 ? 'diner' : 'diners'
       }`}
-      className="flex items-center gap-1 text-[0.8125rem] text-muted"
+      className="inline-flex items-center gap-1.5 rounded-md border border-amber-300/80 bg-amber-50/50 px-2 py-0.5 text-xs text-ink/80"
     >
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-        className="text-accent"
-      >
-        <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
-      </svg>
-      <span aria-hidden="true" className="font-medium tabular-nums text-ink">
-        {formatRating(rating.average)}
+      <span className="flex items-center text-amber-500 tracking-[-1px] text-[0.8125rem]" aria-hidden="true">
+        {'★'.repeat(fullStars)}
+        {'☆'.repeat(5 - fullStars)}
       </span>
-      {/*
-        How many diners are behind the score. Hidden until hover on a pointer device and simply
-        always visible on touch -- see the .rating-count note in globals.css for why that is a
-        media query rather than a Tailwind hover: variant.
-
-        The score is the thing a diner is scanning for; the count is what they check before
-        trusting it. Showing both at full weight on every row makes a long menu noisier without
-        making any single dish clearer.
-      */}
-      <span aria-hidden="true" className="rating-count tabular-nums">
-        ({rating.count})
+      <span className="font-medium tabular-nums text-muted text-[0.75rem]" aria-hidden="true">
+        {rating.count} {rating.count === 1 ? 'rating' : 'ratings'}
       </span>
     </span>
+  )
+}
+
+function DishDescription({ description }: { description: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const words = useMemo(() => description.trim().split(/\s+/).filter(Boolean), [description])
+  const isLong = words.length > 9
+
+  if (!isLong) {
+    return (
+      <p className="mt-1.5 max-w-[190px] sm:max-w-[220px] text-[0.8125rem] leading-relaxed text-muted">
+        {description}
+      </p>
+    )
+  }
+
+  const shortText = words.slice(0, 9).join(' ')
+  const remainingText = words.slice(9).join(' ')
+
+  return (
+    <p
+      onClick={() => setExpanded((v) => !v)}
+      className="mt-1.5 max-w-[190px] sm:max-w-[220px] cursor-pointer select-none text-[0.8125rem] leading-relaxed text-muted transition-all duration-300 ease-in-out hover:text-ink"
+    >
+      <span>{shortText}</span>
+      {!expanded ? (
+        <span className="transition-opacity duration-300">...</span>
+      ) : (
+        <span className="transition-opacity duration-300 ease-in-out">
+          {' ' + remainingText}
+        </span>
+      )}
+    </p>
   )
 }
 
@@ -454,56 +471,59 @@ function DishRow({
   return (
     <li
       className={cn(
-        'rating-hover flex gap-3 border-b border-line px-4 py-3',
+        'rating-hover flex gap-3.5 border-b border-line px-4 pt-4 pb-6 items-start justify-between',
         unavailable && 'opacity-55',
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <FoodTypeBadge type={item.food_type} size={14} />
+      <div className="min-w-0 flex-1 pr-2">
+        <div className="flex items-center gap-2">
+          <FoodTypeBadge type={item.food_type} size={15} />
           {item.is_bestseller && !unavailable ? (
-            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-accent">
+            <span className="rounded-md bg-amber-100 border border-amber-300/50 px-2 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-amber-800">
               Bestseller
             </span>
           ) : null}
         </div>
 
-        <p className="mt-1 text-dish-name">{item.name}</p>
+        <p className="mt-1.5 text-dish-name font-bold text-ink leading-tight">{item.name}</p>
 
-        <div className="mt-0.5 flex items-center gap-2">
-          <p className="text-price tabular-nums">{item.price.display}</p>
-          {/*
-            Absent, not zeroed, for a dish without enough ratings -- the server omits the field
-            below its publication threshold. A "5.0" from one tap would rank an untried dish
-            above a consistently good one, so no score is the honest rendering (PRD 6.2).
-          */}
-          {item.rating ? <DishRating rating={item.rating} /> : null}
-        </div>
-
-        {item.description ? (
-          <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">
-            {item.description}
-          </p>
+        {item.rating ? (
+          <div className="mt-1.5">
+            <DishRating rating={item.rating} />
+          </div>
         ) : null}
 
-        <div className="mt-1 flex items-center gap-2 text-[0.75rem] text-muted">
+        <p className="mt-1.5 text-base font-bold text-ink tabular-nums">{item.price.display}</p>
+
+        {item.description ? <DishDescription description={item.description} /> : null}
+
+        <div className="mt-1.5 flex items-center gap-2 text-[0.75rem] text-muted">
           {item.prep_time_mins ? <span>{item.prep_time_mins} min</span> : null}
           {item.spice_level ? <span className="capitalize">{item.spice_level}</span> : null}
         </div>
 
         {unavailable ? (
-          <p className="mt-1 text-[0.8125rem] font-medium text-nonveg">Unavailable today</p>
+          <p className="mt-1.5 text-[0.8125rem] font-medium text-nonveg">Unavailable today</p>
         ) : null}
       </div>
 
-      <div className="flex flex-col items-end justify-between gap-2">
-        <DishImage name={item.name} {...(item.image_url ? { url: item.image_url } : {})} />
-        {!unavailable ? (
-          <QuantityStepper
-            quantity={quantity}
-            label={item.name}
-            onChange={(next) => (next === 1 && quantity === 0 ? onAdd() : onSetQuantity(next))}
+      <div className="relative shrink-0 flex flex-col items-center select-none pt-0.5">
+        <div className="relative overflow-hidden rounded-2xl shadow-sm">
+          <DishImage
+            name={item.name}
+            url={item.image_url}
+            className="w-[140px] h-[126px] sm:w-[152px] sm:h-[136px] rounded-2xl"
           />
+        </div>
+        {!unavailable ? (
+          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-[1]">
+            <QuantityStepper
+              quantity={quantity}
+              label={item.name}
+              variant="overlay"
+              onChange={(next) => (next === 1 && quantity === 0 ? onAdd() : onSetQuantity(next))}
+            />
+          </div>
         ) : null}
       </div>
     </li>
