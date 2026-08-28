@@ -119,3 +119,39 @@ func (c *ControllerAuth) UpdateStaff(ctx *gin.Context) {
 		ctx.Request.Context(), actor, ctx.Param(PathParamUID), &req)
 	response.Send(ctx, result, appErr)
 }
+
+func (c *ControllerAuth) ForgotPassword(ctx *gin.Context) {
+	var req types.RequestForgotPassword
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.Access.Logger.With(ctx.Request.Context()).Warnf("[ForgotPassword] bind: %v", err)
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	appErr := c.Access.Services.Auth.ForgotPassword(ctx.Request.Context(), req.Email)
+	response.Send(ctx, nil, appErr)
+}
+
+func (c *ControllerAuth) VerifyResetCode(ctx *gin.Context) {
+	var req types.RequestVerifyResetCode
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.Access.Logger.With(ctx.Request.Context()).Warnf("[VerifyResetCode] bind: %v", err)
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	appErr := c.Access.Services.Auth.VerifyResetCode(ctx.Request.Context(), req.Email, req.Code)
+	response.Send(ctx, nil, appErr)
+}
+
+func (c *ControllerAuth) ResetPassword(ctx *gin.Context) {
+	var req types.RequestResetPassword
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.Access.Logger.With(ctx.Request.Context()).Warnf("[ResetPassword] bind: %v", err)
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	appErr := c.Access.Services.Auth.ResetPassword(ctx.Request.Context(), req.Email, req.Code, req.NewPassword)
+	response.Send(ctx, nil, appErr)
+}

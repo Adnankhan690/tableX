@@ -55,13 +55,14 @@ const (
 
 // Repositories aggregates every data-access object.
 type Repositories struct {
-	Restaurant   RepositoryRestaurantMethods
-	Staff        RepositoryStaffMethods
-	Table        RepositoryTableMethods
-	Menu         RepositoryMenuMethods
-	GuestSession RepositoryGuestSessionMethods
-	Order        RepositoryOrderMethods
-	Payment      RepositoryPaymentMethods
+	Restaurant    RepositoryRestaurantMethods
+	Staff         RepositoryStaffMethods
+	Table         RepositoryTableMethods
+	Menu          RepositoryMenuMethods
+	GuestSession  RepositoryGuestSessionMethods
+	Order         RepositoryOrderMethods
+	Payment       RepositoryPaymentMethods
+	PasswordReset RepositoryPasswordResetMethods
 }
 
 // NewRepositories wires every repository against one shared Access.
@@ -69,12 +70,13 @@ func NewRepositories(cfg *config.Config, store *db.Store, log logger.Logger) *Re
 	access := &RepositoryAccess{Cfg: cfg, Db: store, Logger: log}
 
 	return &Repositories{
-		Restaurant:   NewRepositoryRestaurant(access),
-		Staff:        NewRepositoryStaff(access),
-		Table:        NewRepositoryTable(access),
-		Menu:         NewRepositoryMenu(access),
-		GuestSession: NewRepositoryGuestSession(access),
-		Order:        NewRepositoryOrder(access),
-		Payment:      NewRepositoryPayment(access),
+		Restaurant:    NewRepositoryRestaurant(access),
+		Staff:         NewRepositoryStaff(access),
+		Table:         NewRepositoryTable(access),
+		Menu:          NewRepositoryMenu(access),
+		GuestSession:  NewRepositoryGuestSession(access),
+		Order:         NewRepositoryOrder(access),
+		Payment:       NewRepositoryPayment(access),
+		PasswordReset: NewRepositoryPasswordReset(access),
 	}
 }

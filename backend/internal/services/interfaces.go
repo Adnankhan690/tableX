@@ -51,6 +51,9 @@ type ServiceAuthMethods interface {
 	ListStaff(ctx context.Context, actor *StaffPrincipal) (*types.ResponseStaffList, *response.ApplicationError)
 	ChangePassword(ctx context.Context, actor *StaffPrincipal, req *types.RequestChangePassword) *response.ApplicationError
 	Me(ctx context.Context, actor *StaffPrincipal) (*types.StaffMember, *response.ApplicationError)
+	ForgotPassword(ctx context.Context, email string) *response.ApplicationError
+	VerifyResetCode(ctx context.Context, email string, code string) *response.ApplicationError
+	ResetPassword(ctx context.Context, email string, code string, newPassword string) *response.ApplicationError
 }
 
 // ServiceRestaurantMethods handles restaurant settings.

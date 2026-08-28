@@ -17,6 +17,7 @@ const (
 	TableNamePayment             = "payment"
 	TableNamePaymentWebhookEvent = "payment_webhook_event"
 	TableNameOrderCounter        = "order_counter"
+	TableNamePasswordResetCode   = "password_reset_code"
 )
 
 // EntityStatus is the shared lifecycle flag on long-lived rows.
