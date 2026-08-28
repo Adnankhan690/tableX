@@ -105,7 +105,17 @@ await page.waitForSelector('text=How was it?', { timeout: 15000 })
 
 console.log('=== The rating card appears on a served order ===')
 ck('card is shown', await page.locator('text=How was it?').isVisible())
-ck('promises it saves as you go', /saves as you go/i.test(await page.locator('main').innerText()))
+// Asserts the CLAIM, not the copy. The card used to carry a line saying it saved as you go and
+// this checked for that sentence, which made it a test of the wording -- it would have gone red
+// on a rewrite that changed nothing a diner experiences, and stayed green on a Submit button
+// appearing beside the reassuring text. What actually has to hold is that there is nothing to
+// submit.
+const cardButtons = await page.locator('section:has-text("How was it?") button').allInnerTexts()
+ck(
+  'nothing in the card asks to be submitted',
+  !cardButtons.some((t) => /submit|send|done|save/i.test(t)),
+  cardButtons.join(' | '),
+)
 const groups = await page.locator('[role="radiogroup"]').count()
 ck('one star row per dish', groups === 2, `found ${groups}`)
 await page.screenshot({ path: `${SHOT}/r1-card.png`, fullPage: true })

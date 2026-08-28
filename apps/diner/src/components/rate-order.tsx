@@ -43,11 +43,26 @@ export function RateOrder({
 
   return (
     <section className="rounded-card border border-line bg-surface">
+      {/*
+        The heading, and nothing else.
+
+        There was a line here reading "Tap a star. That is the whole thing -- it saves as you
+        go." It was removed rather than reworded, because every part of it was already being
+        said by something better:
+
+          * "Tap a star" explains a five-star row, which is among the most universally
+            understood controls there is. Instructions for a control nobody needs instructions
+            for read as doubt about the control.
+          * "it saves as you go" is a promise the "Saved" tick keeps one tap later. Making it
+            in advance asks the diner to take on trust what the interface is about to
+            demonstrate.
+          * "That is the whole thing" is the copy insisting. Text that argues an interface is
+            simple is a reliable sign it is not -- and here it is, so the argument is unearned.
+
+        It also cost two lines above the fold on a phone, pushing the actual stars down.
+      */}
       <div className="border-b border-line px-4 py-3">
         <h2 className="text-[1.0625rem] font-semibold leading-tight">How was it?</h2>
-        <p className="mt-0.5 text-[0.8125rem] leading-snug text-muted">
-          Tap a star. That is the whole thing — it saves as you go.
-        </p>
       </div>
 
       <ul>
