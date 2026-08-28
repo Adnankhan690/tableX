@@ -83,7 +83,29 @@ function share(part: number, whole: number): string | undefined {
   return `${Math.round((part / whole) * 100)}% of today`
 }
 
-export function StatsStrip() {
+/**
+ * The board filters a breakdown band can select.
+ *
+ * Narrower than the order board's own `FilterValue` on purpose, and declared here rather than
+ * imported from there: order-board imports this file, so pulling its type back would be circular.
+ * Because a function taking the wider union is assignable to one taking this narrower type, the
+ * board can pass `setStatusFilter` straight in with no cast.
+ *
+ * Each value maps EXACTLY onto what its band counts, which is what makes the click honest:
+ *   `open`      <- orders_live      = every non-terminal status (repo: NOT IN orderStatusesClosed)
+ *   `completed` <- orders_completed = status completed
+ *   `closed`    <- orders_cancelled = cancelled + rejected (repo: orderStatusesVoided)
+ * That last one reads like an approximation and is not: the figure and the filter cover the same
+ * two statuses.
+ */
+export type StatsFilter = 'open' | 'completed' | 'closed'
+
+export function StatsStrip({
+  /** Called when a breakdown band is clicked. Without it the bands still explain themselves. */
+  onFilter,
+}: {
+  onFilter?: (filter: StatsFilter) => void
+}) {
   const { getToken } = useAuth()
   const [stats, setStats] = useState<OrderStatsView | null>(null)
   const [failed, setFailed] = useState(false)
@@ -264,12 +286,31 @@ export function StatsStrip() {
                     breakdown={
                       stats.orders_placed > 0
                         ? [
-                            { value: stats.orders_live, className: 'bg-accent' },
-                            { value: stats.orders_completed, className: 'bg-success' },
-                            { value: stats.orders_cancelled, className: 'bg-danger' },
+                            {
+                              label: 'Live',
+                              value: stats.orders_live,
+                              className: 'bg-accent',
+                              textClassName: 'text-accent',
+                              filter: 'open',
+                            },
+                            {
+                              label: 'Completed',
+                              value: stats.orders_completed,
+                              className: 'bg-success',
+                              textClassName: 'text-success',
+                              filter: 'completed',
+                            },
+                            {
+                              label: 'Cancelled',
+                              value: stats.orders_cancelled,
+                              className: 'bg-danger',
+                              textClassName: 'text-danger',
+                              filter: 'closed',
+                            },
                           ]
                         : undefined
                     }
+                    onFilter={onFilter}
                   />,
                   <Cell
                     key="live"
@@ -356,8 +397,25 @@ export function StatsStrip() {
 }
 
 interface BreakdownSegment {
+  /**
+   * What this slice is.
+   *
+   * Required, because a colour is not a label. The bar drew three unexplained bands and the only
+   * way to learn that blue meant live was to already know.
+   */
+  label: string
   value: number
+  /** Fill for the band. */
   className: string
+  /** The board filter this band selects when clicked. Omit for a band with no equivalent. */
+  filter?: StatsFilter
+  /**
+   * Text colour for the read-out below.
+   *
+   * Carried alongside the fill rather than derived from it: the read-out appears in the same colour
+   * as the band being pointed at, which is what makes the mapping obvious without a legend.
+   */
+  textClassName: string
 }
 
 /**
@@ -376,6 +434,7 @@ function Cell({
   tone,
   contextTone,
   breakdown,
+  onFilter,
 }: {
   icon: LucideIcon
   label: string
@@ -384,8 +443,20 @@ function Cell({
   tone?: 'accent' | 'warning'
   contextTone?: 'success' | 'warning'
   breakdown?: BreakdownSegment[]
+  onFilter?: (filter: StatsFilter) => void
 }) {
   const total = breakdown?.reduce((n, segment) => n + segment.value, 0) ?? 0
+  /**
+   * Which band is being pointed at, or null.
+   *
+   * One value again. A previous version also latched on tap, because tapping was the only way to
+   * read a band on a touch screen -- a tap now SELECTS the band's filter instead, and the list
+   * redrawing underneath is better feedback than a line of text. Nothing needs to survive
+   * `pointerleave` any more.
+   */
+  const [hovered, setHovered] = useState<number | null>(null)
+  const shown = hovered !== null ? breakdown?.[hovered] : undefined
+
   return (
     <div className="min-w-0 bg-surface px-4 py-3">
       <dt className="flex items-center gap-1.5 text-xs text-muted">
@@ -410,35 +481,79 @@ function Cell({
       </dd>
 
       {breakdown && total > 0 ? (
-        <div
-          aria-hidden="true"
-          className="mt-2 flex h-1 gap-px overflow-hidden rounded-full bg-surface-sunken"
-        >
-          {breakdown.map((segment) =>
+        /*
+          NO LONGER `aria-hidden`. It was decorative because it was unreadable -- three colours and
+          nothing saying what they were. Each band is now a button carrying its own name and share,
+          so the composition is available by pointer, by keyboard and to a screen reader.
+
+          Three extra tab stops, and only three: `placed` is the one cell in the strip with a
+          breakdown, so this does not multiply across the row.
+
+          `h-2` rather than `h-1`. Doubling a 4px bar is still a slim rule, and 4px was not a
+          pointer target at all -- let alone a finger one.
+        */
+        <div className="mt-2 flex h-2 gap-px overflow-hidden rounded-full bg-surface-sunken">
+          {breakdown.map((segment, index) =>
             segment.value > 0 ? (
-              <span
-                key={segment.className}
-                className={segment.className}
+              <button
+                key={segment.label}
+                type="button"
+                className={cn(
+                  segment.className,
+                  'h-full transition-opacity',
+                  // Only the bands that lead somewhere say so. A band with no `filter` still
+                  // explains itself on hover, so it stays a button -- it just is not a link.
+                  segment.filter && onFilter ? 'cursor-pointer hover:opacity-80' : 'cursor-default',
+                )}
                 // A percentage width, so the bar is a proportion and not a count of pixels.
                 style={{ width: `${(segment.value / total) * 100}%` }}
+                onClick={() => {
+                  if (segment.filter) onFilter?.(segment.filter)
+                }}
+                onPointerEnter={() => setHovered(index)}
+                onPointerLeave={() => setHovered(null)}
+                onFocus={() => setHovered(index)}
+                onBlur={() => setHovered(null)}
+                /* The label states the FIGURE and, where there is one, the ACTION -- a bare
+                   "Cancelled: 3 of 24" would not tell a screen-reader user that this is a
+                   control rather than a readout. */
+                aria-label={
+                  segment.filter && onFilter
+                    ? `${segment.label}: ${segment.value} of ${total} ${label.toLowerCase()}. Show these orders.`
+                    : `${segment.label}: ${segment.value} of ${total} ${label.toLowerCase()}`
+                }
               />
             ) : null,
           )}
         </div>
       ) : null}
 
-      {context ? (
+      {/*
+        THE READ-OUT SHARES THE CONTEXT LINE, rather than floating above the bar as a tooltip.
+
+        Not a stylistic preference -- the collapse wrapper above is `overflow-hidden` (it has to be,
+        for the grid-rows transition), so anything positioned outside this cell gets clipped. Using
+        a line that already exists also means no layout shift when it appears, and it cannot escape
+        a 2-column-on-mobile cell and run off the strip.
+
+        In the band's own colour, which is what ties the words to the swatch under the pointer.
+      */}
+      {shown || context ? (
         <p
           className={cn(
             'mt-1.5 truncate text-xs',
-            contextTone === 'success'
-              ? 'text-success'
-              : contextTone === 'warning'
-                ? 'text-warning'
-                : 'text-faint',
+            shown
+              ? cn('font-medium', shown.textClassName)
+              : contextTone === 'success'
+                ? 'text-success'
+                : contextTone === 'warning'
+                  ? 'text-warning'
+                  : 'text-faint',
           )}
         >
-          {context}
+          {shown
+            ? `${shown.label} · ${shown.value} (${Math.round((shown.value / total) * 100)}%)`
+            : context}
         </p>
       ) : null}
     </div>

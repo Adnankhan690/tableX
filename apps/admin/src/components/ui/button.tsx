@@ -53,10 +53,15 @@ const VARIANT: Record<ButtonVariant, string> = {
 }
 
 const SIZE: Record<ButtonSize, string> = {
-  // Both clear the 40px tap floor: this panel is used on a tablet at arm's length, so `sm` is a
+  // Both clear the panel's tap floor: it is used on a tablet at arm's length, so `sm` is a
   // narrower button, not a shorter one.
-  sm: 'min-h-tap px-2.5 text-sm',
-  md: 'min-h-tap px-3.5 text-base',
+  //
+  // Below the `sm` breakpoint both drop to the 36px `tap-sm` floor with one step less padding and
+  // one step smaller type -- see the note on the tokens in tailwind.config.ts. The height is the
+  // smallest part of that change on purpose; the padding and type are what made a 40px button look
+  // oversized on a 360px screen.
+  sm: 'min-h-tap-sm px-2 text-xs sm:min-h-tap sm:px-2.5 sm:text-sm',
+  md: 'min-h-tap-sm px-3 text-sm sm:min-h-tap sm:px-3.5 sm:text-base',
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

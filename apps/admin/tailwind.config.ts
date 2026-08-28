@@ -93,8 +93,17 @@ const config: Config = {
         dialog: '0 24px 48px -12px rgb(14 21 32 / 0.25)',
       },
       spacing: { tap: '2.5rem' },
-      minHeight: { tap: '2.5rem' },
-      minWidth: { tap: '2.5rem' },
+      /*
+        Two tap floors, and the smaller one is phones only.
+        `tap` (40px) is the panel's real target size -- it is used on a tablet at arm's length, so
+        controls have to be reachable without aiming. `tap-sm` (36px) applies below the `sm`
+        breakpoint, where the whole viewport is 320-414px and 40px controls read as oversized
+        furniture crowding out the content. It is a compromise, not a free win: 36px is comfortably
+        past WCAG 2.5.8's 24px minimum but under the 44px that 2.5.5 asks for, and most of the
+        visual weight is taken out of font size and padding rather than height for that reason.
+      */
+      minHeight: { tap: '2.5rem', 'tap-sm': '2.25rem' },
+      minWidth: { tap: '2.5rem', 'tap-sm': '2.25rem' },
       keyframes: {
         // Motion exists here only to signal that something arrived or is waiting. Both are short
         // enough to read as feedback rather than as animation.
@@ -104,11 +113,31 @@ const config: Config = {
           to: { opacity: '1', transform: 'translateY(0)' },
         },
         pulse: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.55' } },
+        /*
+         * A newly arrived ticket sliding into place.
+         *
+         * Its own keyframe rather than reusing `rise-in`, for two reasons. `rise-in` travels 2px,
+         * which is invisible on a card at arm's length on a counter tablet -- it was tuned for a
+         * panel appearing in place, not for an object landing in a list.
+         *
+         * And it deliberately does NOT touch opacity. The card mounts one commit before it is
+         * marked as new (the marking happens in the fetch callback, but React still commits the
+         * list first), so a keyframe starting at `opacity: 0` would show the card solid for one
+         * frame and then blink it away before fading in. A transform-only entrance has nothing to
+         * blink: the card is visible the whole time and simply settles.
+         */
+        'order-in': {
+          from: { transform: 'translateY(0.5rem)' },
+          to: { transform: 'translateY(0)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 120ms ease-out',
         'rise-in': 'rise-in 140ms ease-out',
         'pulse-slow': 'pulse 1.6s ease-in-out infinite',
+        // Longer than the other two (140ms) because it travels four times as far. Still short
+        // enough to read as feedback rather than as animation, which is the rule above.
+        'order-in': 'order-in 220ms ease-out',
       },
     },
   },

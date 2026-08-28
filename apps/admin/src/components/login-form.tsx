@@ -4,7 +4,7 @@ import { isApiError } from '@tablex/api-client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
-import { Button, Field, Input, Notice } from '@/components/ui'
+import { Button, Field, Input, Notice, PasswordInput } from '@/components/ui'
 import { api } from '@/lib/api'
 
 export function LoginForm() {
@@ -204,9 +204,8 @@ export function LoginForm() {
               </Field>
               <Field label="Password">
                 {({ id }) => (
-                  <Input
+                  <PasswordInput
                     id={id}
-                    type="password"
                     autoComplete="current-password"
                     required
                     value={password}
@@ -389,9 +388,8 @@ export function LoginForm() {
                 <div className="mt-6 space-y-3">
                   <Field label="New Password">
                     {({ id }) => (
-                      <Input
+                      <PasswordInput
                         id={id}
-                        type="password"
                         autoComplete="new-password"
                         autoFocus
                         required
@@ -403,9 +401,8 @@ export function LoginForm() {
                   </Field>
                   <Field label="Confirm New Password">
                     {({ id }) => (
-                      <Input
+                      <PasswordInput
                         id={id}
-                        type="password"
                         autoComplete="new-password"
                         required
                         value={forgotConfirmPassword}

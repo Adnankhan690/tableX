@@ -31,7 +31,14 @@ export {
   Skeleton,
   type Tone,
 } from './feedback'
-export { Field, type FieldProps, Input, type InputProps, Textarea } from './field'
+export {
+  Field,
+  type FieldProps,
+  Input,
+  type InputProps,
+  PasswordInput,
+  Textarea,
+} from './field'
 export {
   SearchInput,
   type SearchInputProps,
