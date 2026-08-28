@@ -4,14 +4,16 @@ import "net/http"
 
 // Rating and review failures.
 const (
-	ErrCodeReviewWindowClosed  ErrorCode = "TX_REV_001"
-	ErrCodeReviewInvalidRating ErrorCode = "TX_REV_002"
-	ErrCodeReviewInvalidTag    ErrorCode = "TX_REV_003"
-	ErrCodeReviewItemNotFound  ErrorCode = "TX_REV_004"
-	ErrCodeReviewItemCancelled ErrorCode = "TX_REV_005"
-	ErrCodeReviewSaveFailed    ErrorCode = "TX_REV_006"
-	ErrCodeReviewFetchFailed   ErrorCode = "TX_REV_007"
-	ErrCodeReviewTooManyTags   ErrorCode = "TX_REV_008"
+	ErrCodeReviewWindowClosed      ErrorCode = "TX_REV_001"
+	ErrCodeReviewInvalidRating     ErrorCode = "TX_REV_002"
+	ErrCodeReviewInvalidTag        ErrorCode = "TX_REV_003"
+	ErrCodeReviewItemNotFound      ErrorCode = "TX_REV_004"
+	ErrCodeReviewItemCancelled     ErrorCode = "TX_REV_005"
+	ErrCodeReviewSaveFailed        ErrorCode = "TX_REV_006"
+	ErrCodeReviewFetchFailed       ErrorCode = "TX_REV_007"
+	ErrCodeReviewTooManyTags       ErrorCode = "TX_REV_008"
+	ErrCodeReviewInvalidServiceTag ErrorCode = "TX_REV_009"
+	ErrCodeReviewServiceSaveFailed ErrorCode = "TX_REV_010"
 )
 
 var (
@@ -68,6 +70,23 @@ var (
 	ErrReviewFetchFailed = &ApplicationError{
 		ErrorCode:    ErrCodeReviewFetchFailed,
 		ErrorMessage: "failed to load reviews",
+		HttpCode:     http.StatusInternalServerError,
+	}
+	// ErrReviewInvalidServiceTag is the service vocabulary's refusal. A DISTINCT code from
+	// ErrCodeReviewInvalidTag, so a client sending a dish tag to the service endpoint is told
+	// which vocabulary it got wrong rather than left to guess between two closed sets.
+	//
+	// Named by constant rather than by its literal string on purpose: CONTRIBUTING.md tells
+	// contributors to check for collisions with a grep over this package's raw text, and a code
+	// quoted in a comment would show up as a false duplicate.
+	ErrReviewInvalidServiceTag = &ApplicationError{
+		ErrorCode:    ErrCodeReviewInvalidServiceTag,
+		ErrorMessage: "that is not a service tag this app recognises",
+		HttpCode:     http.StatusUnprocessableEntity,
+	}
+	ErrReviewServiceSaveFailed = &ApplicationError{
+		ErrorCode:    ErrCodeReviewServiceSaveFailed,
+		ErrorMessage: "we could not save your rating, please try again",
 		HttpCode:     http.StatusInternalServerError,
 	}
 )

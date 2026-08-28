@@ -56,7 +56,8 @@ The ones a client must actually handle:
 | `TX_AUT_004` | 401 | Access token expired — refresh, distinct from `TX_AUT_003` invalid. |
 | `TX_AUT_009` | 401 | Platform token missing or wrong. One code for both; see [D14](./DECISIONS.md). |
 | `TX_REV_001` | 409 | Rating window shut — usually *too early*, not forbidden. Refetch and re-read `can_review`; do not alarm the diner. |
-| `TX_REV_003` | 422 | Tag outside the vocabulary. A client bug: the set is in `packages/shared/src/review.ts`. |
+| `TX_REV_003` | 422 | Tag outside the **dish** vocabulary. A client bug: the set is in `packages/shared/src/review.ts`. |
+| `TX_REV_009` | 422 | Tag outside the **service** vocabulary. Distinct code so the client knows which of the two sets it got wrong. |
 
 ## Money
 
@@ -152,6 +153,7 @@ All require `X-Guest-Token`. Every order read verifies the session owns the orde
 | `POST /orders/:uid/payment` | Start or restart a payment. |
 | `GET /orders/:uid/payment` | Poll payment **and** order status in one request. |
 | `PUT /orders/:uid/items/:item_uid/review` | Rate one dish ([D16](./DECISIONS.md)). See below. |
+| `PUT /orders/:uid/service-review` | Rate the service ([D17](./DECISIONS.md)). Session-scoped. |
 | `GET /orders/:uid/stream` | WebSocket. See *Realtime*. |
 
 ### `POST /orders`
@@ -240,6 +242,38 @@ vocabulary is that every stored tag can be counted.
 | The kitchen cancelled that line | `TX_REV_005` (409) |
 
 `data`: `OrderItemReviewView`
+
+### `PUT /orders/:uid/service-review`
+
+```jsonc
+// Headers: X-Guest-Token
+{
+  "rating": 2,                       // required, 1-5
+  "tags": ["slow_service"],          // optional, a DIFFERENT closed vocabulary from dish tags
+  "comment": "…"                     // optional, max 280
+}
+```
+
+**The order in the URL is the warrant, not the subject.** What gets written is keyed to the guest
+SESSION, because service is experienced once per sitting rather than once per order — a diner who
+ordered twice has not been served by two different restaurants. The order is what proves this
+session owns something here and that the rating window is open.
+
+Send it against a second order from the same session and you get the **same `uid` back, updated**.
+That is also why there is no "which order do we ask on" problem: the question is not about an order.
+The answer rides back on every order of the sitting as `OrderView.service_review`.
+
+The two vocabularies are separate types (`models.ReviewTag`, `models.ServiceTag`) and get distinct
+refusals, so a client is told which of the two sets it got wrong rather than left to guess:
+
+| Failure | Code |
+| --- | --- |
+| A **dish** tag on a service rating | `TX_REV_009` (422) |
+| A **service** tag on a dish rating | `TX_REV_003` (422) |
+| Rating outside 1–5 | `TX_REV_002` (422) |
+| Window shut | `TX_REV_001` (409) |
+
+`data`: `ServiceReviewView`
 
 ---
 
@@ -357,7 +391,7 @@ a **trust-the-staff** action, the same model as cash, and it is attributed to th
 It goes through the same code path as a gateway webhook, so both produce identical audit trails,
 identical realtime events, and identical order completion.
 
-### `GET /reviews` · `GET /reviews/summary`
+### `GET /reviews` · `GET /reviews/service` · `GET /reviews/summary`
 
 What diners said, and the roll-up ([D16](./DECISIONS.md)). Open to **every** staff role, unlike
 menu editing: a complaint about a cold dish is most useful to whoever is on the floor right now,
@@ -372,7 +406,14 @@ Each `ReviewView` carries `item_name` **snapshotted from the order line**, not t
 name ([D8](./DECISIONS.md)), plus `order_number` — the value staff shout across a kitchen and the
 only one that finds the ticket.
 
-`GET /reviews/summary` returns `overall`, a five-bucket `distribution`, and `needs_attention` /
+`GET /reviews/service` is the same feed for service ratings, with the same filters minus
+`menu_item_uid`. A **separate route** rather than a `kind=` filter, because a service rating has no
+dish: one shared response type would carry `item_name`, `food_type` and `menu_item_uid` as
+always-absent keys in half the rows, and a client would have to know which half it held before it
+could trust any field.
+
+`GET /reviews/summary` returns **`food` and `service` — two numbers, never one blended average**
+([D17](./DECISIONS.md)) — a five-bucket `distribution` for each, and `needs_attention` /
 `top_rated`. The distribution is sent *as well as* the average because the two answer different
 questions: a 3.0 of straight 3s is a dull menu, a 3.0 of 5s and 1s is an inconsistent kitchen, and
 an average cannot tell them apart. Both rankings exclude dishes below `min_reviews_for_ranking`,

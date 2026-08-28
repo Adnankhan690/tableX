@@ -453,8 +453,28 @@ export type ReviewTag =
   | 'too_spicy'
   | 'served_cold'
   | 'small_portion'
-  | 'slow_to_arrive'
   | 'not_as_described'
+
+/**
+ * The closed vocabulary for SERVICE ratings.
+ *
+ * A separate union from ReviewTag, mirroring `models.ServiceTag`. Sharing one type would make
+ * 'tasty' assignable to a service rating and 'slow_service' to a dish, with nothing but convention
+ * keeping them apart at the call site.
+ *
+ * Note 'slow_to_arrive' is gone from ReviewTag above and has no direct successor here: a diner
+ * saying their food was late is describing the floor, and it now has somewhere to say so.
+ */
+export type ServiceTag =
+  | 'quick_service'
+  | 'friendly_staff'
+  | 'attentive'
+  | 'clean_table'
+  | 'slow_service'
+  | 'hard_to_find_staff'
+  | 'table_not_clean'
+  | 'order_wrong'
+  | 'rushed'
 
 /** One tap on one dish. `rating` is the only required field. */
 export interface RateOrderItemRequest {
@@ -522,8 +542,17 @@ export interface RatedDishView {
   rating: RatingSummary
 }
 
+/**
+ * The reviews dashboard.
+ *
+ * TWO headline numbers, never one. A single blended average points at nobody: "you are a 3.8" is
+ * not something a manager can act on, where "food 4.6, service 3.2" names a team and a shift.
+ */
 export interface ReviewSummaryResponse {
-  overall: RatingSummary
+  /** Every DISH rating this restaurant has received. */
+  food: RatingSummary
+  /** Every SERVICE rating. Zero-count until diners leave them, which is its own signal. */
+  service: RatingSummary
   /**
    * Counts at each star, indexed 0..4 for 1..5.
    *
@@ -532,6 +561,12 @@ export interface ReviewSummaryResponse {
    * responses, and an average alone cannot tell them apart.
    */
   distribution: [number, number, number, number, number]
+  /**
+   * The same shape for service, answering the sharper version of the same question: intermittently
+   * bad service (5s and 1s) is a staffing or shift problem, where uniformly mediocre service is a
+   * training one.
+   */
+  service_distribution: [number, number, number, number, number]
   /** The lowest-rated dishes, worst first -- the working list. */
   needs_attention: RatedDishView[]
   top_rated: RatedDishView[]
@@ -540,6 +575,55 @@ export interface ReviewSummaryResponse {
    * enough data yet" rather than as a broken panel on a restaurant's first night.
    */
   min_reviews_for_ranking: number
+}
+
+/** One tap on the service row. `rating` is the only required field. */
+export interface RateServiceRequest {
+  rating: number
+  tags?: ServiceTag[]
+  comment?: string
+}
+
+/** The diner's own service rating, echoed back. */
+export interface ServiceReviewView {
+  uid: string
+  rating: number
+  tags?: ServiceTag[]
+  comment?: string
+  updated_at: string
+}
+
+/**
+ * One service rating as the admin feed renders it.
+ *
+ * Deliberately NOT ReviewView with optional fields. A service rating has no dish, so a shared type
+ * would carry item_name, food_type and menu_item_uid as always-absent keys in half the rows.
+ */
+export interface StaffServiceReviewView {
+  uid: string
+  rating: number
+  tags?: ServiceTag[]
+  comment?: string
+  order_uid: string
+  order_number: string
+  table_label?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ListServiceReviewsQuery {
+  page?: number
+  per_page?: number
+  min_rating?: number
+  max_rating?: number
+  has_comment?: boolean
+  from?: string
+  to?: string
+}
+
+export interface ServiceReviewListResponse {
+  reviews: StaffServiceReviewView[]
+  meta: PageMeta
 }
 
 export interface OrderItemView {
@@ -623,6 +707,14 @@ export interface OrderView {
   review_opens_at?: string
   /** When it shuts, so a late arrival is told "too late" rather than shown a card that fails. */
   review_closes_at?: string
+  /**
+   * This SESSION's service rating, when it has left one -- not this order's.
+   *
+   * Service is rated once per sitting, so a diner with two open orders sees the same answer
+   * pre-filled on both and editing either updates the one row. Gated by the same `can_review`
+   * window; there is no separate flag, because the two would only ever disagree by accident.
+   */
+  service_review?: ServiceReviewView
 }
 
 export interface PlaceOrderResponse {

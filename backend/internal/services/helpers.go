@@ -305,6 +305,44 @@ func toReviewView(review *models.OrderItemReview, menuItemUID string) types.Revi
 	return view
 }
 
+// toServiceReviewView builds the diner's echo of their own service rating. Nil in, nil out, so a
+// session that has not rated service carries no review rather than an empty one.
+func toServiceReviewView(review *models.ServiceReview) *types.ServiceReviewView {
+	if review == nil {
+		return nil
+	}
+	return &types.ServiceReviewView{
+		UID:       review.UID,
+		Rating:    review.Rating,
+		Tags:      review.Tags,
+		Comment:   review.Comment,
+		UpdatedAt: review.UpdatedAt,
+	}
+}
+
+// toStaffServiceReviewView builds the admin service feed's row.
+//
+// Carries the order number rather than only its uid, for the same reason the dish feed does: that
+// is the value staff shout across a kitchen, and it is what finds the sitting (DECISIONS.md D9).
+func toStaffServiceReviewView(review *models.ServiceReview) types.StaffServiceReviewView {
+	view := types.StaffServiceReviewView{
+		UID:       review.UID,
+		Rating:    review.Rating,
+		Tags:      review.Tags,
+		Comment:   review.Comment,
+		CreatedAt: review.CreatedAt,
+		UpdatedAt: review.UpdatedAt,
+	}
+	if review.Order != nil {
+		view.OrderUID = review.Order.UID
+		view.OrderNumber = review.Order.OrderNumber
+		if review.Order.Table != nil {
+			view.TableLabel = review.Order.Table.Label
+		}
+	}
+	return view
+}
+
 func toOrderItemView(item *models.OrderItem, currency string) types.OrderItemView {
 	return types.OrderItemView{
 		UID:       item.UID,

@@ -57,6 +57,70 @@ type RatingSummary struct {
 	Count   int64   `json:"count"`
 }
 
+// --- Service ---
+//
+// Service is rated ONCE PER SITTING, not once per order: a diner who orders twice has not been
+// served by two different restaurants. The write therefore lands on the session, even though the
+// request is addressed to an order -- the order in the path is the WARRANT (it is what proves the
+// window is open and that this session owns something), not the subject.
+
+// RequestRateService is one tap on the service row.
+type RequestRateService struct {
+	// No binding tag on Rating, for the reason spelled out on RequestRateOrderItem: `required`
+	// cannot distinguish a missing int from a deliberate 0, and a range tag would make the
+	// specific, translatable error unreachable.
+	Rating int `json:"rating"`
+	// Tags come from models.ServiceTag, a different closed vocabulary from the dish one.
+	Tags    []string `json:"tags,omitempty" binding:"omitempty,max=5,dive,max=32"`
+	Comment string   `json:"comment,omitempty" binding:"omitempty,max=280"`
+}
+
+// ServiceReviewView is the diner's own service rating, echoed back.
+type ServiceReviewView struct {
+	UID       string    `json:"uid"`
+	Rating    int       `json:"rating"`
+	Tags      []string  `json:"tags,omitempty"`
+	Comment   string    `json:"comment,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// StaffServiceReviewView is one service rating as the admin feed renders it.
+//
+// A distinct type from ReviewView rather than a shared one with optional fields. ReviewView
+// carries item_name, food_type and menu_item_uid, none of which a service rating has; merging them
+// would give every row three fields that are always empty in one case, and a client that has to
+// know which case it is looking at before it can trust any of them.
+type StaffServiceReviewView struct {
+	UID     string   `json:"uid"`
+	Rating  int      `json:"rating"`
+	Tags    []string `json:"tags,omitempty"`
+	Comment string   `json:"comment,omitempty"`
+
+	// The order the diner rated from, so staff can find the sitting on the board.
+	OrderUID    string `json:"order_uid"`
+	OrderNumber string `json:"order_number"`
+	TableLabel  string `json:"table_label,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// RequestListServiceReviews filters the admin service feed.
+type RequestListServiceReviews struct {
+	Pagination
+	MinRating  int    `form:"min_rating"`
+	MaxRating  int    `form:"max_rating"`
+	HasComment bool   `form:"has_comment"`
+	From       string `form:"from"`
+	To         string `form:"to"`
+}
+
+// ResponseServiceReviewList is a page of the service feed.
+type ResponseServiceReviewList struct {
+	Reviews []StaffServiceReviewView `json:"reviews"`
+	Meta    PageMeta                 `json:"meta"`
+}
+
 // --- Admin reviews ---
 
 // ReviewView is one review as the admin feed renders it.
@@ -119,17 +183,27 @@ type RatedDishView struct {
 	Rating      RatingSummary `json:"rating"`
 }
 
-// ResponseReviewSummary is the reviews dashboard: one number a manager can act on, the shape
-// of the distribution behind it, and the two ends of the menu.
+// ResponseReviewSummary is the reviews dashboard.
+//
+// TWO headline numbers, never one. Food and service are rated separately and reported separately,
+// because a single blended average points at nobody: "you are a 3.8" is not something a manager can
+// act on, where "food 4.6, service 3.2" names a team and a shift (DECISIONS.md D17).
 type ResponseReviewSummary struct {
-	// Overall covers every review this restaurant has ever received.
-	Overall RatingSummary `json:"overall"`
-	// Distribution is the count at each star, indexed 0..4 for 1..5 stars.
+	// Food covers every DISH rating this restaurant has received.
+	Food RatingSummary `json:"food"`
+	// Service covers every SERVICE rating. Zero-count until diners start leaving them, which is
+	// its own signal rather than a gap.
+	Service RatingSummary `json:"service"`
+	// Distribution is the count at each star for FOOD, indexed 0..4 for 1..5 stars.
 	//
 	// Sent as well as the average because the two answer different questions: a 3.0 built
 	// from straight 3s is a dull menu, and a 3.0 built from 5s and 1s is an inconsistent
 	// kitchen. Those need opposite responses, and an average alone cannot tell them apart.
 	Distribution [5]int64 `json:"distribution"`
+	// ServiceDistribution is the same shape for service, and answers the sharper version of the
+	// same question: intermittently bad service (5s and 1s) is a staffing or shift problem, where
+	// uniformly mediocre service is a training one.
+	ServiceDistribution [5]int64 `json:"service_distribution"`
 	// NeedsAttention is the lowest-rated dishes, worst first -- the working list. Restricted
 	// to dishes with enough reviews to mean something.
 	NeedsAttention []RatedDishView `json:"needs_attention"`

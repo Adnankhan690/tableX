@@ -110,6 +110,14 @@ type OrderView struct {
 	// ReviewClosesAt is when it shuts, so a late arrival can be told "too late" rather than
 	// being shown a card that will fail.
 	ReviewClosesAt *time.Time `json:"review_closes_at,omitempty"`
+
+	// ServiceReview is this SESSION's service rating, when it has left one -- not this order's.
+	// Service is rated once per sitting (DECISIONS.md D17), so a diner with two open orders sees
+	// the same answer pre-filled on both, and editing either updates the one row.
+	//
+	// Gated by the same CanReview window: there is no separate can_review_service flag, because
+	// the two would only ever disagree by accident.
+	ServiceReview *ServiceReviewView `json:"service_review,omitempty"`
 }
 
 // ResponsePlaceOrder is returned once the order is committed.

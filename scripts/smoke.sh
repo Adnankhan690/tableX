@@ -317,14 +317,71 @@ ck "max_rating=3 excludes the 4s"        "0" "$LOWN"
 
 echo "--- the dashboard ---"
 SUM=$(curl -s "$ADM/reviews/summary" -H "Authorization: Bearer $JWT")
-ck "summary counts the review"           "yes" "$(echo "$SUM" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data']['overall']['count'] >= 1 else 'no')")"
+ck "summary counts the review"           "yes" "$(echo "$SUM" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data']['food']['count'] >= 1 else 'no')")"
 # The distribution and the headline count are read from the same rows in one pass, so a chart
 # whose bars do not add up to its own caption is impossible rather than merely unlikely.
 ck "distribution adds up to the count"   "yes" "$(echo "$SUM" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)['data']
-print('yes' if sum(d['distribution']) == d['overall']['count'] else 'no')")"
+print('yes' if sum(d['distribution']) == d['food']['count'] else 'no')")"
 ck "and states its ranking threshold"    "yes" "$(echo "$SUM" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data']['min_reviews_for_ranking'] > 0 else 'no')")"
+
+echo "--- rating the SERVICE, which is per sitting rather than per order ---"
+SVC1=$(curl -s -X PUT $GST/orders/$OUID/service-review -H "X-Guest-Token: $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"rating":2,"tags":["slow_service"],"comment":"Long wait for water."}')
+SVCUID=$(echo "$SVC1" | j data.uid)
+ck "service rating accepted"             "2" "$(echo "$SVC1" | j data.rating)"
+ck "and gets its own uid"                "yes" "$(echo "$SVCUID" | grep -q '^svc_' && echo yes || echo no)"
+
+# The point of the whole design: the row belongs to the SITTING. Rating from a DIFFERENT order on
+# the same session must edit the same row rather than create a second one, which is what makes
+# "which order do we ask on" a non-question.
+OTHERORD=$(curl -s -X POST $GST/orders -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"items\":[{\"menu_item_uid\":\"$PANEER\",\"quantity\":1}],\"payment_method\":\"counter\"}" | j data.order.uid)
+for st in accepted preparing ready served; do
+  curl -s -o /dev/null -X POST $ADM/orders/$OTHERORD/transition -H "Authorization: Bearer $JWT" \
+    -H 'Content-Type: application/json' -d "{\"status\":\"$st\"}"
+done
+SVC2=$(curl -s -X PUT $GST/orders/$OTHERORD/service-review -H "X-Guest-Token: $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"rating":5,"tags":["friendly_staff"]}')
+ck "a second order edits the SAME row"   "$SVCUID" "$(echo "$SVC2" | j data.uid)"
+ck "and the rating was replaced"         "5" "$(echo "$SVC2" | j data.rating)"
+
+echo "--- the two vocabularies are separate ---"
+# `tasty` is a perfectly good tag -- on a dish. A distinct code tells the client which of the two
+# closed sets it got wrong.
+ck "a dish tag on service -> TX_REV_009" "TX_REV_009" "$(curl -s -X PUT $GST/orders/$OUID/service-review \
+  -H "X-Guest-Token: $TOKEN" -H 'Content-Type: application/json' -d '{"rating":4,"tags":["tasty"]}' | j code)"
+# ...and the reverse. slow_to_arrive was REMOVED from the dish vocabulary when service ratings
+# arrived: it is a floor complaint, and offering it in a food context was the only outlet a diner
+# had for one (DECISIONS.md D17).
+ck "a service tag on a dish -> TX_REV_003" "TX_REV_003" "$(rate "$OUID" "$IUID" '{"rating":4,"tags":["slow_service"]}' | j code)"
+ck "slow_to_arrive no longer a dish tag" "TX_REV_003" "$(rate "$OUID" "$IUID" '{"rating":4,"tags":["slow_to_arrive"]}' | j code)"
+
+echo "--- the diner sees their service rating on every order of the sitting ---"
+SVCBACK=$(curl -s $GST/orders/$OUID -H "X-Guest-Token: $TOKEN")
+ck "service review rides on the order"   "5" "$(echo "$SVCBACK" | j data.service_review.rating)"
+ck "and on the other one too"            "5" "$(curl -s $GST/orders/$OTHERORD -H "X-Guest-Token: $TOKEN" | j data.service_review.rating)"
+
+echo "--- staff read service back, split from food ---"
+SVCLIST=$(curl -s "$ADM/reviews/service" -H "Authorization: Bearer $JWT")
+ck "the service feed has it"             "yes" "$(echo "$SVCLIST" | python3 -c "import sys,json;print('yes' if len(json.load(sys.stdin)['data']['reviews']) >= 1 else 'no')")"
+ck "with the ticket to find the sitting" "yes" "$(echo "$SVCLIST" | j data.reviews.0.order_number | grep -qE '^[A-Z]-[0-9]{3}$' && echo yes || echo no)"
+# A service rating has no dish, so the response type carries no dish fields at all rather than
+# empty ones.
+ck "and no dish fields on it"            "yes" "$(echo "$SVCLIST" | python3 -c "
+import sys,json
+r=json.load(sys.stdin)['data']['reviews'][0]
+print('yes' if 'item_name' not in r and 'menu_item_uid' not in r else 'no')")"
+
+SUM2=$(curl -s "$ADM/reviews/summary" -H "Authorization: Bearer $JWT")
+# Two numbers, never one blended average: "food 4.6, service 3.2" names a team, "3.8" names nobody.
+ck "summary reports food separately"     "yes" "$(echo "$SUM2" | python3 -c "import sys,json;print('yes' if json.load(sys.stdin)['data']['food']['count'] >= 1 else 'no')")"
+ck "summary reports service separately"  "1" "$(echo "$SUM2" | j data.service.count)"
+ck "service distribution adds up"        "yes" "$(echo "$SUM2" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)['data']
+print('yes' if sum(d['service_distribution']) == d['service']['count'] else 'no')")"
 
 echo "--- the aggregate lands on the dish, and is withheld from diners until it means something ---"
 ADMENU=$(curl -s $ADM/menu -H "Authorization: Bearer $JWT")

@@ -222,3 +222,158 @@ func (a *repositoryReview) Distribution(
 
 	return dist, count, sum, nil
 }
+
+// --- Service ratings (DECISIONS.md D17) ---
+
+// Query fragments for the service feed, named for the same reason as the dish ones.
+const (
+	whereServiceSession = "guest_session_id = ?"
+)
+
+// GetServiceBySession resolves the one service review a session may carry.
+//
+// Transaction-aware for the same reason as GetByOrderItemID: the upsert calls it inside its own
+// transaction and must see that transaction's uncommitted write, or the "does one exist" answer is
+// wrong and a second row is attempted against a unique index.
+func (a *repositoryReview) GetServiceBySession(
+	ctx context.Context, tx *gorm.DB, sessionID int32,
+) (*models.ServiceReview, error) {
+	review := &models.ServiceReview{}
+	// Take rather than First: guest_session_id is uniquely indexed.
+	if err := a.conn(tx).WithContext(ctx).
+		Where(whereServiceSession, sessionID).
+		Take(review).Error; err != nil {
+		return nil, fmt.Errorf("get service review session=%d: %w", sessionID, err)
+	}
+	return review, nil
+}
+
+// CreateService inserts a new service review.
+func (a *repositoryReview) CreateService(ctx context.Context, tx *gorm.DB, review *models.ServiceReview) error {
+	log := a.Logger.With(ctx)
+
+	if err := a.conn(tx).WithContext(ctx).Create(review).Error; err != nil {
+		return fmt.Errorf("create service review uid=%s: %w", review.UID, err)
+	}
+
+	log.Infof("[CreateService] service review id=%d uid=%s order=%d rating=%d",
+		review.ID, review.UID, review.OrderID, review.Rating)
+	return nil
+}
+
+// UpdateServiceFields patches an existing service review in place.
+func (a *repositoryReview) UpdateServiceFields(
+	ctx context.Context, tx *gorm.DB, id int32, fields map[string]any,
+) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	if err := a.conn(tx).WithContext(ctx).
+		Model(&models.ServiceReview{}).
+		Where(whereID, id).
+		Updates(fields).Error; err != nil {
+		return fmt.Errorf("update service review id=%d: %w", id, err)
+	}
+	return nil
+}
+
+// serviceListScope is the service feed's predicate, shared by the count and the page.
+func serviceListScope(filter ServiceReviewListFilter) func(*gorm.DB) *gorm.DB {
+	return func(q *gorm.DB) *gorm.DB {
+		q = q.Where(whereRestaurant, filter.RestaurantID)
+
+		if filter.MinRating > 0 {
+			q = q.Where(whereReviewRatingAtLeast, filter.MinRating)
+		}
+		if filter.MaxRating > 0 {
+			q = q.Where(whereReviewRatingAtMost, filter.MaxRating)
+		}
+		if filter.HasComment {
+			q = q.Where(whereReviewHasComment)
+		}
+		if filter.From != nil {
+			q = q.Where(whereReviewCreatedFrom, *filter.From)
+		}
+		// Exclusive upper bound, as in reviewListScope: the service passes the day AFTER the
+		// requested one so a rating left at 23:59:59.9 is inside the range.
+		if filter.To != nil {
+			q = q.Where(whereReviewCreatedBefore, *filter.To)
+		}
+		return q
+	}
+}
+
+// ListService backs the admin service feed.
+func (a *repositoryReview) ListService(
+	ctx context.Context, filter ServiceReviewListFilter,
+) ([]*models.ServiceReview, int64, error) {
+	scope := serviceListScope(filter)
+
+	var total int64
+	if err := a.Db.WithContext(ctx).
+		Model(&models.ServiceReview{}).
+		Scopes(scope).
+		Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count service reviews restaurant=%d: %w", filter.RestaurantID, err)
+	}
+	if total == 0 {
+		// Empty slice, not nil: marshals as [] rather than null.
+		return []*models.ServiceReview{}, 0, nil
+	}
+
+	q := a.Db.WithContext(ctx).
+		Model(&models.ServiceReview{}).
+		Scopes(scope).
+		// The order and its table, so the feed can name the sitting staff need to find. One extra
+		// query per page rather than a join whose result would need hand-scanning.
+		Preload("Order").
+		Preload("Order.Table").
+		Order(orderByReviewNewest)
+
+	if filter.Limit > 0 {
+		q = q.Limit(filter.Limit)
+	}
+	if filter.Offset > 0 {
+		q = q.Offset(filter.Offset)
+	}
+
+	rows := make([]*models.ServiceReview, 0, filter.Limit)
+	if err := q.Find(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("list service reviews restaurant=%d: %w", filter.RestaurantID, err)
+	}
+	return rows, total, nil
+}
+
+// ServiceDistribution returns the count at each star, plus the overall count and sum.
+//
+// One GROUP BY, for the same reason as Distribution: the five figures render as one chart beside
+// their own caption, so they must describe the same instant.
+func (a *repositoryReview) ServiceDistribution(
+	ctx context.Context, restaurantID int32,
+) (ReviewDistribution, int64, int64, error) {
+	var dist ReviewDistribution
+
+	var rows []reviewDistributionRow
+	if err := a.Db.WithContext(ctx).
+		Model(&models.ServiceReview{}).
+		Select("rating, COUNT(*) AS total").
+		Where(whereRestaurant, restaurantID).
+		Group("rating").
+		Scan(&rows).Error; err != nil {
+		return dist, 0, 0, fmt.Errorf("service distribution restaurant=%d: %w", restaurantID, err)
+	}
+
+	var count, sum int64
+	for _, row := range rows {
+		// Guarded rather than trusted, as in Distribution: this indexes an array from a database
+		// value, and a panic in a dashboard query is worse than a bar that is quietly missing.
+		if row.Rating < models.RatingMin || row.Rating > models.RatingMax {
+			continue
+		}
+		dist[row.Rating-models.RatingMin] = row.Total
+		count += row.Total
+		sum += row.Total * int64(row.Rating)
+	}
+
+	return dist, count, sum, nil
+}

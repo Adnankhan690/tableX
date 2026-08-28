@@ -216,6 +216,36 @@ type RepositoryReviewMethods interface {
 	List(ctx context.Context, filter ReviewListFilter) ([]*models.OrderItemReview, int64, error)
 	// Distribution counts one restaurant's reviews at each star, in a single pass.
 	Distribution(ctx context.Context, restaurantID int32) (ReviewDistribution, int64, int64, error)
+
+	// --- Service ratings (DECISIONS.md D17) ---
+	//
+	// Session-scoped rather than order-scoped: service is experienced once per sitting.
+
+	// GetServiceBySession resolves the one service review a session may carry. Takes a tx for the
+	// same reason GetByOrderItemID does -- the upsert must see its own transaction's write.
+	GetServiceBySession(ctx context.Context, tx *gorm.DB, sessionID int32) (*models.ServiceReview, error)
+	CreateService(ctx context.Context, tx *gorm.DB, review *models.ServiceReview) error
+	UpdateServiceFields(ctx context.Context, tx *gorm.DB, id int32, fields map[string]any) error
+	// ListService backs the admin service feed.
+	ListService(ctx context.Context, filter ServiceReviewListFilter) ([]*models.ServiceReview, int64, error)
+	// ServiceDistribution counts one restaurant's service ratings at each star.
+	//
+	// Computed on read, with NO denormalised counterpart to menu_item.rating_count. The asymmetry
+	// is deliberate: those counters exist because the diner menu is the hottest read in the
+	// product, while this is one admin screen over one tenant's rows.
+	ServiceDistribution(ctx context.Context, restaurantID int32) (ReviewDistribution, int64, int64, error)
+}
+
+// ServiceReviewListFilter is the admin service feed's query.
+type ServiceReviewListFilter struct {
+	RestaurantID int32
+	MinRating    int
+	MaxRating    int
+	HasComment   bool
+	From         *time.Time
+	To           *time.Time
+	Offset       int
+	Limit        int
 }
 
 // RepositoryPaymentMethods accesses payments and the webhook ledger.

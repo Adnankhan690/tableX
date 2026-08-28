@@ -127,7 +127,26 @@ by delta *in SQL*, inside the review transaction. Migration 016 carries the reco
 `scripts/concurrency.sh` §D asserts the counters still equal the rows under eight simultaneous
 ratings. See [D16](./DECISIONS.md) for the eligibility rule, which is the substantive part.
 
-### 1.6 Payments
+**`service_review`** — how one diner found the SERVICE during their sitting, kept apart from
+`order_item_review` because it answers a different question. Blending them would give a restaurant
+one number that points at nobody ([D17](./DECISIONS.md)).
+
+Keyed to the **session**, `UNIQUE (guest_session_id)`: service is experienced once per sitting, so a
+diner with two open orders edits one row from either. `order_id` is context rather than identity —
+it is what lets staff find the sitting on the board.
+
+`guest_session_id` is **nullable with `ON DELETE SET NULL`, and that is load-bearing.**
+`DeleteExpired` reaps sessions once their tokens can no longer authenticate; cascading would make
+every prune a silent deletion of a night's feedback. The uniqueness therefore constrains only live
+sessions, which is the correct scope — a session can only be written to while it is alive, because
+holding it is the whole authentication.
+
+**No denormalised aggregate here, unlike `menu_item`.** That asymmetry is deliberate: those counters
+exist because the diner menu is the hottest read in the product, while a service average is read on
+one admin screen over one tenant's rows behind an index. A counter is a cost, and it is only worth
+paying on a hot path.
+
+### 1.7 Payments
 
 **`payment`** — one attempt. `provider` (`upi_static` / `razorpay` / `mock` / `counter`),
 `reference` (the short string echoed in the UPI note, which is the entire reconciliation mechanism
@@ -166,6 +185,8 @@ erDiagram
     menu_item ||--o{ order_item : "snapshotted into"
     order_item ||--o| order_item_review : "rated by"
     menu_item ||--o{ order_item_review : "aggregated onto"
+    guest_session ||--o| service_review : "rated the service"
+    orders ||--o{ service_review : "rated from"
     payment ||--o{ payment_webhook_event : "confirmed by"
 ```
 
@@ -181,6 +202,7 @@ erDiagram
 | `menu_item` → `order_item` | 1 → many | Analytics only; display and pricing use the snapshot. |
 | `order_item` → `order_item_review` | 1 → **0 or 1** | Unique, so a correction updates in place. |
 | `menu_item` → `order_item_review` | 1 → many | What the running aggregate on `menu_item` sums. |
+| `guest_session` → `service_review` | 1 → **0 or 1** | Service is rated once per sitting, not per order. |
 | `payment` → `payment_webhook_event` | 1 → many | Several events per payment: authorized, captured, refunded. |
 
 ### 2.2 Delete rules, and why each was chosen
@@ -197,6 +219,8 @@ The `ON DELETE` rule is where a schema quietly decides what history it is willin
 | `order_item` → `menu_item` | **`RESTRICT`** | Deleting a dish must not delete the record of having sold it. Dishes are archived. |
 | `order_item_review` → `menu_item` | **`RESTRICT`** | Same reason: deleting a dish must not delete the evidence of how it was received. |
 | `order_item_review` → `guest_session` | **`SET NULL`** | The rating outlives the anonymous identity that left it. Cascading would lose a night's ratings to session cleanup. |
+| `service_review` → `guest_session` | **`SET NULL`** | Same reason, and here it also scopes the uniqueness to live sessions — which is exactly when it matters. |
+| `service_review` → `orders` | **`RESTRICT`** | An order must not be deleted out from under the feedback that explains it. |
 | `menu_item` → `menu_category` | **`RESTRICT`** | A dish cannot be orphaned into no section. |
 | `orders` → `guest_session` | **`SET NULL`** | Sessions are ephemeral and reaped on expiry; the order must survive its session. This is what lets the sweeper in §6 run safely. |
 | `payment_webhook_event` → `payment` | `SET NULL` | A webhook naming a payment we never created is still worth recording. |

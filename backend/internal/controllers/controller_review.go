@@ -76,3 +76,50 @@ func (c *ControllerReview) ReviewSummary(ctx *gin.Context) {
 	result, appErr := c.Access.Services.Review.SummaryForStaff(ctx.Request.Context(), actor)
 	response.Send(ctx, result, appErr)
 }
+
+// RateMyService records the diner's rating of the service during their sitting.
+//
+// PUT for the same reason as RateMyOrderItem: one tap, no Submit button, so every tap must be safe
+// to repeat. The order in the path is the warrant rather than the subject -- what gets written is
+// keyed to the session (DECISIONS.md D17).
+func (c *ControllerReview) RateMyService(ctx *gin.Context) {
+	log := c.Access.Logger.With(ctx.Request.Context())
+
+	guest, appErr := guestPrincipal(ctx)
+	if appErr != nil {
+		response.Send(ctx, nil, appErr)
+		return
+	}
+
+	var req types.RequestRateService
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		log.Warnf("[RateMyService] bind: %v", err)
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	result, appErr := c.Access.Services.Review.RateService(
+		ctx.Request.Context(), guest, ctx.Param(PathParamUID), &req)
+	response.Send(ctx, result, appErr)
+}
+
+// ListServiceReviews is the admin service feed.
+func (c *ControllerReview) ListServiceReviews(ctx *gin.Context) {
+	log := c.Access.Logger.With(ctx.Request.Context())
+
+	actor, appErr := staffPrincipal(ctx)
+	if appErr != nil {
+		response.Send(ctx, nil, appErr)
+		return
+	}
+
+	var req types.RequestListServiceReviews
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		log.Warnf("[ListServiceReviews] bind: %v", err)
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	result, appErr := c.Access.Services.Review.ListServiceForStaff(ctx.Request.Context(), actor, &req)
+	response.Send(ctx, result, appErr)
+}

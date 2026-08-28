@@ -282,6 +282,14 @@ func (s *serviceReview) SummaryForStaff(
 		return nil, response.ErrReviewFetchFailed
 	}
 
+	// The service half, computed on read rather than from a counter. See the note in the
+	// repository interface for why this one does not get the menu_item treatment.
+	serviceDist, serviceCount, serviceSum, err := s.Access.Repositories.Review.ServiceDistribution(ctx, actor.RestaurantID)
+	if err != nil {
+		log.Errorf("[SummaryForStaff] service distribution restaurant=%d: %+v", actor.RestaurantID, err)
+		return nil, response.ErrReviewFetchFailed
+	}
+
 	// The per-dish ranking comes from the counters already on menu_item, so this is one read
 	// of a table with tens of rows rather than a GROUP BY over every review ever left. Ordering
 	// happens in memory for the same reason migration 016 leaves those columns unindexed.
@@ -294,8 +302,13 @@ func (s *serviceReview) SummaryForStaff(
 	ranked := rankDishesByRating(items)
 
 	summary := &types.ResponseReviewSummary{
-		Overall:              types.RatingSummary{Average: roundToOneDecimal(average(sum, count)), Count: count},
+		Food:    types.RatingSummary{Average: roundToOneDecimal(average(sum, count)), Count: count},
+		Service: types.RatingSummary{Average: roundToOneDecimal(average(serviceSum, serviceCount)), Count: serviceCount},
+		// Both distributions ride along, because the average alone cannot separate a kitchen that
+		// is uniformly mediocre from one that is intermittently bad -- and those need opposite
+		// responses. The same holds for service, where the second shape is a staffing problem.
 		Distribution:         distribution,
+		ServiceDistribution:  serviceDist,
 		NeedsAttention:       ranked.worst,
 		TopRated:             ranked.best,
 		MinReviewsForRanking: MinReviewsForRanking,
@@ -430,4 +443,200 @@ func average(sum, count int64) float64 {
 		return 0
 	}
 	return float64(sum) / float64(count)
+}
+
+// --- Service ratings (DECISIONS.md D17) ---
+
+// uidPrefixServiceReview namespaces a service review's public identifier.
+const uidPrefixServiceReview = "svc"
+
+// RateService records one diner's rating of the service during their sitting.
+//
+// The order in the path is the WARRANT, not the subject. It establishes two things and nothing
+// else: that this session owns an order here at all, and that the review window is open. What gets
+// written is keyed to the SESSION, because service is experienced once per sitting rather than
+// once per order -- a diner who ordered twice has not been served by two different restaurants.
+//
+// The visible consequence, and it is the intended one: a diner with two open orders sees the same
+// answer pre-filled on both screens, and rating from either edits the one row. There is no "which
+// order do we ask on" problem to solve, because the question is not about an order.
+func (s *serviceReview) RateService(
+	ctx context.Context,
+	guest *GuestPrincipal,
+	orderUID string,
+	req *types.RequestRateService,
+) (*types.ServiceReviewView, *response.ApplicationError) {
+	log := s.Access.Logger.With(ctx)
+
+	// Ownership first, exactly as the dish path does -- and through the SAME helper, so the
+	// "is this order yours" rule has one definition. A second copy is how one of them ends up
+	// missing a case and leaking another table's sitting (DECISIONS.md D4).
+	order, appErr := s.orders.loadGuestOrder(ctx, guest, orderUID)
+	if appErr != nil {
+		return nil, appErr
+	}
+
+	if !ReviewEligibilityFor(order, time.Now().UTC()).Open {
+		return nil, response.ErrReviewWindowClosed
+	}
+
+	rating := req.Rating
+	if !models.ValidRating(rating) {
+		return nil, response.ErrReviewInvalidRating
+	}
+
+	tags, appErr := normalizeServiceTags(req.Tags)
+	if appErr != nil {
+		return nil, appErr
+	}
+	comment := strings.TrimSpace(req.Comment)
+
+	sessionID := guest.SessionID
+	var saved *models.ServiceReview
+
+	// A transaction even though only one row is written. It is what makes the read-then-branch
+	// below safe: two phones on one session tapping at the same moment would otherwise both read
+	// "no existing review" and both insert, and the second would hit the unique index as a 500
+	// rather than resolving to an update.
+	err := s.Access.Db.Transaction(ctx, func(tx *gorm.DB) error {
+		existing, err := s.Access.Repositories.Review.GetServiceBySession(ctx, tx, sessionID)
+		switch {
+		case err == nil:
+			fields := map[string]any{
+				"rating":  rating,
+				"tags":    models.ServiceTags(tags),
+				"comment": comment,
+				// The order is refreshed to whichever one they rated from most recently, so staff
+				// looking at the feed are pointed at the sitting's latest ticket rather than its
+				// first.
+				"order_id": order.ID,
+			}
+			if err := s.Access.Repositories.Review.UpdateServiceFields(ctx, tx, existing.ID, fields); err != nil {
+				return err
+			}
+
+			existing.Rating = rating
+			existing.Tags = models.ServiceTags(tags)
+			existing.Comment = comment
+			existing.OrderID = order.ID
+			existing.UpdatedAt = time.Now().UTC()
+			saved = existing
+			return nil
+
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			review := &models.ServiceReview{
+				UID:            utils.GenerateUID(uidPrefixServiceReview),
+				RestaurantID:   order.RestaurantID,
+				GuestSessionID: &sessionID,
+				OrderID:        order.ID,
+				Rating:         rating,
+				Tags:           models.ServiceTags(tags),
+				Comment:        comment,
+			}
+			if err := s.Access.Repositories.Review.CreateService(ctx, tx, review); err != nil {
+				return err
+			}
+			saved = review
+			return nil
+
+		default:
+			return err
+		}
+	})
+	if err != nil {
+		log.Errorf("[RateService] session=%s order=%s: %+v", guest.SessionUID, orderUID, err)
+		return nil, response.ErrReviewServiceSaveFailed
+	}
+
+	log.Infof("[RateService] session=%s order=%s rating=%d tags=%d",
+		guest.SessionUID, orderUID, rating, len(tags))
+
+	// After the commit, never inside it.
+	s.publishReviewEvent(guest.RestaurantUID, order.UID, guest.TableLabel, rating)
+
+	view := toServiceReviewView(saved)
+	return view, nil
+}
+
+// ListServiceForStaff backs the admin service feed.
+func (s *serviceReview) ListServiceForStaff(
+	ctx context.Context,
+	actor *StaffPrincipal,
+	req *types.RequestListServiceReviews,
+) (*types.ResponseServiceReviewList, *response.ApplicationError) {
+	log := s.Access.Logger.With(ctx)
+
+	req.Pagination.Normalize()
+
+	filter := repositories.ServiceReviewListFilter{
+		RestaurantID: actor.RestaurantID,
+		MinRating:    req.MinRating,
+		MaxRating:    req.MaxRating,
+		HasComment:   req.HasComment,
+		Offset:       req.Pagination.Offset(),
+		Limit:        req.Pagination.Limit(),
+	}
+
+	from, appErr := parseDateParam(req.From)
+	if appErr != nil {
+		return nil, appErr
+	}
+	to, appErr := parseDateParam(req.To)
+	if appErr != nil {
+		return nil, appErr
+	}
+	filter.From = from
+	if to != nil {
+		end := to.AddDate(0, 0, 1)
+		filter.To = &end
+	}
+
+	reviews, total, err := s.Access.Repositories.Review.ListService(ctx, filter)
+	if err != nil {
+		log.Errorf("[ListServiceForStaff] restaurant=%d: %+v", actor.RestaurantID, err)
+		return nil, response.ErrReviewFetchFailed
+	}
+
+	views := make([]types.StaffServiceReviewView, 0, len(reviews))
+	for _, review := range reviews {
+		views = append(views, toStaffServiceReviewView(review))
+	}
+
+	return &types.ResponseServiceReviewList{
+		Reviews: views,
+		Meta:    types.NewPageMeta(req.Pagination, total),
+	}, nil
+}
+
+// normalizeServiceTags validates against the SERVICE vocabulary and drops duplicates.
+//
+// A near-twin of normalizeReviewTags rather than a shared generic one, and deliberately so: the
+// two validate against different sets, and the only thing a shared implementation could take as a
+// parameter is the set itself -- at which point the call site is where the mistake gets made, and
+// it is invisible. Two functions, each naming its own vocabulary, cannot be called wrongly.
+func normalizeServiceTags(raw []string) ([]string, *response.ApplicationError) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if len(raw) > models.MaxReviewTags {
+		return nil, response.ErrReviewTooManyTags
+	}
+
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, candidate := range raw {
+		tag := strings.TrimSpace(candidate)
+		if tag == "" {
+			continue
+		}
+		if !models.ServiceTag(tag).Valid() {
+			return nil, response.ErrReviewInvalidServiceTag
+		}
+		if seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		out = append(out, tag)
+	}
+	return out, nil
 }

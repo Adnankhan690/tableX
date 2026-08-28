@@ -1,0 +1,61 @@
+meta {
+  name: rate-service
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/api/guest/v1/orders/{{order_uid}}/service-review
+  body: json
+  auth: none
+}
+
+headers {
+  X-Guest-Token: {{guest_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "rating": 4,
+    "tags": ["friendly_staff", "quick_service"]
+  }
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data) {
+    bru.setVar("service_review_uid", res.body.data.uid)
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("echoes the rating back", function () {
+    expect(res.body.data.rating).to.equal(4)
+    expect(res.body.data.tags).to.deep.equal(["friendly_staff", "quick_service"])
+  })
+}
+
+docs {
+  # Rate the service
+
+Sets `service_review_uid`.
+
+**The order in the URL is the warrant, not the subject.** What gets written is keyed to the guest
+SESSION, because service is experienced once per sitting rather than once per order -- a diner who
+ordered twice has not been served by two different restaurants. The order is what proves this
+session owns something here and that the rating window is open.
+
+Run this against a *second* order from the same session and you get the same `uid` back: it is one
+row per sitting. That is also why there is no "which order do we ask on" problem -- the question is
+not about an order.
+
+Worth provoking:
+- `"tags": ["tasty"]` -> `TX_REV_009` (422). `tasty` is a DISH tag; the two vocabularies are
+  separate, and the distinct code tells a client which one it got wrong.
+- `"rating": 0` -> `TX_REV_002` (422)
+- running this before `admin-orders / mark-served` -> `TX_REV_001` (409)
+}

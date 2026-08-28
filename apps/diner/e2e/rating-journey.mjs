@@ -116,8 +116,12 @@ ck(
   !cardButtons.some((t) => /submit|send|done|save/i.test(t)),
   cardButtons.join(' | '),
 )
-const groups = await page.locator('[role="radiogroup"]').count()
-ck('one star row per dish', groups === 2, `found ${groups}`)
+// Excluding the service row, which is a radiogroup too but is not a dish. Counting every
+// radiogroup on the card would make this assertion drift every time the card gains a question.
+const dishGroups = await page
+  .locator('[role="radiogroup"]:not([aria-label="Rate the service"])')
+  .count()
+ck('one star row per dish', dishGroups === 2, `found ${dishGroups}`)
 await page.screenshot({ path: `${SHOT}/r1-card.png`, fullPage: true })
 
 console.log('=== One tap is a complete review ===')
@@ -158,6 +162,84 @@ await page.waitForSelector('text=How was it?', { timeout: 15000 })
 const after = await page.locator('main').innerText()
 ck('the stars given are still shown', /Loved it/.test(after) && /Not great/.test(after))
 await page.screenshot({ path: `${SHOT}/r4-reloaded.png`, fullPage: true })
+
+console.log('=== The service row is last, and is per SITTING ===')
+// Last, never first. Above the dishes a general question would cannibalise five specific ones --
+// some diners answer it and stop, and the per-dish ratings are the half a kitchen can act on.
+const cardText = await page.locator('section:has-text("How was it?")').innerText()
+ck('the service row exists', /And the service\?/.test(cardText))
+ck(
+  'and sits below the dishes, not above them',
+  cardText.indexOf('And the service?') > cardText.lastIndexOf('Paneer Tikka'),
+  cardText.replace(/\n+/g, ' | ').slice(0, 220),
+)
+
+const serviceGroup = page.locator('[role="radiogroup"][aria-label="Rate the service"]')
+ck('it has its own star row', (await serviceGroup.count()) === 1)
+
+await serviceGroup.locator('[role="radio"]').nth(1).click()
+await page.waitForTimeout(1200)
+// Scoped to the service row itself, not the whole card. A dish rated low earlier in this journey
+// is legitimately showing "Too spicy" in its own row, so a card-wide regex cannot tell "offered
+// for service" from "present somewhere on screen" -- the same trap as the dish polarity check.
+const serviceBlock = page
+  .locator('div', { has: page.locator('[role="radiogroup"][aria-label="Rate the service"]') })
+  .last()
+const afterService = await serviceBlock.innerText()
+// Service has its own vocabulary AND its own words for the scale -- "Loved it" is something you
+// say about a dish, not about being looked after.
+ck('a low service score offers service tags', /Slow service|Hard to find staff/.test(afterService))
+ck('and not dish tags', !/Too spicy|Bland/.test(afterService), afterService.replace(/\n+/g, ' | '))
+ck('with service wording for the score', /Not great/.test(afterService))
+await page.screenshot({ path: `${SHOT}/r6-service.png`, fullPage: true })
+
+console.log('=== Service is one row per sitting, not one per order ===')
+// A SECOND order on the SAME session. The service rating must arrive already answered on it --
+// the diner was served once, so there is nothing to ask again.
+const second = await j(
+  await fetch(`${API}/api/guest/v1/orders`, {
+    method: 'POST',
+    headers: {
+      'X-Guest-Token': token,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': crypto.randomUUID(),
+    },
+    body: JSON.stringify({
+      items: [{ menu_item_uid: items[0].uid, quantity: 1 }],
+      payment_method: 'counter',
+    }),
+  }),
+)
+for (const status of ['accepted', 'preparing', 'ready', 'served']) {
+  await fetch(`${API}/api/admin/v1/orders/${second.order.uid}/transition`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${login.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
+}
+
+await page.goto(`${APP}/orders/${second.order.uid}`, { waitUntil: 'networkidle' })
+await page.waitForSelector('text=And the service?', { timeout: 15000 })
+const secondServiceBlock = page
+  .locator('div', { has: page.locator('[role="radiogroup"][aria-label="Rate the service"]') })
+  .last()
+const secondCard = await secondServiceBlock.innerText()
+ck(
+  'the second order shows the answer already given',
+  /Not great/.test(secondCard),
+  secondCard.replace(/\n+/g, ' | ').slice(0, 220),
+)
+ck(
+  'and its dishes are still unrated',
+  (await page
+    .locator('section:has-text("How was it?") [role="radio"][aria-checked="true"]')
+    .count()) === 1,
+)
+await page.screenshot({ path: `${SHOT}/r7-service-second-order.png`, fullPage: true })
+
+// Back to the first order for the remaining assertions.
+await page.goto(`${APP}/orders/${orderUid}`, { waitUntil: 'networkidle' })
+await page.waitForSelector('text=How was it?', { timeout: 15000 })
 
 console.log('=== The orders list reflects it ===')
 await page.goto(`${APP}/orders`, { waitUntil: 'networkidle' })

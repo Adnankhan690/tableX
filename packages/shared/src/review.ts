@@ -1,4 +1,4 @@
-import type { ReviewTag } from './types'
+import type { ReviewTag, ServiceTag } from './types'
 
 /**
  * Presentation metadata for ratings (PRD 6.5).
@@ -49,7 +49,6 @@ export const REVIEW_TAG_LABEL: Record<ReviewTag, string> = {
   too_spicy: 'Too spicy',
   served_cold: 'Served cold',
   small_portion: 'Small portion',
-  slow_to_arrive: 'Slow to arrive',
   not_as_described: 'Not as described',
 }
 
@@ -68,7 +67,6 @@ export const NEGATIVE_REVIEW_TAGS: readonly ReviewTag[] = [
   'bland',
   'served_cold',
   'small_portion',
-  'slow_to_arrive',
   'not_as_described',
 ] as const
 
@@ -103,4 +101,65 @@ export function formatRating(average: number): string {
  */
 export function isLowRating(rating: number): boolean {
   return rating <= 3
+}
+
+// --- Service ---
+//
+// Rated once per SITTING, not per order, and kept entirely separate from the dish vocabulary. A
+// diner saying "slow" about the floor and a diner saying "bland" about a dish are addressing two
+// different teams, and blending them gives a restaurant one number that points at neither.
+
+/** Human labels for the service vocabulary. */
+export const SERVICE_TAG_LABEL: Record<ServiceTag, string> = {
+  quick_service: 'Quick service',
+  friendly_staff: 'Friendly staff',
+  attentive: 'Attentive',
+  clean_table: 'Clean table',
+  slow_service: 'Slow service',
+  hard_to_find_staff: 'Hard to find staff',
+  table_not_clean: 'Table not clean',
+  order_wrong: 'Order was wrong',
+  rushed: 'Felt rushed',
+}
+
+/** Offered at 4-5 stars. */
+export const POSITIVE_SERVICE_TAGS: readonly ServiceTag[] = [
+  'quick_service',
+  'friendly_staff',
+  'attentive',
+  'clean_table',
+] as const
+
+/** Offered at 1-3 stars. */
+export const NEGATIVE_SERVICE_TAGS: readonly ServiceTag[] = [
+  'slow_service',
+  'hard_to_find_staff',
+  'table_not_clean',
+  'order_wrong',
+  'rushed',
+] as const
+
+/**
+ * The service tags worth offering for a given rating.
+ *
+ * Same polarity boundary as the dish tags, and for the same reason: offering "Friendly staff" to
+ * someone who just tapped one star reads as not listening.
+ */
+export function serviceTagsForRating(rating: number): readonly ServiceTag[] {
+  return rating >= 4 ? POSITIVE_SERVICE_TAGS : NEGATIVE_SERVICE_TAGS
+}
+
+/**
+ * What each star means for SERVICE, said in words.
+ *
+ * Separate wording from RATING_LABEL because the two are not the same sentence. "Loved it" is
+ * something you say about a dish; about service the honest top of the scale is that nothing went
+ * wrong and someone was looking after you.
+ */
+export const SERVICE_RATING_LABEL: Record<number, string> = {
+  1: 'Bad',
+  2: 'Not great',
+  3: 'Fine',
+  4: 'Good',
+  5: 'Looked after us',
 }

@@ -1,8 +1,14 @@
 'use client'
 
 import { isApiError } from '@tablex/api-client'
-import type { RatedDishView, ReviewSummaryResponse, ReviewView } from '@tablex/shared'
-import { formatRating, isLowRating, REVIEW_TAG_LABEL } from '@tablex/shared'
+import type {
+  RatedDishView,
+  RatingSummary,
+  ReviewSummaryResponse,
+  ReviewView,
+  StaffServiceReviewView,
+} from '@tablex/shared'
+import { formatRating, isLowRating, REVIEW_TAG_LABEL, SERVICE_TAG_LABEL } from '@tablex/shared'
 import { cn } from '@tablex/ui'
 import { MessageSquare, Star, X } from 'lucide-react'
 import Link from 'next/link'
@@ -30,6 +36,16 @@ const PER_PAGE = 50
 type Filter = 'all' | 'low' | 'commented'
 
 /**
+ * Which set of ratings the list is showing.
+ *
+ * A SEPARATE axis from Filter, and rendered as its own chip group, because the two are different
+ * kinds of choice: this picks the dataset, Filter narrows whichever one is picked. Collapsing them
+ * into one row of chips would let "Service" and "With a note" look like alternatives when they
+ * compose.
+ */
+type Dataset = 'food' | 'service'
+
+/**
  * What the restaurant reads back (PRD 6.5).
  *
  * The screen is built around one question a manager actually has mid-service -- "is anyone
@@ -48,12 +64,15 @@ export function ReviewsFeed() {
   const dishUid = searchParams.get('menu_item_uid')
 
   const [filter, setFilter] = useState<Filter>('all')
+  const [dataset, setDataset] = useState<Dataset>('food')
   const [reviews, setReviews] = useState<ReviewView[] | null>(null)
+  const [serviceReviews, setServiceReviews] = useState<StaffServiceReviewView[] | null>(null)
   const [summary, setSummary] = useState<ReviewSummaryResponse | null>(null)
   const [error, setError] = useState<unknown>(null)
 
   const query = useMemo(() => {
-    const dish = dishUid ? { menu_item_uid: dishUid } : {}
+    // The dish drill-down is meaningless on the service feed, and the endpoint does not accept it.
+    const dish = dishUid && dataset === 'food' ? { menu_item_uid: dishUid } : {}
     switch (filter) {
       case 'low':
         // A ceiling, not an exact value: "3 and below" is the real question. Nobody wants to
@@ -64,18 +83,30 @@ export function ReviewsFeed() {
       default:
         return { per_page: PER_PAGE, ...dish }
     }
-  }, [dishUid, filter])
+  }, [dataset, dishUid, filter])
 
   const load = useCallback(() => {
     if (!token) return
 
-    api
-      .listReviews(token, query)
-      .then((page) => {
-        setReviews(page.reviews)
-        setError(null)
-      })
-      .catch((err: unknown) => setError(err))
+    // Only the visible dataset is fetched. Loading both on every poll would double the request
+    // rate on a screen that refreshes live, to populate a list nobody is looking at.
+    if (dataset === 'service') {
+      api
+        .listServiceReviews(token, query)
+        .then((page) => {
+          setServiceReviews(page.reviews)
+          setError(null)
+        })
+        .catch((err: unknown) => setError(err))
+    } else {
+      api
+        .listReviews(token, query)
+        .then((page) => {
+          setReviews(page.reviews)
+          setError(null)
+        })
+        .catch((err: unknown) => setError(err))
+    }
 
     // Fetched alongside rather than after: the two describe the same moment, and loading the
     // summary only once would leave the headline score stale as reviews arrive live.
@@ -85,7 +116,7 @@ export function ReviewsFeed() {
       .catch(() => {
         /* The panel is a summary of the list below it; losing it must not fail the screen. */
       })
-  }, [query, token])
+  }, [dataset, query, token])
 
   useEffect(() => {
     load()
@@ -95,11 +126,17 @@ export function ReviewsFeed() {
   // screen sees it without any new transport (docs/DECISIONS.md D10).
   const { live } = useAdminStream(token, load)
 
+  // The visible list, resolved once. Discriminated by `item_name` at the render site rather than
+  // by a `kind` field: the two response types are genuinely different shapes, and the presence of
+  // a dish is what tells them apart.
+  const rows: (ReviewView | StaffServiceReviewView)[] | null =
+    dataset === 'service' ? serviceReviews : reviews
+
   return (
     <>
       <PageHeader
         title="Reviews"
-        subtitle="What diners said about the food, newest first"
+        subtitle="What diners said about the food and the service, newest first"
         meta={
           <span className="flex items-center gap-1.5 text-xs text-muted">
             <span
@@ -123,6 +160,17 @@ export function ReviewsFeed() {
       ) : null}
 
       <Toolbar>
+        {/* The dataset axis, separated by a rule from the filters that narrow it -- they compose
+            rather than compete, and one undivided row of chips would suggest otherwise. */}
+        <ToggleChip active={dataset === 'food'} onClick={() => setDataset('food')}>
+          Food
+        </ToggleChip>
+        <ToggleChip active={dataset === 'service'} onClick={() => setDataset('service')}>
+          Service
+        </ToggleChip>
+
+        <span aria-hidden="true" className="mx-1 h-5 w-px bg-divider" />
+
         <ToggleChip active={filter === 'all'} onClick={() => setFilter('all')}>
           All
         </ToggleChip>
@@ -131,7 +179,9 @@ export function ReviewsFeed() {
           // The badge is a count of things somebody should act on, which is exactly what this
           // filter holds. Urgent only when it is non-zero -- an empty queue that shouts is how
           // staff learn to stop reading badges.
-          {...(summary ? { count: lowRatingCount(summary), countTone: 'urgent' as const } : {})}
+          {...(summary
+            ? { count: lowRatingCount(summary, dataset), countTone: 'urgent' as const }
+            : {})}
           onClick={() => setFilter('low')}
         >
           Needs attention
@@ -154,25 +204,31 @@ export function ReviewsFeed() {
           </Notice>
         ) : null}
 
-        {reviews === null ? (
+        {rows === null ? (
           <div className="space-y-2">
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
           </div>
-        ) : reviews.length === 0 ? (
+        ) : rows.length === 0 ? (
           <EmptyState
             icon={Star}
-            title={emptyTitle(filter)}
-            description={emptyDescription(filter)}
+            title={emptyTitle(filter, dataset)}
+            description={emptyDescription(filter, dataset)}
           />
         ) : (
           <ul className="space-y-2">
-            {reviews.map((review) => (
-              <li key={review.uid}>
-                <ReviewRow review={review} />
-              </li>
-            ))}
+            {rows.map((row) =>
+              'item_name' in row ? (
+                <li key={row.uid}>
+                  <ReviewRow review={row} />
+                </li>
+              ) : (
+                <li key={row.uid}>
+                  <ServiceReviewRow review={row} />
+                </li>
+              ),
+            )}
           </ul>
         )}
       </main>
@@ -268,6 +324,62 @@ function ReviewRow({ review }: { review: ReviewView }) {
 }
 
 /**
+ * One service rating.
+ *
+ * A separate component from ReviewRow rather than one with conditional fields. The two really do
+ * render different things -- this has no dish to name and no menu to link into -- and a single
+ * component branching on which half it holds is how both halves end up slightly wrong.
+ */
+function ServiceReviewRow({ review }: { review: StaffServiceReviewView }) {
+  const low = isLowRating(review.rating)
+
+  return (
+    <Card className={cn(low && 'border-danger-line bg-danger-soft')}>
+      <div className="flex items-center gap-2">
+        <Stars rating={review.rating} />
+        <span className="text-base font-semibold text-ink">Service</span>
+      </div>
+      <p className="mt-0.5 text-xs text-muted">
+        {review.order_number}
+        {review.table_label ? (
+          <>
+            <span className="mx-1.5">·</span>Table {review.table_label}
+          </>
+        ) : null}
+        <span className="mx-1.5">·</span>
+        <time dateTime={review.created_at}>
+          {new Date(review.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </time>
+      </p>
+
+      {review.tags && review.tags.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {review.tags.map((tag) => (
+            <Badge key={tag} tone={low ? 'danger' : 'neutral'}>
+              {SERVICE_TAG_LABEL[tag]}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+
+      {review.comment ? (
+        <p className="mt-2 flex gap-1.5 text-sm leading-snug text-ink">
+          <MessageSquare
+            aria-hidden="true"
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted"
+            strokeWidth={1.75}
+          />
+          <span>{review.comment}</span>
+        </p>
+      ) : null}
+    </Card>
+  )
+}
+
+/**
  * The headline panel.
  *
  * The distribution sits beside the average rather than under it, because the two answer
@@ -276,7 +388,7 @@ function ReviewRow({ review }: { review: ReviewView }) {
  * responses, and an average alone cannot tell them apart.
  */
 function SummaryPanel({ summary }: { summary: ReviewSummaryResponse }) {
-  if (summary.overall.count === 0) {
+  if (summary.food.count === 0 && summary.service.count === 0) {
     return (
       <div className="border-b border-line bg-surface px-4 py-3">
         <p className="text-sm text-muted">
@@ -287,60 +399,114 @@ function SummaryPanel({ summary }: { summary: ReviewSummaryResponse }) {
     )
   }
 
-  const peak = Math.max(...summary.distribution, 1)
-
   return (
-    <div className="grid gap-3 border-b border-line bg-surface p-4 lg:grid-cols-3">
-      <Card className="flex items-center gap-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Overall</p>
-          <p className="text-3xl font-semibold tabular-nums text-ink">
-            {formatRating(summary.overall.average)}
-          </p>
-          <p className="text-xs text-muted tabular-nums">
-            {summary.overall.count} {summary.overall.count === 1 ? 'rating' : 'ratings'}
-          </p>
-        </div>
-
-        <div className="min-w-0 flex-1 space-y-0.5">
-          {/* Highest star first: the chart reads top-down as best-to-worst, which is the order
-              people expect and the order the numbers are usually quoted in. */}
-          {[5, 4, 3, 2, 1].map((star) => {
-            const count = summary.distribution[star - 1] ?? 0
-            return (
-              <div key={star} className="flex items-center gap-1.5 text-xs">
-                <span className="w-2 tabular-nums text-muted">{star}</span>
-                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-sunken">
-                  <span
-                    className={cn(
-                      'block h-full rounded-full',
-                      isLowRating(star) ? 'bg-danger' : 'bg-accent',
-                    )}
-                    // Scaled to the tallest bar, not to the total: with 40 fives and 2 ones the
-                    // ones would be a 1px sliver against the total and read as zero.
-                    style={{ width: `${(count / peak) * 100}%` }}
-                  />
-                </span>
-                <span className="w-6 text-right tabular-nums text-muted">{count}</span>
-              </div>
-            )
-          })}
-        </div>
-      </Card>
+    <div className="grid gap-3 border-b border-line bg-surface p-4 lg:grid-cols-2">
+      {/*
+        Two numbers, side by side, never averaged together. A blended score points at nobody:
+        "you are a 3.8" is not something a manager can act on, where "food 4.6, service 3.2" names
+        a team and a shift (docs/DECISIONS.md D17).
+      */}
+      <ScoreCard
+        title="Food"
+        caption="Across every dish rated"
+        summary={summary.food}
+        distribution={summary.distribution}
+        emptyHint="No dish ratings yet."
+      />
+      <ScoreCard
+        title="Service"
+        caption="One rating per sitting"
+        summary={summary.service}
+        distribution={summary.service_distribution}
+        emptyHint="No service ratings yet. Diners are asked after they have rated their food."
+      />
 
       <DishTable
         title="Needs attention"
-        description={`Lowest rated, ${summary.min_reviews_for_ranking}+ ratings`}
+        description={`Lowest rated dishes, ${summary.min_reviews_for_ranking}+ ratings`}
         dishes={summary.needs_attention}
         tone="danger"
       />
       <DishTable
         title="Best rated"
-        description={`Highest rated, ${summary.min_reviews_for_ranking}+ ratings`}
+        description={`Highest rated dishes, ${summary.min_reviews_for_ranking}+ ratings`}
         dishes={summary.top_rated}
         tone="neutral"
       />
     </div>
+  )
+}
+
+/**
+ * One headline score with the distribution behind it.
+ *
+ * The distribution sits beside the average rather than under it because the two answer different
+ * questions and a manager needs both at once: a 3.0 built from straight 3s is a dull menu, and a
+ * 3.0 built from 5s and 1s is an inconsistent kitchen. Those need opposite responses, and an
+ * average alone cannot tell them apart. The same split holds for service, where the second shape
+ * is a staffing problem rather than a training one.
+ */
+function ScoreCard({
+  title,
+  caption,
+  summary,
+  distribution,
+  emptyHint,
+}: {
+  title: string
+  caption: string
+  summary: RatingSummary
+  distribution: readonly number[]
+  emptyHint: string
+}) {
+  if (summary.count === 0) {
+    return (
+      <Card>
+        <CardHeader as="h3" title={title} description={caption} />
+        <p className="mt-2 text-sm text-muted">{emptyHint}</p>
+      </Card>
+    )
+  }
+
+  // Scaled to the tallest bar, not to the total: with 40 fives and 2 ones the ones would be a
+  // 1px sliver against the total and read as zero.
+  const peak = Math.max(...distribution, 1)
+
+  return (
+    <Card className="flex items-center gap-4">
+      <div className="shrink-0">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted">{title}</p>
+        <p className="text-3xl font-semibold tabular-nums text-ink">
+          {formatRating(summary.average)}
+        </p>
+        <p className="text-xs text-muted tabular-nums">
+          {summary.count} {summary.count === 1 ? 'rating' : 'ratings'}
+        </p>
+      </div>
+
+      <div className="min-w-0 flex-1 space-y-0.5">
+        {/* Highest star first: the chart reads top-down as best-to-worst, which is the order
+            people expect and the order the numbers are usually quoted in. */}
+        {[5, 4, 3, 2, 1].map((star) => {
+          const count = distribution[star - 1] ?? 0
+          return (
+            <div key={star} className="flex items-center gap-1.5 text-xs">
+              <span className="w-2 tabular-nums text-muted">{star}</span>
+              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-sunken">
+                <span
+                  className={cn(
+                    'block h-full rounded-full',
+                    isLowRating(star) ? 'bg-danger' : 'bg-accent',
+                  )}
+                  style={{ width: `${(count / peak) * 100}%` }}
+                />
+              </span>
+              <span className="w-6 text-right tabular-nums text-muted">{count}</span>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
   )
 }
 
@@ -422,32 +588,36 @@ function Stars({ rating }: { rating: number }) {
 }
 
 /** How many ratings on this restaurant are complaints, from the distribution already loaded. */
-function lowRatingCount(summary: ReviewSummaryResponse): number {
+function lowRatingCount(summary: ReviewSummaryResponse, dataset: Dataset): number {
   // Indices 0..2 are 1..3 stars, matching isLowRating's threshold. Derived from the summary
-  // rather than counted from the page, which only holds one page's worth.
-  return (
-    (summary.distribution[0] ?? 0) + (summary.distribution[1] ?? 0) + (summary.distribution[2] ?? 0)
-  )
+  // rather than counted from the page, which only holds one page's worth -- and read from
+  // whichever distribution the list is currently showing, or the badge would count food
+  // complaints while the reader is looking at service.
+  const d = dataset === 'service' ? summary.service_distribution : summary.distribution
+  return (d[0] ?? 0) + (d[1] ?? 0) + (d[2] ?? 0)
 }
 
-function emptyTitle(filter: Filter): string {
+function emptyTitle(filter: Filter, dataset: Dataset): string {
   switch (filter) {
     case 'low':
       return 'Nothing needs attention'
     case 'commented':
       return 'No written notes'
     default:
-      return 'No reviews yet'
+      return dataset === 'service' ? 'No service ratings yet' : 'No reviews yet'
   }
 }
 
-function emptyDescription(filter: Filter): string {
+function emptyDescription(filter: Filter, dataset: Dataset): string {
+  const subject = dataset === 'service' ? 'the service' : 'a dish'
   switch (filter) {
     case 'low':
-      return 'No diner has rated a dish three stars or below.'
+      return `No diner has rated ${subject} three stars or below.`
     case 'commented':
       return 'Most diners rate with a tap and move on, which is by design — the stars and tags are the signal.'
     default:
-      return 'A diner is asked to rate once their food has reached the table. Ratings appear here as they arrive.'
+      return dataset === 'service'
+        ? 'Diners are asked about service after they have rated their food, so these arrive a little behind the dish ratings.'
+        : 'A diner is asked to rate once their food has reached the table. Ratings appear here as they arrive.'
   }
 }

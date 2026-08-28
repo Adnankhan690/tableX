@@ -15,6 +15,7 @@ import type {
   ImageUploadResponse,
   ListOrdersQuery,
   ListReviewsQuery,
+  ListServiceReviewsQuery,
   MarkPaymentFailedRequest,
   OrderListResponse,
   OrderStatsView,
@@ -25,6 +26,7 @@ import type {
   RestaurantSettings,
   ReviewListResponse,
   ReviewSummaryResponse,
+  ServiceReviewListResponse,
   StaffListResponse,
   StaffLoginRequest,
   StaffLoginResponse,
@@ -351,7 +353,34 @@ export class AdminApi {
     })
   }
 
-  /** The reviews dashboard: the overall score, its distribution, and the two ends of the menu. */
+  /**
+   * The service feed, newest first.
+   *
+   * A separate call from listReviews rather than a `kind` filter on it: a service rating has no
+   * dish, so one shared response type would carry item_name, food_type and menu_item_uid as
+   * always-absent keys in half the rows.
+   */
+  listServiceReviews(
+    token: string,
+    query: ListServiceReviewsQuery = {},
+    signal?: AbortSignal,
+  ): Promise<ServiceReviewListResponse> {
+    return this.http.request(`${ADMIN}/reviews/service`, {
+      query: {
+        page: query.page,
+        per_page: query.per_page,
+        min_rating: query.min_rating,
+        max_rating: query.max_rating,
+        has_comment: query.has_comment,
+        from: query.from,
+        to: query.to,
+      },
+      auth: { kind: 'staff', token },
+      signal,
+    })
+  }
+
+  /** The reviews dashboard: the food and service scores, their distributions, and the menu's ends. */
   reviewSummary(token: string, signal?: AbortSignal): Promise<ReviewSummaryResponse> {
     return this.http.request(`${ADMIN}/reviews/summary`, {
       auth: { kind: 'staff', token },

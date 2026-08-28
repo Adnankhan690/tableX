@@ -89,6 +89,12 @@ func (a *App) addGuestRoutes(engine *gin.Engine) {
 	// order_item_id is what guarantees it.
 	guest.PUT("/orders/:uid/items/:item_uid/review", a.controllers.Review.RateMyOrderItem)
 
+	// Rating the SERVICE. Addressed to an order, but what it writes is keyed to the session:
+	// service is experienced once per sitting, not once per order (DECISIONS.md D17). The order in
+	// the path is the warrant -- it is what proves this session owns something here and that the
+	// review window is open -- rather than the subject of the rating.
+	guest.PUT("/orders/:uid/service-review", a.controllers.Review.RateMyService)
+
 	guest.GET("/orders/:uid/stream", a.controllers.Realtime.GuestStream)
 }
 
@@ -167,6 +173,11 @@ func (a *App) addAdminRoutes(engine *gin.Engine) {
 	// whoever is on the floor right now, and gating it behind a manager login is how it gets
 	// read the next morning instead of while the table is still sitting there.
 	admin.GET("/reviews", a.controllers.Review.ListReviews)
+	// A separate route rather than a kind= filter on the one above. A service rating has no dish,
+	// so sharing a response type would give every row three fields that are always empty in one of
+	// the two cases, and a client that must know which case it is looking at before it can trust
+	// any of them.
+	admin.GET("/reviews/service", a.controllers.Review.ListServiceReviews)
 	admin.GET("/reviews/summary", a.controllers.Review.ReviewSummary)
 
 	admin.GET("/stats/today", a.controllers.Stats.Today)

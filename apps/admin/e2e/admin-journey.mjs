@@ -380,9 +380,16 @@ ck('the tag is shown in words', /Served cold/.test(reviewsText))
 ck('the ticket can be found from it', new RegExp(orderNumber).test(reviewsText))
 // Scoped to the page, not to <main>: the summary band sits above it, in the same place the
 // order board puts its stats strip -- page-level summary is chrome, the list is the content.
-// Case-insensitive: the label is uppercased in CSS, and innerText returns what is RENDERED,
+// Case-insensitive: the labels are uppercased in CSS, and innerText returns what is RENDERED,
 // so a case-sensitive match here asserts against the stylesheet rather than the content.
-ck('the overall score is summarised', /overall/i.test(await page.locator('body').innerText()))
+//
+// TWO headline numbers, never one blended average: "food 4.6, service 3.2" names a team and a
+// shift, where a single 3.8 names nobody (docs/DECISIONS.md D17).
+const summaryText = await page.locator('body').innerText()
+ck(
+  'food and service are scored separately',
+  /food/i.test(summaryText) && /service/i.test(summaryText),
+)
 await page.screenshot({ path: `${SHOT}/a12-reviews.png`, fullPage: true })
 
 // The filter this screen exists for.
@@ -393,7 +400,37 @@ ck(
   /Arrived lukewarm\./.test(await page.locator('main').innerText()),
 )
 
-console.log('=== 16. The menu carries the score, and links to it ===')
+console.log('=== 16. Service ratings reach the panel on their own axis ===')
+// The diner rates service from the same sitting. Session-scoped, so this needs no second order.
+await fetch(`${API}/api/guest/v1/orders/${orderUid}/service-review`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json', 'X-Guest-Token': gToken },
+  body: JSON.stringify({ rating: 2, tags: ['slow_service'], comment: 'Waited a long time.' }),
+})
+
+// The Service chip is a DATASET switch, not a filter -- it changes which list is shown, and the
+// All / Needs attention / With a note chips then narrow whichever is picked.
+await page.click('button:has-text("Service")')
+await page.waitForSelector('main >> text=Waited a long time.', { timeout: 15000 })
+const serviceText = await page.locator('main').innerText()
+ck('the service rating reaches the panel', /Waited a long time\./.test(serviceText))
+ck('its tag is shown in words', /Slow service/.test(serviceText))
+ck(
+  'and no dish name is invented for it',
+  !/Paneer Tikka|Butter Chicken/.test(serviceText),
+  serviceText.replace(/\n+/g, ' | ').slice(0, 200),
+)
+await page.screenshot({ path: `${SHOT}/a14-service-reviews.png`, fullPage: true })
+
+// Switching back must restore the dish feed rather than leaving the two mixed.
+await page.click('button:has-text("Food")')
+await page.waitForSelector('main >> text=Arrived lukewarm.', { timeout: 15000 })
+ck(
+  'switching back restores the dish feed',
+  /Arrived lukewarm\./.test(await page.locator('main').innerText()),
+)
+
+console.log('=== 17. The menu carries the score, and links to it ===')
 await page.click('a[href="/menu"]')
 await page.waitForURL('**/menu')
 await page.waitForSelector('main >> text=Starters', { timeout: 15000 })
@@ -411,7 +448,7 @@ ck(
 )
 await page.screenshot({ path: `${SHOT}/a13-reviews-dish.png`, fullPage: true })
 
-console.log('=== 17. No unexpected console errors ===')
+console.log('=== 18. No unexpected console errors ===')
 const real = consoleErrors.filter(
   (e) =>
     !/favicon|Download the React DevTools/i.test(e) &&

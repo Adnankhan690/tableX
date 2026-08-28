@@ -1,8 +1,23 @@
 'use client'
 
 import { isApiError } from '@tablex/api-client'
-import type { OrderItemReviewView, OrderItemView, OrderView, ReviewTag } from '@tablex/shared'
-import { RATING_LABEL, RATING_VALUES, REVIEW_TAG_LABEL, reviewTagsForRating } from '@tablex/shared'
+import type {
+  OrderItemReviewView,
+  OrderItemView,
+  OrderView,
+  ReviewTag,
+  ServiceReviewView,
+  ServiceTag,
+} from '@tablex/shared'
+import {
+  RATING_LABEL,
+  RATING_VALUES,
+  REVIEW_TAG_LABEL,
+  reviewTagsForRating,
+  SERVICE_RATING_LABEL,
+  SERVICE_TAG_LABEL,
+  serviceTagsForRating,
+} from '@tablex/shared'
 import { cn, FoodTypeBadge } from '@tablex/ui'
 import { useCallback, useMemo, useState } from 'react'
 import { useGatedSession } from '@/components/session-gate'
@@ -75,6 +90,24 @@ export function RateOrder({
           />
         ))}
       </ul>
+
+      {/*
+        The service row, LAST and never first.
+
+        Placement is the whole design here. Above the dishes it would cannibalise them: a general
+        question is easier to answer than five specific ones, so some diners would answer it and
+        stop -- and the per-dish ratings are the half a kitchen can act on. After them it is purely
+        additive, one more tap from someone already engaged.
+
+        It is also the only outlet a diner has for a floor complaint. Without it "the food took an
+        hour" gets expressed as two stars on the biryani, which blames a dish for a problem the
+        kitchen did not cause (docs/DECISIONS.md D17).
+      */}
+      <ServiceRow
+        orderUid={order.uid}
+        existing={order.service_review ?? null}
+        onWindowClosed={onWindowClosed}
+      />
     </section>
   )
 }
@@ -203,7 +236,7 @@ function RateItemRow({
         <SaveIndicator state={state} />
       </div>
 
-      <StarRow itemName={item.name} rating={rating} onRate={rate} />
+      <StarRow label={item.name} rating={rating} labels={RATING_LABEL} onRate={rate} />
 
       {error !== null ? (
         <p role="alert" className="mt-1 text-[0.8125rem] text-nonveg">
@@ -213,7 +246,8 @@ function RateItemRow({
 
       {rating > 0 ? (
         <OptionalDetail
-          rating={rating}
+          offered={reviewTagsForRating(rating)}
+          tagLabel={REVIEW_TAG_LABEL}
           tags={tags}
           comment={comment}
           noteOpen={noteOpen}
@@ -228,6 +262,134 @@ function RateItemRow({
 }
 
 /**
+ * "And the service?"
+ *
+ * Session-scoped, not order-scoped: `existing` arrives on every order this session placed, and
+ * saving from any of them writes the one row (docs/DECISIONS.md D17). A diner with two orders open
+ * therefore sees the same answer on both, which is the correct behaviour rather than a bug to
+ * paper over -- they were served once.
+ *
+ * State is local for the same reason each dish row holds its own: one slow request must not freeze
+ * the feedback on anything else the diner has already tapped.
+ */
+function ServiceRow({
+  orderUid,
+  existing,
+  onWindowClosed,
+}: {
+  orderUid: string
+  existing: ServiceReviewView | null
+  onWindowClosed: () => void
+}) {
+  const session = useGatedSession()
+
+  const [review, setReview] = useState<ServiceReviewView | null>(existing)
+  const [state, setState] = useState<SaveState>(existing ? 'saved' : 'idle')
+  const [error, setError] = useState<string | null>(null)
+  const [noteOpen, setNoteOpen] = useState(Boolean(existing?.comment))
+  const [comment, setComment] = useState(existing?.comment ?? '')
+
+  const rating = review?.rating ?? 0
+  const tags = useMemo(() => review?.tags ?? [], [review?.tags])
+
+  const save = useCallback(
+    (nextRating: number, nextTags: ServiceTag[], nextComment: string) => {
+      const optimistic: ServiceReviewView = {
+        uid: review?.uid ?? '',
+        rating: nextRating,
+        tags: nextTags,
+        comment: nextComment,
+        updated_at: new Date().toISOString(),
+      }
+      const previous = review
+      setReview(optimistic)
+      setState('saving')
+      setError(null)
+
+      api
+        .rateService(session.token, orderUid, {
+          rating: nextRating,
+          ...(nextTags.length > 0 ? { tags: nextTags } : {}),
+          ...(nextComment !== '' ? { comment: nextComment } : {}),
+        })
+        .then((saved) => {
+          setReview(saved)
+          setState('saved')
+        })
+        .catch((err: unknown) => {
+          setReview(previous)
+          setState('error')
+
+          if (isApiError(err) && err.code === 'TX_REV_001') {
+            onWindowClosed()
+            return
+          }
+          setError(isApiError(err) ? err.message : 'Could not save that. Tap again?')
+        })
+    },
+    [onWindowClosed, orderUid, review, session.token],
+  )
+
+  const rate = useCallback(
+    (next: number) => {
+      if (next === rating) return
+      // Same polarity rule as the dish rows: a diner dropping five stars to two must not keep
+      // "Friendly staff" attached, and there is no honest way to migrate it.
+      const kept = tags.filter((tag) => serviceTagsForRating(next).includes(tag))
+      save(next, kept, comment)
+    },
+    [comment, rating, save, tags],
+  )
+
+  const toggleTag = useCallback(
+    (tag: ServiceTag) => {
+      const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]
+      save(rating, next, comment)
+    },
+    [comment, rating, save, tags],
+  )
+
+  const commitComment = useCallback(() => {
+    const trimmed = comment.trim()
+    if (rating === 0 || trimmed === (review?.comment ?? '')) return
+    save(rating, tags, trimmed)
+  }, [comment, rating, review?.comment, save, tags])
+
+  return (
+    <div className="border-t border-line px-4 py-3">
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 text-[0.9375rem] font-medium leading-snug">
+          And the service?
+        </span>
+        <SaveIndicator state={state} />
+      </div>
+
+      <StarRow label="the service" rating={rating} labels={SERVICE_RATING_LABEL} onRate={rate} />
+
+      {error !== null ? (
+        <p role="alert" className="mt-1 text-[0.8125rem] text-nonveg">
+          {error}
+        </p>
+      ) : null}
+
+      {rating > 0 ? (
+        <OptionalDetail
+          offered={serviceTagsForRating(rating)}
+          tagLabel={SERVICE_TAG_LABEL}
+          tags={tags}
+          comment={comment}
+          noteOpen={noteOpen}
+          onOpenNote={() => setNoteOpen(true)}
+          onToggleTag={toggleTag}
+          onCommentChange={setComment}
+          onCommentCommit={commitComment}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/**
  * The five stars.
  *
  * A radiogroup rather than five unrelated buttons, so a screen reader announces it as one
@@ -235,18 +397,25 @@ function RateItemRow({
  * the word, not the number -- "Good" tells someone what they are choosing where "4" does not.
  */
 function StarRow({
-  itemName,
+  label,
   rating,
+  labels,
   onRate,
 }: {
-  itemName: string
+  /** What is being rated, for the group's accessible name: "Rate Paneer Tikka". */
+  label: string
   rating: number
+  /**
+   * The word for each star. Passed in rather than imported, because food and service do not say
+   * the same thing at the top of the scale -- "Loved it" is something you say about a dish.
+   */
+  labels: Record<number, string>
   onRate: (next: number) => void
 }) {
   return (
     <div
       role="radiogroup"
-      aria-label={`Rate ${itemName}`}
+      aria-label={`Rate ${label}`}
       // Pulled left so the stars line up with the dish name above rather than sitting inside
       // the badge's gutter, and given the full tap height even though the glyph is smaller.
       className="mt-1 flex items-center gap-0.5"
@@ -259,7 +428,7 @@ function StarRow({
             type="button"
             role="radio"
             aria-checked={value === rating}
-            aria-label={`${value} — ${RATING_LABEL[value]}`}
+            aria-label={`${value} — ${labels[value]}`}
             onClick={() => onRate(value)}
             className={cn(
               // 44px tall, so the target meets the floor even though the star itself is 26px.
@@ -274,7 +443,7 @@ function StarRow({
 
       {rating > 0 ? (
         <span aria-live="polite" className="ml-1.5 text-[0.8125rem] font-medium text-muted">
-          {RATING_LABEL[rating]}
+          {labels[rating]}
         </span>
       ) : null}
     </div>
@@ -344,8 +513,9 @@ function SaveIndicator({ state }: { state: SaveState }) {
  * this week" is a service problem with an address, where nine sentences are an afternoon of
  * reading. The note is the escape hatch for the diner who wants one, not the ask.
  */
-function OptionalDetail({
-  rating,
+function OptionalDetail<T extends string>({
+  offered,
+  tagLabel,
   tags,
   comment,
   noteOpen,
@@ -354,19 +524,21 @@ function OptionalDetail({
   onCommentChange,
   onCommentCommit,
 }: {
-  rating: number
-  tags: ReviewTag[]
+  /**
+   * The tags worth offering at the current rating. Resolved by the caller rather than here,
+   * because food and service draw on two different closed vocabularies and this component has no
+   * business knowing which one it is rendering.
+   */
+  offered: readonly T[]
+  tagLabel: Record<T, string>
+  tags: T[]
   comment: string
   noteOpen: boolean
   onOpenNote: () => void
-  onToggleTag: (tag: ReviewTag) => void
+  onToggleTag: (tag: T) => void
   onCommentChange: (next: string) => void
   onCommentCommit: () => void
 }) {
-  // Polarity-matched to the rating: offering "Tasty" to someone who just tapped one star reads
-  // as not listening, and "Too spicy" to someone who tapped five is noise to read past.
-  const offered = reviewTagsForRating(rating)
-
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
@@ -385,7 +557,7 @@ function OptionalDetail({
                   : 'border-line bg-surface text-muted',
               )}
             >
-              {REVIEW_TAG_LABEL[tag]}
+              {tagLabel[tag]}
             </button>
           )
         })}

@@ -9,11 +9,13 @@ import type {
   PlaceOrderRequest,
   PlaceOrderResponse,
   RateOrderItemRequest,
+  RateServiceRequest,
   RestaurantDirectoryResponse,
   RestaurantLandingResponse,
   RestaurantQR,
   ScanTableResponse,
   SelectTableRequest,
+  ServiceReviewView,
 } from '@tablex/shared'
 import { HttpClient, type HttpClientConfig, newIdempotencyKey } from './http'
 
@@ -166,6 +168,29 @@ export class DinerApi {
       `${GUEST}/orders/${encodeURIComponent(orderUid)}/items/${encodeURIComponent(itemUid)}/review`,
       { method: 'PUT', body, auth: { kind: 'guest', token } },
     )
+  }
+
+  /**
+   * Rates the SERVICE during this sitting.
+   *
+   * `orderUid` is the warrant, not the subject. What gets written is keyed to the guest session,
+   * because service is experienced once per sitting rather than once per order -- a diner who
+   * ordered twice has not been served by two different restaurants. The order is what proves this
+   * session owns something here and that the rating window is open.
+   *
+   * The visible consequence, and it is intended: calling this with a different order uid from the
+   * same session returns the SAME review, updated. There is one row per sitting.
+   */
+  rateService(
+    token: string,
+    orderUid: string,
+    body: RateServiceRequest,
+  ): Promise<ServiceReviewView> {
+    return this.http.request(`${GUEST}/orders/${encodeURIComponent(orderUid)}/service-review`, {
+      method: 'PUT',
+      body,
+      auth: { kind: 'guest', token },
+    })
   }
 
   /** One poll answers both "did my payment land" and "has the kitchen started". */

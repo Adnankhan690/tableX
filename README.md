@@ -7,7 +7,7 @@ Mobile-first by mandate — the diner app is designed for a phone held one-hande
 restaurant lighting, and desktop is not a v1 target.
 
 - **Requirements:** [docs/PRD.md](docs/PRD.md)
-- **Why it is built this way:** [docs/DECISIONS.md](docs/DECISIONS.md) — D1–D16, including
+- **Why it is built this way:** [docs/DECISIONS.md](docs/DECISIONS.md) — D1–D17, including
   answers to every open question the PRD left
 - **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Low-level design:** [docs/LLD.md](docs/LLD.md) — schema, table relationships, the session
@@ -112,13 +112,18 @@ Once the food has reached the table the tracking screen offers a rating: **one t
 no Submit button, nothing typed** ([D16](docs/DECISIONS.md)). The window that decides when to
 ask is deliberately not "staff tapped served" — it also opens on a settled counter payment and
 on a timeout, so a diner at a restaurant whose floor staff stop tapping mid-service still gets
-asked.
+asked. After the dishes — never before them — one more row asks about the service, which is
+the only place a diner can report a floor problem without it landing on a dish's average.
 
 **Staff** — sign in → the live order board, grouped by status, where an order waiting too
 long gets visually louder → open one → accept, start preparing, mark ready, mark served,
 close → confirm payment for cash and static-UPI orders → read what diners said on the
 **Reviews** screen, where the default filter is the complaints and each dish carries its
 running score.
+
+Food and service are scored **separately and never blended**. "You are a 3.8" gives a manager
+nothing to do on Monday; "food 4.6, service 3.2" names a team and a shift
+([D17](docs/DECISIONS.md)).
 
 ---
 
@@ -230,12 +235,12 @@ Everything below runs against a real Postgres and a real browser — no mocks, n
 | | |
 | --- | --- |
 | Go unit tests | State machine matrix (every from-state x to-state x actor), UPI link construction, Razorpay HMAC, provider registry |
-| API smoke | 128 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection, the rating window at both its edges |
+| API smoke | 143 assertions: scan, server-side pricing, idempotency, the full lifecycle, payment settlement, role enforcement, tenant isolation, restaurant onboarding, webhook signature rejection, the rating window at both its edges, and that a service rating is one row per sitting |
 | Concurrency | 8 simultaneous accepts resolve to exactly one winner; 20 simultaneous checkouts get 20 distinct order numbers; 10 duplicate submits produce one order; 8 simultaneous ratings of one dish all reach its running aggregate |
 | Diner journey | 37 assertions in a real iPhone viewport: scan → menu → cart → checkout → live tracking |
-| Rating journey | 12 assertions: a served order → one tap per dish → polarity-matched tags → survives a reload |
-| Admin journey | 65 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions, the reviews feed and its drill-down |
-| Bruno collection | 67 requests over 14 folders, all 57 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
+| Rating journey | 20 assertions: a served order → one tap per dish → polarity-matched tags → the service row → survives a reload |
+| Admin journey | 69 assertions: login, board, reason-gated transitions, payment settlement, menu, QR, settings, role restrictions, the reviews feed, its drill-down, and the food/service split |
+| Bruno collection | 70 requests over 14 folders, all 59 routes. `go test ./cmd/app` fails if a route has no request, or a request points at a route that is gone |
 | Migrations | CI applies every down migration in reverse, asserts zero tables remain, then re-applies forwards |
 
 Three real bugs were found this way, which is why the suites are shaped as they are:
