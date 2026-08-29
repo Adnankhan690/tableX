@@ -67,10 +67,21 @@ func (c *ControllerHealth) Ready(ctx *gin.Context) {
 	*/
 	gaps, err := c.Access.Db.SchemaGaps(ctx.Request.Context())
 	if err != nil {
-		c.Access.Logger.With(ctx.Request.Context()).Errorf("[Ready] schema check failed: %+v", err)
-		body["status"] = "degraded"
-		body["schema"] = "unknown"
-		ctx.JSON(http.StatusServiceUnavailable, body)
+		/*
+			FAILS OPEN, and that is the important half.
+
+			This returned 503, which meant a check that could not ANSWER took a perfectly healthy
+			instance out of rotation. That is a worse outage than the one it guards against, because
+			it happens when nothing is actually wrong -- and it did happen in production, where the
+			check outran the platform's probe timeout and every probe then reported the service
+			unfit to serve.
+
+			A gap is a fact worth acting on. Not knowing is not.
+		*/
+		c.Access.Logger.With(ctx.Request.Context()).Warnf(
+			"[Ready] could not verify the schema, serving anyway: %v", err)
+		body["schema"] = "unverified"
+		ctx.JSON(http.StatusOK, body)
 		return
 	}
 	if len(gaps) > 0 {
