@@ -41,7 +41,7 @@ export function HowItWorks() {
           <Step
             index="03"
             title="They order."
-            visual={<StatusRail className="w-full max-w-[220px]" />}
+            visual={<StatusRail compact className="w-full max-w-[220px]" />}
             className="lg:px-8"
           >
             They pay by UPI or choose to settle at the counter, and the order is placed.
@@ -77,7 +77,12 @@ function Step({
 }) {
   return (
     <div className={`mk-reveal py-8 lg:py-2 ${className ?? 'lg:pr-8'}`}>
-      <div className="flex h-12 items-end">{visual}</div>
+      {/* The box reserves the height of the tallest visual so the four steps share a baseline.
+          It was a fixed h-12: the ticket and the menu card are taller than that, so they spilled
+          out of the top of the box and landed on the previous step's paragraph -- on every screen
+          narrow enough for the steps to sit under each other. Below `sm` the steps are a single
+          column with nothing to align to, so there the box just takes its content's height. */}
+      <div className="flex items-end sm:min-h-[8.25rem]">{visual}</div>
       <p className="mt-5 text-[0.75rem] font-semibold uppercase tracking-[0.14em] tabular-nums text-accent">
         {index}
       </p>
