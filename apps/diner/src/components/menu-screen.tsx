@@ -5,7 +5,7 @@ import type { MenuItemView, MenuResponse } from '@tablex/shared'
 import { computeTotals, formatINR, formatRating, MIN_RATINGS_TO_PUBLISH } from '@tablex/shared'
 import { cn, EmptyState, ErrorState, FoodTypeBadge, Spinner } from '@tablex/ui'
 import Link from 'next/link'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react'
 import { DishImage } from '@/components/dish-image'
 import { useCart, useSession } from '@/components/providers'
 import { QuantityStepper } from '@/components/quantity-stepper'
@@ -51,6 +51,9 @@ export function MenuScreen() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
 
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const isManualScrolling = useRef(false)
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -74,10 +77,7 @@ export function MenuScreen() {
   }, [session.token, clearSession])
 
   /**
-   * Search and the veg filter both run over the already-loaded menu, with no extra request.
-   * The whole menu is already in memory from one fetch, so a round trip per keystroke would
-   * add latency to something that is instant -- and would make the filter unusable on the 3G
-   * connection this app is designed for (PRD 7).
+   * Search and the veg filter both run over the already-loaded menu with zero extra requests.
    */
   const filtered = useMemo(() => {
     if (menu === null) return []
@@ -98,28 +98,6 @@ export function MenuScreen() {
       .filter((category) => category.items.length > 0)
   }, [menu, query, vegOnly])
 
-  /**
-   * The dishes diners rate highest, lifted to the top of the menu.
-   *
-   * Computed from the menu ALREADY IN MEMORY rather than fetched. The whole menu arrives in one
-   * response (PRD 7), and asking the server for a ranking it could only build from the same rows
-   * would add a round trip to the screen whose latency is a product requirement.
-   *
-   * Derived from `filtered`, so the veg filter narrows it exactly as it narrows everything else --
-   * a vegetarian diner should not be shown a "most loved" list they cannot order from.
-   *
-   * Four rules, each earning its place:
-   *   * `item.rating` present at all. The server withholds a score until a dish has
-   *     MIN_RATINGS_TO_PUBLISH ratings, so this inherits that threshold rather than restating it.
-   *   * average >= MOST_LOVED_MIN_AVERAGE. "Most loved" has to mean loved. Without a floor this
-   *     section becomes "least bad", and on a menu where everything sits at 3.1 it would present
-   *     mediocrity as a recommendation.
-   *   * available. Leading with a dish the kitchen has run out of is worse than leading with
-   *     nothing -- it is the one recommendation guaranteed to disappoint.
-   *   * no active search. A diner who typed "paneer" is looking for something specific, and a
-   *     recommendations strip above their results is in the way. The veg filter is different: it
-   *     narrows, it does not seek.
-   */
   // One source for "can anything be ordered right now", so the banner and every row agree.
   const closed = menu !== null && !menu.restaurant.accepting_orders
 
@@ -136,9 +114,6 @@ export function MenuScreen() {
           item.rating.average >= MOST_LOVED_MIN_AVERAGE,
       )
       .sort((a, b) => {
-        // Score, then how many people back it, then name. The last two keys are what make the
-        // order stable: without them two dishes on 4.6 can swap places between renders, and a
-        // list that reshuffles as you scroll reads as a broken page.
         const byScore = (b.rating?.average ?? 0) - (a.rating?.average ?? 0)
         if (byScore !== 0) return byScore
         const byCount = (b.rating?.count ?? 0) - (a.rating?.count ?? 0)
@@ -148,44 +123,84 @@ export function MenuScreen() {
       .slice(0, MOST_LOVED_LIMIT)
   }, [filtered, query])
 
-  /**
-   * Locally computed so the bar updates the instant a quantity changes. Display only -- the
-   * server re-prices the order at placement, which is why the request carries no amount
-   * (docs/DECISIONS.md D7).
-   */
   const preview = useMemo(() => {
     if (cart === null || menu === null) return null
     return computeTotals(totalsInput(cart), menu.tax_bps, menu.service_charge_bps)
   }, [cart, menu])
 
   /**
-   * Highlights the category whose section is currently under the header.
-   *
-   * IntersectionObserver rather than a scroll listener: a scroll handler on a long photo list
-   * runs on every frame and is exactly the kind of main-thread work that makes a cheap phone
-   * feel slow.
+   * Smoothly scrolls to a category and centers the active category tab horizontally.
+   * Locks the IntersectionObserver during scroll so it does not falsely select adjacent categories.
+   */
+  const handleCategoryClick = useCallback((categoryUid: string) => {
+    const section = sectionRefs.current[categoryUid]
+    if (!section) return
+
+    setActiveCategory(categoryUid)
+    isManualScrolling.current = true
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+
+    // Center tab horizontally in the nav bar
+    tabRefs.current[categoryUid]?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    })
+
+    // Offset for the sticky header (~60px header + ~92px search/filter bar = ~152px)
+    const headerOffset = 152
+    const sectionTop = section.getBoundingClientRect().top + window.scrollY
+    const targetTop = Math.max(0, sectionTop - headerOffset)
+
+    window.scrollTo({
+      top: targetTop,
+      behavior: 'smooth',
+    })
+
+    scrollTimeoutRef.current = setTimeout(() => {
+      isManualScrolling.current = false
+    }, 750)
+  }, [])
+
+  /**
+   * Highlights the category currently visible beneath the sticky header during natural scrolling.
    */
   useEffect(() => {
     if (filtered.length === 0) return
 
     const observer = new IntersectionObserver(
       (entries) => {
+        if (isManualScrolling.current) return
+
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
-        if (visible) setActiveCategory(visible.target.id.replace('cat-', ''))
+
+        if (visible) {
+          const uid = visible.target.id.replace('cat-', '')
+          setActiveCategory(uid)
+        }
       },
-      // The top inset clears the sticky header, so a section counts as "current" when it
-      // reaches just below it rather than at the very top of the viewport.
-      { rootMargin: '-72px 0px -70% 0px', threshold: 0 },
+      { rootMargin: '-152px 0px -55% 0px', threshold: 0 },
     )
 
     for (const category of filtered) {
       const node = sectionRefs.current[category.uid]
       if (node) observer.observe(node)
     }
+
     return () => observer.disconnect()
   }, [filtered])
+
+  /** Auto-center the active category tab pill in horizontal scrollbar when activeCategory changes */
+  useEffect(() => {
+    if (!activeCategory || isManualScrolling.current) return
+    tabRefs.current[activeCategory]?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    })
+  }, [activeCategory])
 
   if (error !== null) {
     return (
@@ -219,8 +234,6 @@ export function MenuScreen() {
     <>
       <ScreenHeader
         title={menu.restaurant.name}
-        // The table label is the most important string on this screen: it is how a diner
-        // confirms their food is going to the table they are sitting at.
         subtitle={`Table ${session.tableLabel}`}
         right={
           <Link
@@ -235,46 +248,101 @@ export function MenuScreen() {
       {/* Search and filter, sticky under the header so they stay reachable down a long menu. */}
       <div className="sticky top-[3.75rem] z-20 border-b border-line bg-bg px-4 py-2">
         <div className="flex items-center gap-2">
-          <input
-            type="search"
-            inputMode="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search dishes"
-            aria-label="Search the menu"
-            className="min-h-tap flex-1 rounded-full border border-line bg-surface px-4 text-[0.9375rem] outline-none placeholder:text-muted focus:border-accent"
-          />
+          <div className="relative flex-1">
+            <input
+              type="search"
+              inputMode="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search dishes..."
+              aria-label="Search the menu"
+              className="min-h-tap w-full rounded-full border border-line bg-surface pl-10 pr-9 text-[0.9375rem] outline-none placeholder:text-muted focus:border-accent"
+            />
+            {/* Search Glass Icon */}
+            <svg
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            {/* Search Clear Button */}
+            {query.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-muted/20 text-muted hover:bg-muted/30"
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+
+          {/* Veg Filter Toggle Button */}
           <button
             type="button"
-            onClick={() => setVegOnly((value) => !value)}
+            onClick={() => setVegOnly((cur) => !cur)}
             aria-pressed={vegOnly}
             className={cn(
-              'flex min-h-tap shrink-0 items-center gap-1.5 rounded-full border px-3 text-[0.8125rem] font-medium',
-              vegOnly ? 'border-veg bg-veg text-white' : 'border-line bg-surface text-ink',
+              'flex min-h-tap shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[0.8125rem] font-semibold transition-all select-none active:scale-95',
+              vegOnly
+                ? 'border-emerald-600 bg-emerald-700 text-white shadow-sm'
+                : 'border-line bg-surface text-ink hover:border-emerald-600/40',
             )}
           >
-            <FoodTypeBadge type="veg" size={13} />
-            Veg
+            <FoodTypeBadge
+              type="veg"
+              size={13}
+              className={vegOnly ? 'text-white' : undefined}
+            />
+            <span>Veg</span>
+            {/* Mini Toggle Switch Indicator */}
+            <span
+              aria-hidden="true"
+              className={cn(
+                'relative ml-0.5 inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors',
+                vegOnly ? 'bg-emerald-900/50' : 'bg-line',
+              )}
+            >
+              <span
+                className={cn(
+                  'inline-block h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform',
+                  vegOnly ? 'translate-x-3' : 'translate-x-0.5',
+                )}
+              />
+            </span>
           </button>
         </div>
 
-        {/* Category chips. Horizontal scroll rather than a wrapped grid, so the filter row
-            keeps a fixed height as the menu grows. */}
+        {/* Category chips. Horizontal scroll with smooth centered selection and active focus */}
         {filtered.length > 1 ? (
           <nav aria-label="Menu categories" className="scroll-x mt-2 flex gap-2 pb-1">
             {filtered.map((category) => (
-              <a
+              <button
                 key={category.uid}
-                href={`#cat-${category.uid}`}
+                type="button"
+                ref={(el) => {
+                  tabRefs.current[category.uid] = el
+                }}
+                onClick={() => handleCategoryClick(category.uid)}
                 className={cn(
-                  'shrink-0 rounded-full px-3 py-1.5 text-[0.8125rem] font-medium',
+                  'shrink-0 rounded-full px-3.5 py-1.5 text-[0.8125rem] font-semibold transition-all duration-200 select-none active:scale-95',
                   activeCategory === category.uid
-                    ? 'bg-accent text-accent-ink'
-                    : 'bg-surface-sunken text-muted',
+                    ? 'bg-accent text-accent-ink shadow-sm'
+                    : 'bg-surface-sunken text-muted hover:bg-surface hover:text-ink',
                 )}
               >
                 {category.name}
-              </a>
+              </button>
             ))}
           </nav>
         ) : null}
@@ -366,7 +434,7 @@ export function MenuScreen() {
                 ref={(node) => {
                   sectionRefs.current[category.uid] = node
                 }}
-                className="scroll-mt-32"
+                className="scroll-mt-[9.5rem]"
               >
                 <h2 className="bg-surface-sunken px-4 py-2 text-[0.8125rem] font-semibold uppercase tracking-wide text-muted">
                   {category.name}
