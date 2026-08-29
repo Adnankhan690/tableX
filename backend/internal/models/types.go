@@ -20,6 +20,7 @@ const (
 	TableNameOrderItemReview     = "order_item_review"
 	TableNameServiceReview       = "service_review"
 	TableNamePasswordResetCode   = "password_reset_code"
+	TableNameDemoRequest         = "demo_request"
 )
 
 // EntityStatus is the shared lifecycle flag on long-lived rows.

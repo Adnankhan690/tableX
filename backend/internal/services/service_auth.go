@@ -1,14 +1,11 @@
 package services
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
-	"net/http"
 	"strings"
 	"time"
 
@@ -16,6 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"tablex/internal/mailer"
 	"tablex/internal/models"
 	"tablex/internal/response"
 	"tablex/internal/types"
@@ -565,31 +563,14 @@ func (s *serviceAuth) ForgotPassword(ctx context.Context, email string) *respons
 		return response.ErrInternal
 	}
 
-	// Send email using Brevo REST API
-	type BrevoSender struct {
-		Name  string `json:"name"`
-		Email string `json:"email"`
-	}
-	type BrevoRecipient struct {
-		Email string `json:"email"`
-	}
-	type BrevoPayload struct {
-		Sender      BrevoSender      `json:"sender"`
-		To          []BrevoRecipient `json:"to"`
-		Subject     string           `json:"subject"`
-		HtmlContent string           `json:"htmlContent"`
-	}
-
-	payload := BrevoPayload{
-		Sender: BrevoSender{
-			Name:  s.Access.Cfg.Email.SenderName,
-			Email: s.Access.Cfg.Email.SenderEmail,
-		},
-		To: []BrevoRecipient{
-			{Email: normalized},
-		},
+	// The message itself. Sent through the shared mailer rather than a Brevo call written out
+	// here: this was the only email in the application until the landing page's demo form
+	// arrived, and two hand-rolled copies of the same provider call is two answers to "which
+	// status codes mean it went" (internal/mailer).
+	msg := mailer.Message{
+		To:      []string{normalized},
 		Subject: "Your tableX password reset verification code",
-		HtmlContent: fmt.Sprintf(`
+		HTML: fmt.Sprintf(`
 			<html>
 			<body style="font-family: sans-serif; padding: 20px; color: #333;">
 				<h2>Password Reset Request</h2>
@@ -605,30 +586,12 @@ func (s *serviceAuth) ForgotPassword(ctx context.Context, email string) *respons
 		`, code),
 	}
 
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		log.Errorf("[ForgotPassword] marshalling payload failed: %+v", err)
-		return response.ErrInternal
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.brevo.com/v3/smtp/email", bytes.NewReader(jsonPayload))
-	if err != nil {
-		log.Errorf("[ForgotPassword] creating request failed: %+v", err)
-		return response.ErrInternal
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", s.Access.Cfg.Email.BrevoAPIKey)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Errorf("[ForgotPassword] dispatching Brevo API request failed: %+v", err)
-		return response.ErrInternal
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		log.Errorf("[ForgotPassword] Brevo API returned error status: %d", resp.StatusCode)
+	// Sent synchronously and allowed to fail the request, unlike the demo notification, and the
+	// asymmetry is the point. There the row IS the record and the email is a nudge; here the
+	// email is the only way the code reaches the person who asked for it, so reporting success
+	// after a failed send leaves a staff member waiting for something that is never coming.
+	if err := s.Access.Mailer.Send(ctx, msg); err != nil {
+		log.Errorf("[ForgotPassword] sending verification email failed: %v", err)
 		return response.ErrInternal
 	}
 

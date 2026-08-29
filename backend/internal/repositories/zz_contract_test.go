@@ -7,11 +7,13 @@ package repositories
 // this, a signature mismatch would only surface at the NewRepositories call site, with a
 // much less specific error.
 var (
-	_ RepositoryRestaurantMethods   = (*repositoryRestaurant)(nil)
-	_ RepositoryStaffMethods        = (*repositoryStaff)(nil)
-	_ RepositoryTableMethods        = (*repositoryTable)(nil)
-	_ RepositoryMenuMethods         = (*repositoryMenu)(nil)
-	_ RepositoryGuestSessionMethods = (*repositoryGuestSession)(nil)
-	_ RepositoryOrderMethods        = (*repositoryOrder)(nil)
-	_ RepositoryPaymentMethods      = (*repositoryPayment)(nil)
+	_ RepositoryRestaurantMethods    = (*repositoryRestaurant)(nil)
+	_ RepositoryStaffMethods         = (*repositoryStaff)(nil)
+	_ RepositoryTableMethods         = (*repositoryTable)(nil)
+	_ RepositoryMenuMethods          = (*repositoryMenu)(nil)
+	_ RepositoryGuestSessionMethods  = (*repositoryGuestSession)(nil)
+	_ RepositoryOrderMethods         = (*repositoryOrder)(nil)
+	_ RepositoryPaymentMethods       = (*repositoryPayment)(nil)
+	_ RepositoryPasswordResetMethods = (*repositoryPasswordReset)(nil)
+	_ RepositoryDemoRequestMethods   = (*repositoryDemoRequest)(nil)
 )

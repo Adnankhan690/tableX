@@ -37,7 +37,8 @@ of a night's logs.
 ### Error codes
 
 `TX_<AREA>_<NNN>`. Areas: `COM` common, `AUT` staff auth, `SES` guest session, `RST` restaurant,
-`TBL` table/QR, `MNU` menu, `ORD` order, `PAY` payment, `REV` rating/review, `IMG` dish photo.
+`TBL` table/QR, `MNU` menu, `ORD` order, `PAY` payment, `REV` rating/review, `IMG` dish photo,
+`DEM` demo request.
 
 The ones a client must actually handle:
 
@@ -58,6 +59,8 @@ The ones a client must actually handle:
 | `TX_REV_001` | 409 | Rating window shut — usually *too early*, not forbidden. Refetch and re-read `can_review`; do not alarm the diner. |
 | `TX_REV_003` | 422 | Tag outside the **dish** vocabulary. A client bug: the set is in `packages/shared/src/review.ts`. |
 | `TX_REV_009` | 422 | Tag outside the **service** vocabulary. Distinct code so the client knows which of the two sets it got wrong. |
+| `TX_DEM_001` | 409 | This phone number has already booked a demo. Reassurance, not an error — see below. |
+| `TX_DEM_002` | 422 | Not a ten-digit Indian mobile. A field error, not a page failure. |
 | `TX_RST_008` | 409 | The restaurant is not taking orders right now. Temporary and expected — distinct from `TX_RST_002`, which means it is not on the platform at all. |
 
 ## Money
@@ -110,6 +113,46 @@ Public, unlike the per-table QR endpoint, and the difference is the payload rath
 audience: a table QR embeds an opaque token whose possession authorises ordering at that table,
 while this embeds only the slug already visible in the URL it opens ([D4](./DECISIONS.md),
 [D13](./DECISIONS.md)). A malformed `size` falls back rather than failing.
+
+### `POST /demo-requests` — book a demo
+
+Backs the "Book a demo" form on the landing page ([D19](./DECISIONS.md)). The one write on this
+prefix whose caller is not a diner: a restaurant owner who is not a tenant yet, and has no
+credential of any kind, which is exactly what this group means.
+
+```jsonc
+// request -- phone as the owner typed it
+{ "name": "Ravi Menon", "restaurant_name": "Coastal Curry", "phone": "+91 98765 43210",
+  "email": "ravi@coastalcurry.test" }   // email optional
+
+// 201
+{ "uid": "dmo_x7k2m9qp4rt8", "name": "Ravi Menon", "requested_at": "2026-08-30T…" }
+```
+
+**One demo per phone number.** The number is normalised before anything is compared or stored --
+separators come off, and so do a `+91` or a leading `0` **when the length says they are a country
+code rather than part of the number**. `+91 98765 43210`, `098765 43210` and `9876543210` are one
+lead; `9123456780` is a mobile that merely opens with 91 and is left alone.
+
+Send the phone **as typed**. The server normalises, and its answer is what uniqueness is defined
+in terms of — a client that normalised first would be a second place that decides, and the day the
+two disagree is the day a duplicate slips through.
+
+| Status | Code | Meaning and what to do |
+| --- | --- | --- |
+| 201 | `00000` | Recorded. `uid` is the reference an operator quotes on the callback. |
+| 409 | `TX_DEM_001` | This number already booked. **Not a failure to apologise for** — an owner submitting twice has usually just missed the first confirmation, so show reassurance, not an error. |
+| 422 | `TX_DEM_002` | Not a ten-digit Indian mobile. Put it back on the phone field; everything else the reader typed is still good. |
+| 400 | `TX_COM_001` | Name or restaurant name was blank after trimming. |
+
+Rate limited, like the QR scan and for the same reason plus one: it creates a row *and* sends an
+email, so an unthrottled loop spends the deployment's mail quota as well as its database.
+
+**The notification is best-effort and the response never waits for it.** A successful booking
+emails `TABLEX_DEMO_NOTIFY_EMAIL` with the owner as `Reply-To`, sent after the row is committed
+and off the request. A provider outage costs the nudge, never the lead — the row is the record, so
+the 201 is truthful either way. A deployment with no `TABLEX_BREVO_API_KEY` logs that it skipped
+the send and is otherwise unaffected, which is the ordinary state locally.
 
 ### `POST /webhooks/payments/:provider`
 

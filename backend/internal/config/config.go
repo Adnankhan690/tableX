@@ -234,6 +234,13 @@ type EmailConfig struct {
 	BrevoAPIKey string `yaml:"brevo_api_key"`
 	SenderEmail string `yaml:"sender_email"`
 	SenderName  string `yaml:"sender_name"`
+	// DemoNotifyEmail is where a booked demo lands.
+	//
+	// Separate from SenderEmail, and they are not interchangeable: the sender is an identity the
+	// provider has authorised this deployment to send AS, which is why it is a noreply@ on the
+	// product domain, and this is a mailbox a person actually opens. Pointing leads at the first
+	// one delivers them to nobody.
+	DemoNotifyEmail string `yaml:"demo_notify_email"`
 }
 
 // Defaults returns a Config with every safe default filled in. Only secrets and the
@@ -299,6 +306,10 @@ func Defaults() *Config {
 			Provider:    "brevo",
 			SenderEmail: "noreply@tabley.in",
 			SenderName:  "tableX Admin",
+			// Matches NEXT_PUBLIC_CONTACT_EMAIL's default in apps/diner/src/lib/site.ts, so the
+			// address the landing page prints as "write to us" and the address its form delivers
+			// to are the same mailbox out of the box.
+			DemoNotifyEmail: "hellotabley@gmail.com",
 		},
 	}
 }
@@ -419,6 +430,7 @@ func (c *Config) applyEnv() {
 	envStr("TABLEX_BREVO_API_KEY", &c.Email.BrevoAPIKey)
 	envStr("TABLEX_SENDER_EMAIL", &c.Email.SenderEmail)
 	envStr("TABLEX_SENDER_NAME", &c.Email.SenderName)
+	envStr("TABLEX_DEMO_NOTIFY_EMAIL", &c.Email.DemoNotifyEmail)
 }
 
 // Validate rejects a configuration that would fail confusingly at runtime.

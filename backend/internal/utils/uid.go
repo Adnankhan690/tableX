@@ -22,6 +22,11 @@ const (
 	UIDPrefixOrder      = "ord"
 	UIDPrefixOrderItem  = "oit"
 	UIDPrefixPayment    = "pay"
+	// UIDPrefixDemo names a demo request from the landing page. Prefixed like everything else
+	// even though nothing addresses one over HTTP yet -- the uid is what an operator quotes when
+	// they call the lead back, and "which row is dmo_x7k2m9qp4rt8" is a question a support
+	// conversation asks.
+	UIDPrefixDemo = "dmo"
 	// UIDPrefixImage names one uploaded object. Fresh on every upload rather than reused
 	// per dish, so replacing a photograph writes a new object key and no CDN edge can keep
 	// serving the previous bytes from cache (DECISIONS.md D15).

@@ -872,3 +872,57 @@ each traceable to a file in this repo, with a footnote saying so.
 
 **Reversal cost.** Moderate. Nine `git mv`s back, delete two layouts and the marketing tree, restore
 `page.tsx`. No database, no API, no printed artefact depends on any of it.
+
+---
+
+## D20 — A demo request is a row keyed by phone number, and the email is a nudge rather than the record
+
+The landing page's one call to action ([D19](#d19--the-public-landing-page-lives-inside-the-diner-app-behind-a-route-group))
+used to compose a `mailto:`. That was honest about having no backend, and it cost a lead every time
+a reader's mail app did not open, or opened and was never sent — a failure nothing anywhere reports,
+because the prospect believes they made contact.
+
+`POST /api/public/v1/demo-requests` writes a `demo_request` row, then emails the sales inbox.
+
+**Public, not platform.** The caller is a restaurant owner who is not a tenant yet and holds no
+credential of any kind, which is precisely what the public group means. `demo_request` is the one
+table in the schema with no `restaurant_id`: the row exists *because* the restaurant does not. No
+foreign key joins it to anything, because onboarding is a conversation that ends in a platform call
+([D14](./DECISIONS.md)), and a key here would imply an automatic path from lead to tenant that
+nobody has built.
+
+**The phone number is the identity, and one demo is booked per number.** Not the email — that field
+is optional, because the callback is a phone call and requiring an address costs leads to buy a
+field nobody uses. Two partners at the same restaurant share an address far more often than they
+share a mobile.
+
+**Uniqueness is only as true as normalisation.** The rule lives on a `UNIQUE` index over the stored
+column, so it means "the same number" only because every write reduces the same number to the same
+ten digits first. `+91 98765 43210`, `098765 43210` and `9876543210` are one lead. The country code
+comes off **only when the length says it is one** — `91xxxxxxxx` is itself a live Indian mobile
+range, and an unconditional strip turns `9123456780` into an eight-digit fragment and tells a
+restaurant owner their own number is invalid.
+
+**The constraint enforces it; the service's lookup only makes the ordinary case polite.** The
+pre-check and the insert are two statements, and this route is public, so the interleaving is a
+stranger with a loop rather than a hypothetical. Both the pre-check and the lost race answer the
+same 409, because from the owner's side there is no difference.
+
+**A repeat submission is reassurance, not an error.** `TX_DEM_001` is rendered as a
+success-shaped panel. Someone submitting twice has almost always missed the first confirmation;
+telling them something went wrong invites a third attempt and a worse impression than saying
+plainly that we have it.
+
+**The email cannot fail the request.** It is sent after the row commits and off the request, with
+the owner as `Reply-To` and the deployment's verified sender as `From`. The row is the record and
+the email is the nudge, so a provider outage costs the notification and never the lead — and the
+prospect is not made to watch a spinner for up to ten seconds of somebody else's API. This is the
+opposite of the password-reset code, which is sent synchronously and *does* fail its request,
+because there the email is the only way the code reaches the person who asked for it.
+
+**The `mailto:` survives as the fallback.** A failed request does not show an apology and a dead
+end; it shows the composed mail with the answers already written in. The backend being down costs
+the reader one extra tap rather than the conversation.
+
+**Reversal cost.** Low. One table, one route, one form component. Nothing in the ordering flow
+references any of it.

@@ -1,0 +1,99 @@
+meta {
+  name: book-demo
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/public/v1/demo-requests
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Ravi Menon",
+    "restaurant_name": "Coastal Curry",
+    "phone": "+91 98765 43210",
+    "email": "ravi@coastalcurry.test"
+  }
+}
+
+script:pre-request {
+  // A fresh number per run, so re-running the collection exercises the CREATED path rather than
+  // colliding with the row the previous run left behind. Ten digits opening 9, which is what the
+  // server's normaliser accepts.
+  const suffix = String(Date.now()).slice(-9);
+  bru.setVar("demo_phone", "9" + suffix);
+  const body = JSON.parse(req.getBody());
+  body.phone = bru.getVar("demo_phone");
+  req.setBody(body);
+}
+
+tests {
+  test("responds 201", function () {
+    expect(res.status).to.equal(201)
+  })
+
+  test("returns a prefixed reference for the lead", function () {
+    expect(res.body.data.uid).to.be.a("string").and.match(/^dmo_/)
+    expect(res.body.data.requested_at).to.be.a("string").and.not.empty
+  })
+
+  test("a second request against the same number is refused with TX_DEM_001", async function () {
+    const again = await bru.sendRequest({
+      method: "POST",
+      url: bru.getEnvVar("base_url") + "/api/public/v1/demo-requests",
+      headers: { "Content-Type": "application/json" },
+      data: {
+        name: "Ravi Menon",
+        restaurant_name: "Coastal Curry",
+        // Same number, written the way a person would write it the second time. It must collide:
+        // uniqueness is over the NORMALISED digits, not the string that was typed.
+        phone: "0" + bru.getVar("demo_phone"),
+        email: "ravi@coastalcurry.test"
+      },
+      validateStatus: () => true
+    })
+    expect(again.status).to.equal(409)
+    expect(again.data.code).to.equal("TX_DEM_001")
+  })
+}
+
+docs {
+  # Book a demo
+
+Backs the "Book a demo" form on the public landing page (`apps/diner`, marketing route group). No
+credentials -- the caller is a restaurant owner who is not a tenant yet, which is the whole reason
+the row exists.
+
+## One demo per phone number
+
+The number is normalised before anything is compared or stored: separators come off, and so do a
+leading `+91` or `0`. `+91 98765 43210`, `098765 43210` and `9876543210` are one lead, not three.
+
+A repeat submission answers **409 `TX_DEM_001`**, not an error page -- an owner filling the form in
+twice has usually just missed the first confirmation, so the landing page renders it as
+reassurance. The rule is held by a `UNIQUE` constraint on the normalised column, not only by the
+service's pre-check, so two simultaneous submissions of the same number also land on the 409.
+
+## Other answers
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| 201 | `00000` | Recorded. `data.uid` is the reference an operator quotes on the callback. |
+| 409 | `TX_DEM_001` | This number has already booked. |
+| 422 | `TX_DEM_002` | Not a ten-digit Indian mobile. |
+| 400 | `TX_COM_001` | Name or restaurant name was blank. |
+
+## The email
+
+A successful booking emails `TABLEX_DEMO_NOTIFY_EMAIL`, with the owner as `Reply-To`. It is sent
+**after** the row is committed and **off** the request, so a mail outage costs the notification and
+never the lead -- the response is 201 either way. A deployment with no `TABLEX_BREVO_API_KEY` logs
+that it skipped the send and is otherwise unaffected, which is the ordinary state locally.
+}
