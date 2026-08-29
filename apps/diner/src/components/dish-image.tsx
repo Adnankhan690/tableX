@@ -70,7 +70,10 @@ export function DishImage({
 
   return (
     <div
-      className={cn('relative shrink-0 overflow-hidden rounded-2xl bg-surface-sunken', className)}
+      className={cn(
+        'relative shrink-0 overflow-hidden rounded-2xl bg-surface-sunken',
+        className,
+      )}
       style={customDimensions ? undefined : { width: defaultSize, height: defaultSize }}
     >
       <Image
