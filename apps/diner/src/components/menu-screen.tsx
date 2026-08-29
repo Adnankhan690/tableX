@@ -333,13 +333,14 @@ export function MenuScreen() {
                   className="flex items-center gap-1.5 bg-accent-soft px-4 py-2 text-[0.8125rem] font-semibold uppercase tracking-wide text-accent"
                 >
                   <svg
-                    width="13"
-                    height="13"
+                    width="14"
+                    height="14"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                     aria-hidden="true"
+                    className="text-accent"
                   >
-                    <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                   </svg>
                   Most loved
                 </h2>
@@ -408,18 +409,6 @@ export function MenuScreen() {
   )
 }
 
-/** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
-/**
- * The dish blurb.
- *
- * Extracted rather than inlined because the row already carries six other things and this is the
- * only one that is prose. Clamped to two lines: a long description pushes the price and the rating
- * apart, and those two are what a diner is actually comparing between rows.
- */
-function DishDescription({ description }: { description: string }) {
-  return <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">{description}</p>
-}
-
 /**
  * A dish's score on the menu, as one line.
  *
@@ -427,47 +416,129 @@ function DishDescription({ description }: { description: string }) {
  * cluster of ambiguous shapes on a scrolling list, and the number is what a diner actually
  * reads. The count rides along because "4.6" alone invites the question.
  */
+/**
+ * Dynamic tone based on industry-standard thresholds:
+ * - >= 4.0: Deep emerald green (high satisfaction)
+ * - 3.5 - 3.9: Warm amber / honey (good)
+ * - 3.0 - 3.4: Warm orange (average)
+ * - < 3.0: Coral red (below average)
+ */
+function getRatingTone(score: number) {
+  if (score >= 4.0) {
+    return {
+      badge: 'bg-[#15803d] text-white shadow-emerald-950/10',
+    }
+  }
+  if (score >= 3.5) {
+    return {
+      badge: 'bg-[#d97706] text-white shadow-amber-950/10',
+    }
+  }
+  if (score >= 3.0) {
+    return {
+      badge: 'bg-[#ea580c] text-white shadow-orange-950/10',
+    }
+  }
+  return {
+    badge: 'bg-[#dc2626] text-white shadow-rose-950/10',
+  }
+}
+
+function formatRatingCount(count: number): string {
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  }
+  return String(count)
+}
+
 function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> }) {
+  const tone = getRatingTone(rating.average)
+
   return (
-    <span
-      // role="img" with a label, rather than a bare span carrying aria-label -- which is both an
-      // accessibility bug and a biome error. The label spells out what "4.8 (12)" means, since
-      // read aloud those two numbers are ambiguous.
+    <div
       role="img"
       aria-label={`Rated ${formatRating(rating.average)} out of 5 by ${rating.count} ${
         rating.count === 1 ? 'diner' : 'diners'
       }`}
-      className="flex items-center gap-1 text-[0.8125rem] text-muted"
+      className="inline-flex items-center gap-1.5 align-middle select-none"
     >
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-        className="text-accent"
+      <span
+        className={cn(
+          'inline-flex items-center gap-0.5 rounded-[5px] px-1.5 py-[2px] text-[0.6875rem] font-bold leading-none tracking-tight shadow-sm',
+          tone.badge,
+        )}
       >
-        <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
-      </svg>
-      <span aria-hidden="true" className="font-medium tabular-nums text-ink">
-        {formatRating(rating.average)}
+        <span className="tabular-nums leading-none">{formatRating(rating.average)}</span>
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+          className="shrink-0 -translate-y-[0.5px]"
+        >
+          <path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.95L12 2.6z" />
+        </svg>
       </span>
-      {/*
-        How many diners are behind the score. Hidden until hover on a pointer device and simply
-        always visible on touch -- see the .rating-count note in globals.css for why that is a
-        media query rather than a Tailwind hover: variant.
-
-        The score is the thing a diner is scanning for; the count is what they check before
-        trusting it. Showing both at full weight on every row makes a long menu noisier without
-        making any single dish clearer.
-      */}
-      <span aria-hidden="true" className="rating-count tabular-nums">
-        ({rating.count})
+      <span className="text-[0.75rem] text-muted font-medium tabular-nums" aria-hidden="true">
+        ({formatRatingCount(rating.count)})
       </span>
-    </span>
+    </div>
   )
 }
 
+/**
+ * The dish blurb, truncated to nine words with the rest a tap away.
+ *
+ * A BUTTON, not a <p onClick>. It arrived as a paragraph with a click handler, which works for
+ * exactly one kind of user: a paragraph is not focusable, so it cannot be reached by keyboard or
+ * by a switch device, and a screen reader announces it as static text with no hint that anything
+ * happens if you activate it. A button carries all three for free and the styling is unchanged.
+ *
+ * `aria-expanded` is what makes it legible to a screen reader rather than merely operable, and
+ * the label says which dish it belongs to -- a menu of twenty rows otherwise announces twenty
+ * identical "show more" buttons with nothing to tell them apart.
+ *
+ * It deliberately does NOT meet the 44px tap floor the rest of this app holds to. That rule is
+ * for controls a diner is aiming at; this is progressive disclosure on a line of prose, and
+ * padding it to 44px would put a visible gap through the middle of every dish row. The dish's
+ * real controls -- Add, and the stepper -- are unaffected and still meet it.
+ */
+function DishDescription({ description, name }: { description: string; name: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const words = useMemo(() => description.trim().split(/\s+/).filter(Boolean), [description])
+  const isLong = words.length > 9
+
+  if (!isLong) {
+    return (
+      <p className="mt-1.5 max-w-[190px] text-[0.8125rem] leading-relaxed text-muted sm:max-w-[220px]">
+        {description}
+      </p>
+    )
+  }
+
+  const shortText = words.slice(0, 9).join(' ')
+  const remainingText = words.slice(9).join(' ')
+
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded((v) => !v)}
+      aria-expanded={expanded}
+      aria-label={expanded ? `Show less about ${name}` : `Show more about ${name}`}
+      className="mt-1.5 block max-w-[190px] select-none text-left text-[0.8125rem] leading-relaxed text-muted transition-all duration-300 ease-in-out hover:text-ink sm:max-w-[220px]"
+    >
+      <span>{shortText}</span>
+      {expanded ? (
+        <span className="transition-opacity duration-300 ease-in-out"> {remainingText}</span>
+      ) : (
+        <span className="transition-opacity duration-300">…</span>
+      )}
+    </button>
+  )
+}
+
+/** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
 function DishRow({
   item,
   quantity,
@@ -505,13 +576,13 @@ function DishRow({
   return (
     <li
       className={cn(
-        'rating-hover flex gap-3 border-b border-line px-4 py-3',
+        'rating-hover flex gap-3.5 border-b border-line px-4 pt-4 pb-6 items-start justify-between',
         unavailable && 'opacity-55',
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <FoodTypeBadge type={item.food_type} size={14} />
+      <div className="min-w-0 flex-1 pr-2">
+        <div className="flex items-center gap-2">
+          <FoodTypeBadge type={item.food_type} size={15} />
           {item.is_bestseller && !unavailable ? (
             <span className="rounded-md bg-amber-100 border border-amber-300/50 px-2 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-amber-800">
               Bestseller
@@ -519,7 +590,7 @@ function DishRow({
           ) : null}
         </div>
 
-        <p className="mt-1 text-dish-name">{item.name}</p>
+        <p className="mt-1.5 text-dish-name font-bold text-ink leading-tight">{item.name}</p>
 
         <p className="mt-1 text-base font-bold tabular-nums text-ink">{item.price.display}</p>
 
@@ -537,7 +608,9 @@ function DishRow({
           </div>
         ) : null}
 
-        {item.description ? <DishDescription description={item.description} /> : null}
+        {item.description ? (
+          <DishDescription description={item.description} name={item.name} />
+        ) : null}
 
         <div className="mt-1.5 flex items-center gap-2 text-[0.75rem] text-muted">
           {item.prep_time_mins ? <span>{item.prep_time_mins} min</span> : null}
