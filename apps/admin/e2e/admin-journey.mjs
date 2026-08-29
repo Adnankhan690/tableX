@@ -542,13 +542,27 @@ ck(
   await brandName.innerText(),
 )
 
-const brandBox = await brandName.boundingBox()
-const switchBox = await phoneSwitch.boundingBox()
-ck(
-  'and the bar is still a single row',
-  Math.abs(brandBox.y + brandBox.height / 2 - (switchBox.y + switchBox.height / 2)) < 30,
-  `brand y=${Math.round(brandBox.y)} switch y=${Math.round(switchBox.y)}`,
-)
+/**
+ * ONE ROW, AT EVERY WIDTH, and asserted at the narrowest one that matters.
+ *
+ * The brand is `min-w-0`, so it gives up width rather than pushing its neighbours onto a second
+ * line -- which is what keeps this bar from ever wrapping, and also what means anything added to
+ * the row is taken straight out of the restaurant's name.
+ */
+for (const width of [360, 390, 430]) {
+  await page.setViewportSize({ width, height: 844 })
+  await page.waitForTimeout(250)
+  const brandBox = await brandName.boundingBox()
+  const switchBox = await phoneSwitch.boundingBox()
+  const signOutBox = await page.locator('header button:has-text("Sign out")').boundingBox()
+  ck(
+    `the bar is a single row at ${width}px`,
+    Math.abs(brandBox.y - switchBox.y) < 30 && Math.abs(switchBox.y - signOutBox.y) < 30,
+    `brand y=${Math.round(brandBox.y)} switch y=${Math.round(switchBox.y)} signout y=${Math.round(signOutBox.y)}`,
+  )
+}
+await page.setViewportSize({ width: 390, height: 844 })
+await page.waitForTimeout(250)
 ck('the switch is reachable on a phone', await phoneSwitch.isVisible())
 ck(
   'and there is exactly one of it, not a duplicate behind a breakpoint',

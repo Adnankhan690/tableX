@@ -85,7 +85,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       ref={ref}
       className={cn(
         CONTROL,
-        'min-h-tap px-3 text-base',
+        /*
+          The SAME responsive tap floor the Button uses (see the note on its SIZE map): 36px below
+          `sm`, 40px from `sm` up.
+
+          It was `min-h-tap` unconditionally, which meant that on a phone every input stood 40px
+          tall beside a 36px button -- and on the menu manager a price field sits directly next to
+          "Mark sold out", so the two adjacent controls visibly failed to line up. The floors are a
+          pair; only one of them had been told.
+        */
+        'min-h-tap-sm px-3 text-sm sm:min-h-tap sm:text-base',
         numeric ? 'text-right [font-variant-numeric:tabular-nums]' : '',
         prefix ? 'rounded-l-none border-l-0 pl-1' : '',
         suffix ? 'rounded-r-none border-r-0 pr-1' : '',
@@ -102,7 +111,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       {prefix ? (
         <span
           aria-hidden="true"
-          className="inline-flex min-h-tap select-none items-center rounded-l-control border border-r-0 border-line-strong bg-surface-sunken px-2.5 text-sm text-muted"
+          className="inline-flex min-h-tap-sm select-none items-center rounded-l-control border border-r-0 border-line-strong bg-surface-sunken px-2.5 text-sm text-muted sm:min-h-tap"
         >
           {prefix}
         </span>
@@ -111,7 +120,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       {suffix ? (
         <span
           aria-hidden="true"
-          className="inline-flex min-h-tap select-none items-center rounded-r-control border border-l-0 border-line-strong bg-surface-sunken px-2.5 text-sm text-muted"
+          className="inline-flex min-h-tap-sm select-none items-center rounded-r-control border border-l-0 border-line-strong bg-surface-sunken px-2.5 text-sm text-muted sm:min-h-tap"
         >
           {suffix}
         </span>

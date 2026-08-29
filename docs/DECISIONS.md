@@ -779,15 +779,19 @@ switch acts.
 the brand block is `min-w-0 flex-1`: a flex item with no floor shrinks to nothing before the line
 ever wraps, so a neighbour that does not fit silently eats the name rather than moving below it.
 
-Two changes fixed that, and the order matters. The label went from "Taking orders" to **"Open"** —
-short enough that brand, switch and Sign out fit one row, and the word a restaurant actually uses
-about itself. Then the brand got `min-w-[11rem]`, which reverses the shrink-before-wrap behaviour:
-below that floor the header wraps by CONTENT instead of clipping, rather than by a breakpoint
-guessed in advance.
+The label went from "Taking orders" to **"Open"** — short enough that brand, switch and Sign out fit
+one row, and the word a restaurant actually uses about itself. The switch itself was then trimmed to
+85px: tighter padding and a compact 28px track.
 
-Measured rather than eyeballed: single row with the name intact from **375px** up — iPhone SE and
-mini, every current iPhone and Android, tablet, laptop. At 320 and 360 it wraps to two rows with the
-name still complete, which is the right way round.
+**The bar never wraps.** The brand keeps `min-w-0`, so it gives up width rather than pushing its
+neighbours onto a second line. That is a deliberate trade — two rows of chrome above a kitchen board
+is worse than an abbreviated name, and the monogram carries identity when the text runs out.
+
+Measured rather than eyeballed: one row at **320 through 768px**, with the name intact from **360px**
+up. Only at 320 does it truncate.
+
+The consequence to remember: **anything added to this row is taken straight out of the restaurant's
+name.** Measure at 360px before adding to it.
 
 The label stays **constant**, which is what every platform switch does: the label names the thing,
 the track carries the state. A label flipping to "Closed" is redundant with the track at best, and
