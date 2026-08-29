@@ -410,16 +410,6 @@ export function MenuScreen() {
 }
 
 /** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
-/**
- * The dish blurb.
- *
- * Extracted rather than inlined because the row already carries six other things and this is the
- * only one that is prose. Clamped to two lines: a long description pushes the price and the rating
- * apart, and those two are what a diner is actually comparing between rows.
- */
-function DishDescription({ description }: { description: string }) {
-  return <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">{description}</p>
-}
 
 /**
  * A dish's score on the menu, as one line.
