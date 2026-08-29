@@ -55,6 +55,17 @@ func (a *App) addPublicRoutes(engine *gin.Engine) {
 		// CPU work, and an unthrottled loop over it is a cheap way to spend the server's cycles.
 		limited.GET("/restaurants", a.controllers.Scan.RestaurantDirectory)
 		limited.GET("/r/:slug/qr", a.controllers.Scan.RestaurantQR)
+
+		// The landing page's "Book a demo" form. The second unauthenticated route that creates a
+		// row, so it is rate limited for the same reason the QR scan is -- and more so, because
+		// this one sends an email as a side effect and an unthrottled loop over it would spend
+		// the deployment's mail quota as well as its database.
+		//
+		// Public rather than platform, even though a lead is operator-facing once it lands: the
+		// caller is a stranger on the open internet who has no credential of any kind, which is
+		// exactly what this group means. What keeps it from being an open write surface is the
+		// one-row-per-phone-number constraint behind it, not a token.
+		limited.POST("/demo-requests", a.controllers.Demo.BookDemo)
 	}
 
 	// Webhooks are NOT rate limited. A gateway retrying a burst of settlements must not be

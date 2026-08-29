@@ -268,6 +268,19 @@ type RepositoryPaymentMethods interface {
 	MarkWebhookProcessed(ctx context.Context, tx *gorm.DB, id int64, at time.Time, errMsg string) error
 }
 
+// RepositoryDemoRequestMethods accesses demo requests from the landing page.
+//
+// The one repository with no restaurantID on any method, because the row exists precisely
+// because the restaurant does not yet (models.DemoRequest).
+type RepositoryDemoRequestMethods interface {
+	// Create inserts a lead. Returns the driver's error unchanged on a uniqueness rejection so
+	// the service can tell "this number already booked" apart from a real failure -- see
+	// IsUniqueViolation.
+	Create(ctx context.Context, req *models.DemoRequest) error
+	// GetByPhone returns (nil, nil) when no demo has been booked against the number.
+	GetByPhone(ctx context.Context, phone string) (*models.DemoRequest, error)
+}
+
 // RepositoryPasswordResetMethods accesses password reset codes.
 type RepositoryPasswordResetMethods interface {
 	CreateCode(ctx context.Context, resetCode *models.PasswordResetCode) error

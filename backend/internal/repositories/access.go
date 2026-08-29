@@ -64,6 +64,7 @@ type Repositories struct {
 	Review        RepositoryReviewMethods
 	Payment       RepositoryPaymentMethods
 	PasswordReset RepositoryPasswordResetMethods
+	DemoRequest   RepositoryDemoRequestMethods
 }
 
 // NewRepositories wires every repository against one shared Access.
@@ -80,5 +81,6 @@ func NewRepositories(cfg *config.Config, store *db.Store, log logger.Logger) *Re
 		Review:        NewRepositoryReview(access),
 		Payment:       NewRepositoryPayment(access),
 		PasswordReset: NewRepositoryPasswordReset(access),
+		DemoRequest:   NewRepositoryDemoRequest(access),
 	}
 }

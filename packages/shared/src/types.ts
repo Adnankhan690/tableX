@@ -972,6 +972,48 @@ export interface PlatformRestaurantListResponse {
   restaurants: RestaurantSettings[]
 }
 
+// --- Demo requests (the public landing page) ---
+
+/**
+ * The landing page's "Book a demo" form.
+ *
+ * Mirrors `backend/internal/types/demo.go`. Four fields, three required, and that is the whole
+ * intake: who you are, which restaurant, and a number to call back on. City, table count and
+ * everything else belong in the conversation, not in the thing standing between a prospect and
+ * the conversation.
+ */
+export interface BookDemoRequest {
+  name: string
+  restaurant_name: string
+  /**
+   * Sent as the owner typed it. The SERVER normalises -- separators come off, and so do a leading
+   * `+91` or `0` -- because that normalisation is what "one demo per phone number" is defined in
+   * terms of, and a client that normalised first would be one more place that has to agree.
+   */
+  phone: string
+  /** Optional. When supplied it becomes the Reply-To on the notification the operator receives. */
+  email?: string
+}
+
+/** Confirmation of a recorded demo request. */
+export interface BookDemoResponse {
+  /** The reference an operator quotes on the callback, `dmo_…`. */
+  uid: string
+  name: string
+  requested_at: string
+}
+
+/**
+ * A repeat submission from a number that has already booked.
+ *
+ * Not an error to apologise for. An owner filling the form in twice has usually just missed the
+ * first confirmation, so the page renders this as reassurance -- see `sections/book-demo.tsx`.
+ */
+export const CODE_DEMO_ALREADY_BOOKED = 'TX_DEM_001'
+
+/** The number was not a ten-digit Indian mobile. The one demo code the form shows as a field error. */
+export const CODE_DEMO_INVALID_PHONE = 'TX_DEM_002'
+
 // --- Stats ---
 
 export interface OrderStatsView {

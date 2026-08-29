@@ -1,4 +1,6 @@
 import type {
+  BookDemoRequest,
+  BookDemoResponse,
   CreatePaymentRequest,
   GuestOrdersResponse,
   MenuResponse,
@@ -190,6 +192,25 @@ export class DinerApi {
       method: 'PUT',
       body,
       auth: { kind: 'guest', token },
+    })
+  }
+
+  /**
+   * Books a demo from the public landing page.
+   *
+   * The one method here that has nothing to do with a diner, a table or a session -- the caller
+   * is a restaurant owner who is not a tenant yet, which is why it sits on the unauthenticated
+   * PUBLIC prefix alongside the scan entry points.
+   *
+   * Throws `ApiError` with code `TX_DEM_001` (409) when the number has already booked. That is
+   * not a failure to report as one: read `isDemoAlreadyBooked` on the error, or compare the code,
+   * and show reassurance instead.
+   */
+  bookDemo(body: BookDemoRequest, signal?: AbortSignal): Promise<BookDemoResponse> {
+    return this.http.request(`${PUBLIC}/demo-requests`, {
+      method: 'POST',
+      body,
+      signal,
     })
   }
 

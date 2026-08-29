@@ -56,6 +56,14 @@ type ServiceAuthMethods interface {
 	ResetPassword(ctx context.Context, email string, code string, newPassword string) *response.ApplicationError
 }
 
+// ServiceDemoMethods handles demo requests from the public landing page.
+type ServiceDemoMethods interface {
+	// BookDemo records one lead. Answers ErrDemoAlreadyBooked when the number has asked before,
+	// which is a 409 the landing page renders as reassurance rather than as a failure -- an owner
+	// submitting twice has usually just missed the first confirmation.
+	BookDemo(ctx context.Context, req *types.RequestBookDemo) (*types.ResponseBookDemo, *response.ApplicationError)
+}
+
 // ServiceRestaurantMethods handles restaurant settings.
 type ServiceRestaurantMethods interface {
 	GetSettings(ctx context.Context, actor *StaffPrincipal) (*types.RestaurantSettings, *response.ApplicationError)

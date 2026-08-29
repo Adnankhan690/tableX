@@ -27,5 +27,6 @@ func All() []any {
 		&Payment{},
 		&PaymentWebhookEvent{},
 		&PasswordResetCode{},
+		&DemoRequest{},
 	}
 }
