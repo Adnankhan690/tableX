@@ -241,8 +241,26 @@ await page.goto('http://localhost:3000/r/spice-garden', {
   waitUntil: 'networkidle',
 })
 await page.waitForSelector('text=Which table are you at?', { timeout: 10000 })
-const tableButtons = await page.locator('button:has-text("Table")').count()
+// Scoped to the grid, not to every button whose text contains "Table". A diner arriving here with
+// a live session is also offered "Continue at Table 1" above the grid, and counting that as an
+// eighth table made this assertion about the copy rather than about the tables.
+const tableButtons = await page.locator('main ul li button').count()
 ck('fallback lists the tables', tableButtons === 8, `${tableButtons} shown`)
+
+// The returning-diner shortcut. Rescanning the counter QR used to call select-table again, which
+// mints a NEW guest session -- silently orphaning the cart and the order history keyed to the old
+// one (docs/DECISIONS.md D5).
+const sessionBefore = await page.evaluate(
+  () => JSON.parse(localStorage.getItem('tablex.session.v1') ?? '{}').token,
+)
+const continueAt = page.locator('button:has-text("Continue at Table")')
+ck('a returning diner is offered their table back', (await continueAt.count()) === 1)
+await continueAt.click()
+await page.waitForURL('**/menu')
+const sessionAfter = await page.evaluate(
+  () => JSON.parse(localStorage.getItem('tablex.session.v1') ?? '{}').token,
+)
+ck('and continuing keeps the same session, not a fresh one', sessionBefore === sessionAfter)
 await page.screenshot({ path: `${SHOT}/8-table-picker.png` })
 
 console.log('=== 11. The rating count reveals on hover, but only where hover exists ===')
