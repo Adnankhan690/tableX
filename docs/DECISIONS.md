@@ -804,3 +804,71 @@ entire time it was unreachable), that the name is **not clipped** (checked with 
 regress silently.
 
 **Reversal cost.** Trivial. One boolean column, one route, one switch.
+
+---
+
+## D19 — The public landing page lives inside the diner app, behind a route group
+
+`tabley.in` serves two audiences that want opposite things from the same origin. A diner arrives
+at `tabley.in/t/{token}` from a printed QR code on a table. A restaurant owner arrives at
+`tabley.in` from a search result or a link somebody sent them.
+
+The QR codes are already printed and stuck to tables, so the origin cannot move. That leaves the
+landing page inside `apps/diner`, whose root layout was built for the first audience and is wrong
+for the second in three specific ways:
+
+| | Diner routes need | Landing page needs |
+| --- | --- | --- |
+| `robots` | `index: false` — a crawler that fetches `/t/{token}` **mints a guest session** | indexable |
+| width | `max-w-phone`, a 30rem column | full-bleed, up to 1180px |
+| `<Providers>` | cart and session context | neither |
+
+**Route groups, not a second app.** `app/(app)/` holds the nine diner routes and carries the phone
+wrapper, the providers and the noindex. `app/(marketing)/` holds the landing page and opts back
+into indexing. Route groups do not appear in the URL, so `/menu` is still `/menu` and every printed
+QR code still resolves. The root layout keeps only `<html>`, `<body>` and `globals.css`, and its
+noindex becomes the **fail-safe default** rather than a statement about the whole app — a new route
+added without thinking is invisible to crawlers, which is the safe direction for this product.
+
+`not-found.tsx` **must stay directly in `app/`**. Next matches the global 404 on `app/not-found.*`;
+inside a route group it silently stops being global.
+
+**robots.txt disallows `/t/` and nothing else.** Disallow and noindex are not interchangeable and
+stack badly: a crawler can only read a noindex tag if it is allowed to fetch the page, so applying
+both to one URL leaves it indexed as a bare link with no title. The harm at `/t/{token}` is the
+**fetch** — it creates a session — so that path is disallowed. Every other diner route is noindexed
+and left crawlable, which is what actually keeps it out of the index.
+
+**The trap that cost a rebuild, recorded so nobody repeats it.** An early version tried to keep the
+marketing page's utilities out of the diner CSS by adding negations to Tailwind's `content` array:
+
+```js
+content: ['./src/**/*.{ts,tsx}', '!./src/components/marketing/**', '!./src/app/(marketing)/**']
+```
+
+Tailwind emits **one** stylesheet for the app. Excluding a directory does not split the bundle, it
+deletes the styles: every class on the landing page was purged and it rendered as unstyled HTML —
+no container width, `h1` at the browser default, the dark band transparent. It still type-checked,
+still built, still passed lint, and the diner app was completely unaffected, so nothing failed. Do
+not add negations there.
+
+**The payload cost, measured rather than assumed.** Including the marketing utilities takes the
+shared stylesheet from 20,662 to 36,044 bytes raw — **8.2 KB gzipped in total**, which is what the
+diner now pays. It is one cached file on a route the diner reaches after the CSS is already warm,
+and it buys the only page a paying customer ever reads. The JS budget is untouched: the landing
+page ships **1.41 kB** of route JS because exactly one component in it is a client component.
+
+**`ReturnToTable` is that one component.** `/` used to be `RootLanding`, whose whole job was giving
+a diner who tapped Home mid-meal a way back to their menu. That affordance survives as a bottom bar
+on the marketing page. It imports `@/lib/session` **directly**, never `useSession()` — the marketing
+layout mounts no providers, and importing them would put the cart reducer in the bundle of the page
+most likely to be a stranger's first impression. Dismissal is keyed to the session token, not a
+boolean, so the bar returns for the next sitting instead of being gone forever.
+
+**No fabricated proof.** Every reference site for this design puts customer counts in a stat strip.
+tableX has none, and inventing them is not available. The strip keeps its structural job and changes
+what the numbers are about: `0` apps to install, `1` scan, `8` order states, `12 h` table session —
+each traceable to a file in this repo, with a footnote saying so.
+
+**Reversal cost.** Moderate. Nine `git mv`s back, delete two layouts and the marketing tree, restore
+`page.tsx`. No database, no API, no printed artefact depends on any of it.

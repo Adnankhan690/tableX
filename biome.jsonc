@@ -56,5 +56,25 @@
   },
   "javascript": {
     "formatter": { "quoteStyle": "single", "semicolons": "asNeeded", "trailingCommas": "all" }
-  }
+  },
+  "overrides": [
+    {
+      // The marketing landing page, and ONLY it.
+      //
+      // useUniqueElementIds is correct everywhere else in this repo and stays on -- a component
+      // that renders twice with a hardcoded id puts a duplicate in the DOM, and the diner menu
+      // hit exactly that. It is wrong here for two reasons that do not apply anywhere else:
+      //
+      //   * these ids are the anchor targets the site header links to (#how-it-works,
+      //     #get-set-up). A generated id changes on every render and the nav stops working.
+      //   * useId is a hook, so obeying the rule would force every section to become a client
+      //     component. The whole page is server-rendered and ships 1.4 kB of JS; that is the
+      //     point of it, and PRD 7 makes payload a product requirement.
+      //
+      // Each section is composed exactly once by (marketing)/page.tsx, so there is no duplicate
+      // to create. If a marketing section ever becomes repeatable, this override must go.
+      "includes": ["apps/diner/src/components/marketing/**", "apps/diner/src/app/(marketing)/**"],
+      "linter": { "rules": { "correctness": { "useUniqueElementIds": "off" } } }
+    }
+  ]
 }

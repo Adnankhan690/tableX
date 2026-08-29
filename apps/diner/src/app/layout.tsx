@@ -1,12 +1,28 @@
 import type { Metadata, Viewport } from 'next'
-import { Providers } from '@/components/providers'
+import { SITE_URL } from '@/lib/site'
 import './globals.css'
 
+/**
+ * The root layout now carries <html>, <body> and the stylesheet, and nothing else.
+ *
+ * Everything that used to live here — the phone column, <Providers>, the noindex — belonged to
+ * the diner flow specifically, and moved into `(app)/layout.tsx` when `/` became a public
+ * marketing page (docs/DECISIONS.md D19).
+ */
 export const metadata: Metadata = {
-  title: 'Order',
-  description: 'Scan, order and track your food from your table.',
-  // A diner arrives from a QR code, so there is nothing to index and a crawler following the
-  // link would create guest sessions.
+  metadataBase: new URL(SITE_URL),
+  /**
+   * A plain string, deliberately NOT a `{ default, template }` pair. A title template would
+   * rewrite every diner tab from "Order" to "Order · tabley", which is a worse label on the one
+   * screen a diner keeps open through a meal.
+   */
+  title: 'tabley',
+  /**
+   * noindex is the FAIL-SAFE DEFAULT, not a statement about this app's content. Nine of the ten
+   * routes here are reached from a QR code and must never be crawled — `/t/{token}` mints a
+   * guest session merely by being fetched. `(marketing)/layout.tsx` is the single deliberate
+   * opt-out; a new route inherits the safe answer unless someone chooses otherwise.
+   */
   robots: { index: false, follow: false },
 }
 
@@ -30,13 +46,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-dvh bg-bg text-ink antialiased">
-        {/* max-w-phone keeps a phone layout phone-shaped if it is opened on a laptop, without
-            pretending to be a desktop design (PRD 7). */}
-        <div className="mx-auto min-h-dvh w-full max-w-phone bg-bg">
-          <Providers>{children}</Providers>
-        </div>
-      </body>
+      <body className="min-h-dvh bg-bg text-ink antialiased">{children}</body>
     </html>
   )
 }

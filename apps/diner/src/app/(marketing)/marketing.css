@@ -1,0 +1,157 @@
+/**
+ * Marketing-page CSS, imported ONLY by `(marketing)/layout.tsx`.
+ *
+ * Next emits a separate stylesheet chunk per layout import, so nothing in this file is
+ * downloaded on a diner route — which matters because PRD §7 makes payload a product
+ * requirement and every byte here would otherwise ride along on a 3G menu load. Everything is
+ * scoped under `.tx-mk` so a stray rule cannot reach the diner app even if that ever changes.
+ */
+
+.tx-mk {
+  /* Marketing-only tints. Hand-derived from --tx-accent #ad5207 and from white, because
+     tailwind.config.ts documents that opacity modifiers do NOT work on the --tx-* tokens
+     (they hold whole colours, not channel triplets). */
+  --mk-glow: rgb(173 82 7 / 0.16);
+  --mk-rule-dark: rgb(255 255 255 / 0.12);
+  --mk-surface-dark: rgb(255 255 255 / 0.04);
+  --mk-text-dark: rgb(255 255 255 / 0.7); /* 8.6:1 on --tx-ink */
+  --mk-node-pending: rgb(255 255 255 / 0.25);
+
+  /* The header is sticky, so an in-page anchor would otherwise land its heading underneath it. */
+  scroll-padding-top: 88px;
+}
+
+/**
+ * The blueprint plane behind the hero. 68px is the s6 spacing step at this app's 17px root, so
+ * the texture rides the layout's own rhythm rather than sitting on an unrelated grid.
+ */
+.mk-grid {
+  background-image:
+    repeating-linear-gradient(to right, var(--tx-line) 0 1px, transparent 1px 68px),
+    repeating-linear-gradient(to bottom, var(--tx-line) 0 1px, transparent 1px 68px);
+  -webkit-mask-image: radial-gradient(58% 58% at 55% 42%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(58% 58% at 55% 42%, #000 0%, transparent 78%);
+}
+
+/**
+ * Hover lift, gated on a real pointer rather than on Tailwind's `hover:` variant.
+ *
+ * Tailwind's variant compiles to `:hover`, which a touch browser fires on tap and then leaves
+ * stuck until the next tap elsewhere — so a card tapped on a phone stays lifted. globals.css
+ * documents this at length for `.rating-hover`; this is the same rule.
+ */
+@media (hover: hover) and (pointer: fine) {
+  .mk-lift {
+    transition:
+      transform 150ms ease-out,
+      box-shadow 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+  .mk-lift:hover {
+    transform: translateY(-1px);
+    border-color: var(--tx-accent-soft);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  }
+}
+
+/**
+ * ENTRANCE ANIMATIONS ARE OPT-IN, NEVER OPT-OUT.
+ *
+ * globals.css already forces `animation-duration: 0.01ms` page-wide under
+ * prefers-reduced-motion. An animation authored the usual way — "start hidden, animate to
+ * visible" — would therefore be cut off at its first frame and strand the content INVISIBLE for
+ * exactly the readers least able to recover from it. So the base rule below IS the final state,
+ * and motion is added only inside the `no-preference` block.
+ */
+.mk-rise {
+  opacity: 1;
+  transform: none;
+}
+.mk-rail-fill {
+  transform: scaleX(0.6);
+  transform-origin: left;
+}
+/* The hero underline: drawn by default, animated only where motion is welcome. */
+.mk-draw {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mk-rise {
+    animation: mk-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .mk-draw {
+    stroke-dasharray: 420;
+    animation: mk-draw 700ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both;
+  }
+
+  /* Scroll-linked reveals, with no JS at all: no IntersectionObserver, no scroll listener. A
+     scroll handler is exactly the main-thread work menu-screen.tsx documents avoiding. Browsers
+     without `animation-timeline` simply get the visible base state. */
+  @supports (animation-timeline: view()) {
+    .mk-reveal {
+      animation: mk-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 32%;
+    }
+    .mk-rail-fill {
+      animation: mk-rail 700ms ease-out both;
+      animation-timeline: view();
+      animation-range: entry 20% cover 45%;
+    }
+  }
+
+  .mk-ping {
+    animation: mk-ping 2.4s ease-out infinite;
+  }
+}
+
+@keyframes mk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes mk-draw {
+  from {
+    stroke-dashoffset: 420;
+  }
+}
+@keyframes mk-rail {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(0.6);
+  }
+}
+@keyframes mk-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  70%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* REMOVED, not merely stopped. The global rule pins `animation-iteration-count: 1`, which for
+     a ping that ends at opacity 0 would freeze it invisible mid-page as a stray ring. */
+  .tx-mk .mk-ping {
+    display: none;
+  }
+}
+
+/**
+ * Focus ring on the inverted band and the footer.
+ *
+ * globals.css sets a global `outline: 2px solid var(--tx-accent)`, which is correct everywhere
+ * on the warm ground and measures only 3.2:1 against --tx-ink. accent-soft is ~13:1 there.
+ */
+.tx-mk .mk-dark :focus-visible {
+  outline-color: var(--tx-accent-soft);
+}
