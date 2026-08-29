@@ -15,4 +15,3 @@ export default async function Page({ params }: { params: Promise<{ qrToken: stri
   const { qrToken } = await params
   return <ScanHandler qrToken={qrToken} />
 }
-

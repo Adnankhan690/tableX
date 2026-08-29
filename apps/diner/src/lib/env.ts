@@ -31,8 +31,12 @@ export interface DinerEnv {
  * An absent value falls back to localhost; a *present but malformed* value is a bad deploy
  * and is never silently replaced by the default, because that would leave a production build
  * quietly pointing at a host that does not exist.
+ *
+ * Exported for `lib/site.ts`, which validates the public site and admin origins on exactly the
+ * same terms. A second copy there would drift, and the drift would be invisible: both copies
+ * only ever run on a misconfigured deploy.
  */
-function parseBaseUrl(
+export function parseBaseUrl(
   name: string,
   raw: string | undefined,
   fallback: string,

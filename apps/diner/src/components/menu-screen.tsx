@@ -409,18 +409,6 @@ export function MenuScreen() {
   )
 }
 
-/** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
-/**
- * The dish blurb.
- *
- * Extracted rather than inlined because the row already carries six other things and this is the
- * only one that is prose. Clamped to two lines: a long description pushes the price and the rating
- * apart, and those two are what a diner is actually comparing between rows.
- */
-function DishDescription({ description }: { description: string }) {
-  return <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">{description}</p>
-}
-
 /**
  * A dish's score on the menu, as one line.
  *
@@ -499,14 +487,31 @@ function DishRating({ rating }: { rating: NonNullable<MenuItemView['rating']> })
   )
 }
 
-function DishDescription({ description }: { description: string }) {
+/**
+ * The dish blurb, truncated to nine words with the rest a tap away.
+ *
+ * A BUTTON, not a <p onClick>. It arrived as a paragraph with a click handler, which works for
+ * exactly one kind of user: a paragraph is not focusable, so it cannot be reached by keyboard or
+ * by a switch device, and a screen reader announces it as static text with no hint that anything
+ * happens if you activate it. A button carries all three for free and the styling is unchanged.
+ *
+ * `aria-expanded` is what makes it legible to a screen reader rather than merely operable, and
+ * the label says which dish it belongs to -- a menu of twenty rows otherwise announces twenty
+ * identical "show more" buttons with nothing to tell them apart.
+ *
+ * It deliberately does NOT meet the 44px tap floor the rest of this app holds to. That rule is
+ * for controls a diner is aiming at; this is progressive disclosure on a line of prose, and
+ * padding it to 44px would put a visible gap through the middle of every dish row. The dish's
+ * real controls -- Add, and the stepper -- are unaffected and still meet it.
+ */
+function DishDescription({ description, name }: { description: string; name: string }) {
   const [expanded, setExpanded] = useState(false)
   const words = useMemo(() => description.trim().split(/\s+/).filter(Boolean), [description])
   const isLong = words.length > 9
 
   if (!isLong) {
     return (
-      <p className="mt-1.5 max-w-[190px] sm:max-w-[220px] text-[0.8125rem] leading-relaxed text-muted">
+      <p className="mt-1.5 max-w-[190px] text-[0.8125rem] leading-relaxed text-muted sm:max-w-[220px]">
         {description}
       </p>
     )
@@ -516,22 +521,24 @@ function DishDescription({ description }: { description: string }) {
   const remainingText = words.slice(9).join(' ')
 
   return (
-    <p
+    <button
+      type="button"
       onClick={() => setExpanded((v) => !v)}
-      className="mt-1.5 max-w-[190px] sm:max-w-[220px] cursor-pointer select-none text-[0.8125rem] leading-relaxed text-muted transition-all duration-300 ease-in-out hover:text-ink"
+      aria-expanded={expanded}
+      aria-label={expanded ? `Show less about ${name}` : `Show more about ${name}`}
+      className="mt-1.5 block max-w-[190px] select-none text-left text-[0.8125rem] leading-relaxed text-muted transition-all duration-300 ease-in-out hover:text-ink sm:max-w-[220px]"
     >
       <span>{shortText}</span>
-      {!expanded ? (
-        <span className="transition-opacity duration-300">...</span>
+      {expanded ? (
+        <span className="transition-opacity duration-300 ease-in-out"> {remainingText}</span>
       ) : (
-        <span className="transition-opacity duration-300 ease-in-out">
-          {' ' + remainingText}
-        </span>
+        <span className="transition-opacity duration-300">…</span>
       )}
-    </p>
+    </button>
   )
 }
 
+/** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
 function DishRow({
   item,
   quantity,
@@ -601,7 +608,9 @@ function DishRow({
           </div>
         ) : null}
 
-        {item.description ? <DishDescription description={item.description} /> : null}
+        {item.description ? (
+          <DishDescription description={item.description} name={item.name} />
+        ) : null}
 
         <div className="mt-1.5 flex items-center gap-2 text-[0.75rem] text-muted">
           {item.prep_time_mins ? <span>{item.prep_time_mins} min</span> : null}

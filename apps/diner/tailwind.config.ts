@@ -15,6 +15,12 @@ import type { Config } from 'tailwindcss'
  */
 const config: Config = {
   content: [
+    // Do NOT add negations here to keep the marketing page's utilities out of the diner CSS.
+    // That was tried and it does not do what it looks like it does: Tailwind emits ONE
+    // stylesheet for the whole app, so excluding a directory does not split the bundle, it
+    // deletes the styles. The landing page rendered as unstyled HTML -- no container width, no
+    // type scale, the dark band transparent -- because every class on it had been purged.
+    // The real cost of including it is measured and small; see docs/DECISIONS.md D19.
     './src/**/*.{ts,tsx}',
     // packages/ui is shared with the admin app, so its classes must be scanned here too or
     // they get purged out of the diner build (docs/DECISIONS.md D11).
@@ -43,6 +49,9 @@ const config: Config = {
         // No webfont anywhere in this app: a font file is 20-100KB of blocking payload on a
         // 3G connection for a menu that reads fine in the system face (PRD 7).
         sans: ['var(--tx-font-sans)'],
+        // Still no webfont: --tx-font-display is a system serif stack, 0 bytes. Used only by
+        // the marketing page's h1/h2 and its display numerals -- no diner route references it.
+        display: ['var(--tx-font-display)'],
       },
       fontSize: {
         // Above Tailwind's scale on purpose -- this is read one-handed in dim restaurant

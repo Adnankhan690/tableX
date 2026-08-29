@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { OrderList } from '@/components/order-list'
+import { CartScreen } from '@/components/cart-screen'
 import { SessionGate } from '@/components/session-gate'
 
 export const metadata: Metadata = {
@@ -9,8 +9,7 @@ export const metadata: Metadata = {
 export default function Page() {
   return (
     <SessionGate>
-      <OrderList />
+      <CartScreen />
     </SessionGate>
   )
 }
-
