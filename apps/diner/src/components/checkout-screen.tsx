@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useCart } from '@/components/providers'
-import { BottomBar, PrimaryButton, ScreenHeader } from '@/components/screen'
+import { BackLink, BottomBar, PrimaryButton, ScreenHeader } from '@/components/screen'
 import { useGatedSession } from '@/components/session-gate'
 import { api } from '@/lib/api'
 import { toOrderItems } from '@/lib/cart'
@@ -140,15 +140,7 @@ export function CheckoutScreen() {
       <ScreenHeader
         title="Payment"
         subtitle={`Table ${session.tableLabel}`}
-        back={
-          <Link
-            href="/cart"
-            aria-label="Back to your order"
-            className="-ml-2 flex min-h-tap min-w-tap items-center justify-center text-xl text-muted"
-          >
-            ←
-          </Link>
-        }
+        back={<BackLink href="/cart" label="Back to your order" />}
       />
 
       <main className="px-4 pb-bar pt-4">

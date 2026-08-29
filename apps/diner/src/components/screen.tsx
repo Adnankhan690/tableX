@@ -1,4 +1,5 @@
 import { cn } from '@tablex/ui'
+import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 /**
@@ -62,6 +63,52 @@ export function ScreenHeader({
         {right}
       </div>
     </header>
+  )
+}
+
+/**
+ * The back control for ScreenHeader.
+ *
+ * Was a bare "←" character in three separate copies. A text glyph is the wrong tool for an icon:
+ * it renders in whatever the system font decides, so its weight and shape change between Android
+ * and iOS, it sits on the text baseline rather than optically centred against a two-line title,
+ * and it cannot be given a stroke weight that matches anything else on the screen. It read as a
+ * stray character rather than as the screen's one way back.
+ *
+ * Inline SVG rather than an icon package, which is the rule for this app: PRD 7 makes payload a
+ * product requirement and the enforcement is omission (docs/CONTRIBUTING.md).
+ *
+ * It is also given a real pressed state. globals.css sets a tap highlight as the FLOOR, with the
+ * explicit note that components should still add their own -- and this is the control a diner
+ * reaches for when they have changed their mind, so it should visibly accept the press.
+ */
+export function BackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className={cn(
+        '-ml-2 flex min-h-tap min-w-tap shrink-0 items-center justify-center rounded-full',
+        'text-ink transition-colors active:bg-surface-sunken',
+      )}
+    >
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {/* Arrow with a tail, not a bare chevron: this goes back to a specific place the diner
+            came from, and the tail is what distinguishes that from a generic "previous". */}
+        <path d="M19 12H5" />
+        <path d="M12 19l-7-7 7-7" />
+      </svg>
+    </Link>
   )
 }
 
