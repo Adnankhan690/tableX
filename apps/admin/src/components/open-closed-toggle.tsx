@@ -127,9 +127,16 @@ export function OpenClosedSwitch({
       // while giving a screen reader the context that "Open" on its own does not carry.
       aria-label="Open for orders"
       className={cn(
-        // Tight padding on purpose: at 375px the header fits brand + switch + Sign out on one
-        // row only if this control stays under about 100px wide. See app-shell.tsx.
-        'flex min-h-tap-sm shrink-0 items-center gap-1.5 rounded-control border px-2.5',
+        /*
+          As small as it can be while still saying what it is. It shares the shell's top bar with
+          the restaurant's name and Sign out, and that bar must never wrap -- so every pixel here
+          comes straight out of the name (see app-shell.tsx).
+
+          The LABEL STAYS. Dropping it below `sm` would buy another ~40px, and it was tempting,
+          but an unlabelled toggle beside "Sign out" gives a manager no way to know what it does
+          before pressing it -- and what it does is stop the restaurant taking orders.
+        */
+        'flex min-h-tap-sm shrink-0 items-center gap-1.5 rounded-control border px-2',
         'text-sm font-medium transition-colors disabled:opacity-60 sm:min-h-tap',
         accepting
           ? 'border-line-strong bg-surface text-ink hover:bg-surface-sunken'
@@ -150,7 +157,7 @@ export function OpenClosedSwitch({
         easily press-this-to-close as we-are-closed.
       */}
       Open
-      <SwitchTrack on={accepting} tone="success" />
+      <SwitchTrack on={accepting} tone="success" size="sm" />
     </button>
   )
 }

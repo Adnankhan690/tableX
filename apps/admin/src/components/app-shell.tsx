@@ -70,16 +70,18 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* Brand. The monogram gives the panel an identity at a glance and, on the tablet's top
             bar, keeps the restaurant name from being the widest thing in a 44px strip. */}
         {/*
-          `min-w-[11rem]` is what makes the top bar wrap BY CONTENT rather than by a breakpoint.
+          `min-w-0`, deliberately, which means this bar NEVER WRAPS.
 
-          The brand is a flex item with `min-w-0`, which is what lets the name truncate -- but it
-          also means the brand will shrink to nothing before the header ever wraps, so a neighbour
-          that does not fit silently eats the restaurant's name instead of moving to its own line.
-          A floor reverses that: below it the flex line wraps and the account block drops down,
-          which is the behaviour you want on a 360px Android and the wrong behaviour to hard-code
-          to an arbitrary breakpoint.
+          A flex item with no floor shrinks rather than pushing its neighbours onto a second line,
+          so the brand gives up width to the switch and Sign out and the three stay on one row at
+          every size. The cost is that a long restaurant name truncates on a narrow phone, and that
+          is the trade being made on purpose: two rows of chrome above a kitchen board is worse
+          than an abbreviated name, and the monogram carries identity when the text runs out.
+
+          It follows that anything added to this row is taken straight out of the name. Measure at
+          360px before adding to it.
         */}
-        <div className="order-1 flex min-w-[11rem] flex-1 items-center gap-2.5 px-4 py-3 lg:min-w-0 lg:flex-none">
+        <div className="order-1 flex min-w-0 flex-1 items-center gap-2.5 px-4 py-3 lg:flex-none">
           <span
             aria-hidden="true"
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-accent text-xs font-semibold text-accent-ink"
