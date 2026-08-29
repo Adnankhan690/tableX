@@ -1,4 +1,9 @@
+import type { Metadata } from 'next'
 import { ScanHandler } from '@/components/scan-handler'
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 /**
  * The QR landing (PRD 6.1).
@@ -10,3 +15,4 @@ export default async function Page({ params }: { params: Promise<{ qrToken: stri
   const { qrToken } = await params
   return <ScanHandler qrToken={qrToken} />
 }
+
