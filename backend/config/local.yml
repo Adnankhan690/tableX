@@ -125,3 +125,9 @@ email:
   brevo_api_key: ""
   sender_email: "noreply@tabley.in"
   sender_name: "tableY Admin"
+  # Where a booked demo from the landing page lands.
+  #
+  # NOT the same thing as sender_email above, and they are not interchangeable: that one is a
+  # noreply identity the provider has authorised this deployment to send AS, and this is a mailbox
+  # a person actually opens. Pointing leads at the sender delivers them to nobody.
+  demo_notify_email: "hellotabley@gmail.com"

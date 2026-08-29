@@ -109,3 +109,14 @@ email:
   brevo_api_key: "" # Supplied by environment variable TABLEX_BREVO_API_KEY
   sender_email: "noreply@tabley.in"
   sender_name: "tableY Admin"
+  # Where a booked demo from the landing page lands.
+  #
+  # NOT the same thing as sender_email above, and they are not interchangeable: that one is a
+  # noreply identity Brevo has authorised this deployment to send AS, and this is a mailbox a
+  # person actually opens. Pointing leads at the sender delivers them to nobody.
+  #
+  # Written out here rather than left to the code default, even though the two agree today. A
+  # default is invisible at the place anyone looks when a lead does not arrive, and the failure it
+  # produces is silent -- the booking still answers 201, because the row is the record and the
+  # email is only the nudge (DECISIONS.md D20). Overridable with TABLEX_DEMO_NOTIFY_EMAIL.
+  demo_notify_email: "hellotabley@gmail.com"
