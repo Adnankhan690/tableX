@@ -10,8 +10,8 @@ import { parseBaseUrl } from './env'
  * computed key reads an empty object in the browser (see the note at the top of env.ts).
  */
 
-/** Localhost defaults so a fresh clone renders the landing page with no .env file at all. */
-const DEFAULT_SITE_URL = 'http://localhost:3000'
+/** Default production domain so sitemap, robots, and metadata always resolve to the real URL */
+const DEFAULT_SITE_URL = 'https://tabley.in'
 const DEFAULT_ADMIN_BASE_URL = 'http://localhost:3001'
 
 /** Origin of this site, no trailing slash. Feeds metadataBase, the canonical, robots, sitemap. */
@@ -36,7 +36,9 @@ export const ADMIN_BASE_URL: string = parseBaseUrl(
  * Empty is a legitimate state in development and CI, and the page degrades to an in-page
  * anchor. It is NOT a legitimate state in production — see the gate below.
  */
-export const CONTACT_EMAIL: string = (process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? '').trim()
+export const CONTACT_EMAIL: string = (
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'hellotabley@gmail.com'
+).trim()
 
 /**
  * Slug of a restaurant onboarded *as a demo*, or empty.
