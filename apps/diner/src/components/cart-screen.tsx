@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { useCart } from '@/components/providers'
 import { QuantityStepper } from '@/components/quantity-stepper'
-import { BottomBar, PrimaryButton, ScreenHeader } from '@/components/screen'
+import { BackLink, BottomBar, PrimaryButton, ScreenHeader } from '@/components/screen'
 import { useGatedSession } from '@/components/session-gate'
 import { api } from '@/lib/api'
 import { totalsInput } from '@/lib/cart'
@@ -75,7 +75,7 @@ export function CartScreen() {
         <ScreenHeader
           title="Your order"
           subtitle={`Table ${session.tableLabel}`}
-          back={<BackLink />}
+          back={<BackLink href="/menu" label="Back to the menu" />}
         />
         <div className="py-16">
           <EmptyState
@@ -97,7 +97,7 @@ export function CartScreen() {
       <ScreenHeader
         title="Your order"
         subtitle={`Table ${session.tableLabel}`}
-        back={<BackLink />}
+        back={<BackLink href="/menu" label="Back to the menu" />}
       />
 
       <main className="pb-bar">
@@ -208,17 +208,5 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-[0.9375rem] text-muted">{label}</span>
       <span className="text-[0.9375rem] tabular-nums">{value}</span>
     </div>
-  )
-}
-
-function BackLink() {
-  return (
-    <Link
-      href="/menu"
-      aria-label="Back to the menu"
-      className="-ml-2 flex min-h-tap min-w-tap items-center justify-center text-xl text-muted"
-    >
-      ←
-    </Link>
   )
 }

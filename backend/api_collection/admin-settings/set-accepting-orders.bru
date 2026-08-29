@@ -1,0 +1,61 @@
+meta {
+  name: set-accepting-orders
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/api/admin/v1/settings/accepting-orders
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "accepting_orders": true
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("reports the switch back", function () {
+    expect(res.body.data.accepting_orders).to.be.true
+  })
+
+  test("and did not disturb the rest of the settings", function () {
+    // The whole reason this is its own route rather than a field on PATCH /settings: closing up
+    // mid-service must not carry along a stale tax rate from a form somebody left open.
+    expect(res.body.data.tax_bps).to.be.a("number")
+    expect(res.body.data.slug).to.be.a("string")
+  })
+}
+
+docs {
+  # Open / close for orders
+
+The "we are open" switch staff flip at the start and end of service ([D18](../../docs/DECISIONS.md)).
+
+**Not manager-gated**, unlike everything else under `/settings`. Closing up is a floor action taken
+by whoever is actually standing there, and routing it through a manager would mean orders keep
+arriving after the kitchen has gone home. The same argument already leaves menu availability open
+to every role.
+
+Distinct from `status` (active / inactive / archived), which is the restaurant's lifecycle on the
+platform. Closing for the night must not archive the restaurant, orphan its order history or drop
+it out of the public directory -- exactly the split `menu_item` makes between `is_available` and
+`status`.
+
+Set it to `false` and then try `guest / place-order`: it answers `TX_RST_008` (409), and the diner
+menu renders read-only because `accepting_orders` rides on the public restaurant summary.
+}

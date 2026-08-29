@@ -6,7 +6,7 @@ import { elapsedSeconds, formatElapsed } from '@tablex/shared'
 import { EmptyState, ErrorState, Money, Spinner, StatusBadge } from '@tablex/ui'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { ScreenHeader } from '@/components/screen'
+import { BackLink, ScreenHeader } from '@/components/screen'
 import { useGatedSession } from '@/components/session-gate'
 import { api } from '@/lib/api'
 
@@ -40,15 +40,7 @@ export function OrderList() {
       <ScreenHeader
         title="Your orders"
         subtitle={`Table ${session.tableLabel} · this visit`}
-        back={
-          <Link
-            href="/menu"
-            aria-label="Back to the menu"
-            className="-ml-2 flex min-h-tap min-w-tap items-center justify-center text-xl text-muted"
-          >
-            ←
-          </Link>
-        }
+        back={<BackLink href="/menu" label="Back to the menu" />}
       />
 
       <main className="px-4 py-4">

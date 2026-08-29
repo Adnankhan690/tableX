@@ -120,6 +120,9 @@ export function MenuScreen() {
    *     recommendations strip above their results is in the way. The veg filter is different: it
    *     narrows, it does not seek.
    */
+  // One source for "can anything be ordered right now", so the banner and every row agree.
+  const closed = menu !== null && !menu.restaurant.accepting_orders
+
   const mostLoved = useMemo(() => {
     if (query.trim() !== '') return []
 
@@ -278,6 +281,26 @@ export function MenuScreen() {
       </div>
 
       <main className="pb-bar">
+        {/*
+          Said BEFORE the menu, not at checkout.
+
+          The server refuses placement when the restaurant is closed (TX_RST_008), but meeting that
+          after choosing four dishes is the same information delivered at the worst possible moment.
+          The menu stays readable on purpose -- someone looking up what a restaurant serves is a
+          perfectly good reason to scan, and hiding it would be worse than saying so.
+        */}
+        {menu !== null && !menu.restaurant.accepting_orders ? (
+          <p
+            role="status"
+            className="border-b border-line bg-surface-sunken px-4 py-3 text-[0.875rem] leading-snug text-muted"
+          >
+            <span className="font-semibold text-ink">
+              {menu.restaurant.name} is not taking orders right now.
+            </span>{' '}
+            You can still look through the menu.
+          </p>
+        ) : null}
+
         {filtered.length === 0 ? (
           <div className="px-4 py-16">
             <EmptyState
@@ -327,6 +350,7 @@ export function MenuScreen() {
                       key={`loved-${item.uid}`}
                       item={item}
                       quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      closed={closed}
                       onAdd={() => add(item)}
                       onSetQuantity={(next) => setQuantity(item.uid, next)}
                     />
@@ -353,6 +377,7 @@ export function MenuScreen() {
                       key={item.uid}
                       item={item}
                       quantity={cart?.lines.find((l) => l.menuItemUid === item.uid)?.quantity ?? 0}
+                      closed={closed}
                       onAdd={() => add(item)}
                       onSetQuantity={(next) => setQuantity(item.uid, next)}
                     />
@@ -366,7 +391,7 @@ export function MenuScreen() {
 
       {/* The bar appears only once there is something to review, so it does not cover the menu
           while the diner is still browsing. */}
-      {count > 0 && preview !== null ? (
+      {count > 0 && preview !== null && !closed ? (
         <BottomBar>
           <Link href="/cart" className="block">
             <div className="flex min-h-tap items-center justify-between rounded-card bg-accent px-4 py-3 text-accent-ink">
@@ -385,6 +410,17 @@ export function MenuScreen() {
 }
 
 /** One dish. Split out so the menu's re-render on a quantity tap stays cheap. */
+/**
+ * The dish blurb.
+ *
+ * Extracted rather than inlined because the row already carries six other things and this is the
+ * only one that is prose. Clamped to two lines: a long description pushes the price and the rating
+ * apart, and those two are what a diner is actually comparing between rows.
+ */
+function DishDescription({ description }: { description: string }) {
+  return <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-snug text-muted">{description}</p>
+}
+
 /**
  * A dish's score on the menu, as one line.
  *
@@ -499,11 +535,14 @@ function DishDescription({ description }: { description: string }) {
 function DishRow({
   item,
   quantity,
+  closed,
   onAdd,
   onSetQuantity,
 }: {
   item: MenuItemView
   quantity: number
+  /** The whole restaurant is not taking orders. Distinct from this dish being sold out. */
+  closed: boolean
   onAdd: () => void
   onSetQuantity: (next: number) => void
 }) {
@@ -514,6 +553,18 @@ function DishRow({
    * a restaurant that ran out.
    */
   const unavailable = !item.is_available
+
+  /**
+   * Two different reasons a dish cannot be added, kept apart on purpose.
+   *
+   * A closed restaurant does NOT get the "Unavailable today" label -- that means the kitchen ran
+   * out of this dish, and stamping it on all forty would be a lie the diner can disprove by
+   * reading it. The banner at the top of the menu already says why, once, in the right words.
+   *
+   * The Add control disappears either way, matching how a sold-out dish behaves: an addable
+   * control that cannot result in an order is worse than no control.
+   */
+  const addable = !unavailable && !closed
 
   return (
     <li
@@ -534,9 +585,16 @@ function DishRow({
 
         <p className="mt-1.5 text-dish-name font-bold text-ink leading-tight">{item.name}</p>
 
-        <p className="mt-1 text-base font-bold text-ink tabular-nums">{item.price.display}</p>
+        <p className="mt-1 text-base font-bold tabular-nums text-ink">{item.price.display}</p>
 
-        {/* Rating placed directly below price according to industry standard */}
+        {/*
+          Rating directly under the price, which is where every food app puts it -- the two are
+          read as one unit when deciding.
+
+          Absent, not zeroed, for a dish without enough ratings: the server omits the field below
+          its publication threshold. A "5.0" from one tap would rank an untried dish above a
+          consistently good one, so no score is the honest rendering (PRD 6.2).
+        */}
         {item.rating ? (
           <div className="mt-1">
             <DishRating rating={item.rating} />
@@ -555,16 +613,35 @@ function DishRow({
         ) : null}
       </div>
 
-      <div className="relative shrink-0 flex flex-col items-center select-none pt-0.5">
-        <div className="relative overflow-hidden rounded-2xl shadow-sm">
-          <DishImage
-            name={item.name}
-            url={item.image_url}
-            className="w-[140px] h-[126px] sm:w-[152px] sm:h-[136px] rounded-2xl"
-          />
-        </div>
-        {!unavailable ? (
-          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-[1]">
+      {/*
+        `self-start` is load-bearing, not tidiness. This is a flex child, so without it the
+        default `align-items: stretch` makes it as tall as the whole row -- and the stepper's
+        `-bottom-3` then anchors to the bottom of the row rather than to the photo, leaving it
+        floating a hundred pixels below the image it is supposed to sit on.
+
+        `relative` is what the overlay positions against, and `mb-3` is what stops it colliding
+        with the row divider: it hangs 12px below the photo, which is exactly the row's padding.
+      */}
+      <div className="relative mb-3 shrink-0 self-start">
+        {/*
+          96, not the 76 default. An overlaid control needs a photo big enough to still read as a
+          photo underneath it -- at 76 the button was wider than the image and covered a third of
+          it, which is worse than no photo at all. Passed here rather than changed in DishImage,
+          because the cart and order screens show the same component at thumbnail size with nothing
+          on top of it.
+        */}
+        <DishImage
+          name={item.name}
+          size={96}
+          {...(item.image_url ? { url: item.image_url } : {})}
+        />
+        {/*
+          `addable`, not `!unavailable`. The two differ when the restaurant itself is closed
+          (DECISIONS.md D18) -- a sold-out dish and a shut kitchen both mean "cannot be ordered",
+          and only one of them is about this dish.
+        */}
+        {addable ? (
+          <div className="absolute -bottom-3 left-1/2 z-[1] -translate-x-1/2">
             <QuantityStepper
               quantity={quantity}
               label={item.name}

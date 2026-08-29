@@ -13,6 +13,13 @@ type RestaurantSummary struct {
 	Address     string `json:"address,omitempty"`
 	Phone       string `json:"phone,omitempty"`
 	Currency    string `json:"currency"`
+	// AcceptingOrders is the "we are open" switch (DECISIONS.md D18). On the diner side it is what
+	// turns the menu read-only; on the admin side it is what the board's toggle reflects.
+	//
+	// On the PUBLIC summary rather than the staff-only settings object, because a diner scanning at
+	// 11pm needs to be told the kitchen is shut before they build a cart -- finding out at checkout
+	// is the same information delivered at the worst possible moment.
+	AcceptingOrders bool `json:"accepting_orders"`
 }
 
 // RestaurantSettings is the full, staff-only view.
@@ -118,4 +125,13 @@ type ResponseTableQR struct {
 	// PNGBase64 is a data-URI-ready rendering, so the print sheet needs no second request
 	// per table.
 	PNGBase64 string `json:"png_base64,omitempty"`
+}
+
+// RequestSetAcceptingOrders is the fast path staff use at open and close: one tap, one field.
+//
+// Separate from the full settings PATCH for the same reason RequestSetAvailability is separate
+// from RequestUpdateMenuItem: closing up must not accidentally submit a stale tax rate from a
+// settings form somebody left open in another tab.
+type RequestSetAcceptingOrders struct {
+	AcceptingOrders bool `json:"accepting_orders"`
 }

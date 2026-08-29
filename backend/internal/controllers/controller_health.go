@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"tablex/internal/db"
 )
 
 // ControllerHealth serves the probes.
@@ -44,5 +47,53 @@ func (c *ControllerHealth) Ready(ctx *gin.Context) {
 	}
 
 	body["database"] = "ok"
+
+	/*
+		THE SCHEMA, not just the connection.
+
+		A reachable database is not a usable one. A binary deployed ahead of its migrations starts
+		fine, passes the ping above, is routed traffic, and then either 500s on the first query that
+		touches a missing table -- which is how a missing `order_item_review` reached diners as a
+		broken order screen -- or, worse, succeeds against a missing COLUMN and reads it as the zero
+		value. `restaurant.accepting_orders` missing on its own would have made every restaurant
+		read as closed and silently refused every order, with nothing in the logs.
+
+		Failing readiness turns both into a deploy that never goes live: the platform routes on this
+		probe, so the instance takes no traffic and the previous one keeps serving until somebody
+		migrates -- at which point the next probe passes and it joins.
+
+		The COUNT is public, the NAMES are logged. This endpoint is unauthenticated and column names
+		describe the schema; whoever needs them has the logs.
+	*/
+	gaps, err := c.Access.Db.SchemaGaps(ctx.Request.Context())
+	if err != nil {
+		/*
+			FAILS OPEN, and that is the important half.
+
+			This returned 503, which meant a check that could not ANSWER took a perfectly healthy
+			instance out of rotation. That is a worse outage than the one it guards against, because
+			it happens when nothing is actually wrong -- and it did happen in production, where the
+			check outran the platform's probe timeout and every probe then reported the service
+			unfit to serve.
+
+			A gap is a fact worth acting on. Not knowing is not.
+		*/
+		c.Access.Logger.With(ctx.Request.Context()).Warnf(
+			"[Ready] could not verify the schema, serving anyway: %v", err)
+		body["schema"] = "unverified"
+		ctx.JSON(http.StatusOK, body)
+		return
+	}
+	if len(gaps) > 0 {
+		c.Access.Logger.With(ctx.Request.Context()).Errorf(
+			"[Ready] schema is behind this binary, refusing traffic -- run the migration. "+
+				"%d gap(s): %s", len(gaps), db.SummariseGaps(gaps))
+		body["status"] = "degraded"
+		body["schema"] = fmt.Sprintf("%d gap(s); run the migration", len(gaps))
+		ctx.JSON(http.StatusServiceUnavailable, body)
+		return
+	}
+
+	body["schema"] = "ok"
 	ctx.JSON(http.StatusOK, body)
 }

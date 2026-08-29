@@ -14,6 +14,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useAuth } from '@/components/auth-provider'
+import { ClosedNotice, OpenClosedSwitch, useAcceptingOrders } from '@/components/open-closed-toggle'
 import { Button } from '@/components/ui'
 
 const NAV: readonly { href: string; label: string; icon: LucideIcon }[] = [
@@ -53,6 +54,14 @@ function initials(name: string): string {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const { auth, logout } = useAuth()
+  /**
+   * Held by the shell rather than by a page, so there is ONE fetch and ONE source of truth for it.
+   *
+   * It used to live on the order board, which meant the switch existed only while that page was
+   * open. It is restaurant-level state -- as global as the restaurant's name in the corner -- and a
+   * manager on the Menu page has the same reason to close up as one on Orders.
+   */
+  const acceptingOrders = useAcceptingOrders()
   const restaurant = auth?.restaurant.name ?? 'tableX'
 
   return (
@@ -60,6 +69,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="no-print sticky top-0 z-30 flex shrink-0 flex-wrap items-center border-b border-line bg-surface lg:h-dvh lg:w-60 lg:flex-col lg:flex-nowrap lg:items-stretch lg:border-b-0 lg:border-r">
         {/* Brand. The monogram gives the panel an identity at a glance and, on the tablet's top
             bar, keeps the restaurant name from being the widest thing in a 44px strip. */}
+        {/*
+          `min-w-0`, deliberately, which means this bar NEVER WRAPS.
+
+          A flex item with no floor shrinks rather than pushing its neighbours onto a second line,
+          so the brand gives up width to the switch and Sign out and the three stay on one row at
+          every size. The cost is that a long restaurant name truncates on a narrow phone, and that
+          is the trade being made on purpose: two rows of chrome above a kitchen board is worse
+          than an abbreviated name, and the monogram carries identity when the text runs out.
+
+          It follows that anything added to this row is taken straight out of the name. Measure at
+          360px before adding to it.
+        */}
         <div className="order-1 flex min-w-0 flex-1 items-center gap-2.5 px-4 py-3 lg:flex-none">
           <span
             aria-hidden="true"
@@ -67,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             {initials(restaurant)}
           </span>
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1">
             <span className="block truncate text-base font-semibold leading-tight">
               {restaurant}
             </span>
@@ -76,6 +97,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </span>
         </div>
+
+        {/*
+          THE BRAND IS `min-w-0 flex-1`, so everything sharing this row eats into the restaurant's
+          name. Adding the open/close switch with its original "Taking orders" label truncated
+          "Spice Garden" to "Spice G…" at 390px; shortening the label to "Open" bought back enough
+          width for all three to sit on one line. Anything else added here needs checking at 390px
+          against the name, which is the one element identifying which restaurant you are in.
+        */}
 
         {/* Horizontal scroll on the tablet bar rather than a hamburger: five destinations fit, and
             a menu behind a tap is one more tap during service. */}
@@ -140,6 +169,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {auth.staff.role}
               </span>
             </span>
+            {/*
+              Beside the account, so it inherits the movement the footer already performs: on the
+              tablet's top bar it sits next to Sign out, and in the laptop rail it stacks above it.
+              One element, repositioned by `order` and `flex-wrap` -- never a second copy behind a
+              breakpoint, for the reasons argued on the sign-out button above.
+            */}
+            <OpenClosedSwitch
+              state={acceptingOrders}
+              className="lg:mb-2 lg:w-full lg:justify-between"
+            />
+
             <Button size="sm" onClick={logout} className="lg:w-full lg:justify-start">
               Sign out
             </Button>
@@ -147,7 +187,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         ) : null}
       </header>
 
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">
+        {/*
+          The loud half of the switch, on every page rather than only on the board.
+
+          A restaurant accidentally left closed is a silent outage whose victims are not in the room
+          to complain, and the person who can fix it may well be looking at the menu editor.
+        */}
+        <ClosedNotice state={acceptingOrders} />
+        {children}
+      </div>
     </div>
   )
 }

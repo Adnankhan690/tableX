@@ -33,7 +33,10 @@ export function QuantityStepper({
           disabled={disabled}
           aria-label={`Add ${label}`}
           className={cn(
-            'min-w-[5.5rem] h-9 px-4 rounded-xl font-bold text-[0.8125rem] tracking-wide shadow-md uppercase',
+            // 72px against a 96px photo, and 32px tall. NARROWER THAN THE IMAGE is the rule: a
+            // control that overhangs the thing it sits on reads as broken layout rather than as an
+            // overlay, and one that is half the photo's height hides the food.
+            'min-w-[4.5rem] h-8 px-3 rounded-xl font-bold text-[0.75rem] tracking-wide shadow-md uppercase',
             'bg-white text-[#e25c63] border border-[#e25c63]/25 hover:bg-[#fff5f5]',
             'flex items-center justify-center gap-1 transition-transform active:scale-95 disabled:opacity-40',
             className,
@@ -48,7 +51,8 @@ export function QuantityStepper({
     return (
       <div
         className={cn(
-          'min-w-[6rem] h-9 rounded-xl shadow-md bg-[#e25c63] text-white flex items-center justify-between px-2 font-bold select-none',
+          // 80px, still inside the 96px photo. Wider than ADD because it holds three controls.
+          'min-w-[5rem] h-8 rounded-xl shadow-md bg-[#e25c63] text-white flex items-center justify-between px-1.5 font-bold select-none',
           'transition-all',
           className,
         )}
@@ -58,13 +62,13 @@ export function QuantityStepper({
           onClick={() => onChange(quantity - 1)}
           disabled={disabled}
           aria-label={quantity === 1 ? `Remove ${label}` : `One less ${label}`}
-          className="flex h-full w-7 items-center justify-center text-lg leading-none active:opacity-75 disabled:opacity-40"
+          className="flex h-full w-6 items-center justify-center text-base leading-none active:opacity-75 disabled:opacity-40"
         >
           −
         </button>
         <span
           aria-live="polite"
-          className="min-w-6 text-center text-sm font-bold tabular-nums text-white"
+          className="min-w-5 text-center text-xs font-bold tabular-nums text-white"
         >
           {quantity}
         </span>
@@ -73,7 +77,7 @@ export function QuantityStepper({
           onClick={() => onChange(quantity + 1)}
           disabled={disabled || quantity >= max}
           aria-label={`One more ${label}`}
-          className="flex h-full w-7 items-center justify-center text-lg leading-none active:opacity-75 disabled:opacity-40"
+          className="flex h-full w-6 items-center justify-center text-base leading-none active:opacity-75 disabled:opacity-40"
         >
           +
         </button>

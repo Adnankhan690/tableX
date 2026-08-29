@@ -128,6 +128,11 @@ func (a *App) addAdminRoutes(engine *gin.Engine) {
 
 	admin.GET("/settings", a.controllers.Settings.GetSettings)
 	admin.PATCH("/settings", manager, a.controllers.Settings.UpdateSettings)
+	// Open/close is NOT manager-gated, unlike the rest of settings. Closing up is a floor action
+	// taken by whoever is standing there at the end of service, and routing it through a manager
+	// would mean orders keep arriving after the kitchen has gone home -- the same argument that
+	// leaves menu availability open to every role (DECISIONS.md D18).
+	admin.PATCH("/settings/accepting-orders", a.controllers.Settings.SetAcceptingOrders)
 
 	admin.GET("/menu", a.controllers.Menu.GetAdminMenu)
 	admin.POST("/menu/categories", manager, a.controllers.Menu.CreateCategory)
