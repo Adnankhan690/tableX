@@ -1,3 +1,6 @@
+// NOTE: do NOT link `/qr` from here. That page renders the PUBLIC restaurant directory -- every
+// restaurant on the platform, with a QR into each -- so from a page addressed to strangers it
+// publishes the customer list. Demo links must be scoped to the demo restaurant's own slug.
 import { ADMIN_BASE_URL, DEMO_MENU_HREF } from '@/lib/site'
 import { PlateMark } from './glyphs'
 import { Container } from './shell'
@@ -50,7 +53,6 @@ export function SiteFooter() {
               ...(DEMO_MENU_HREF
                 ? [{ href: DEMO_MENU_HREF, label: 'See a live menu', nofollow: true }]
                 : []),
-              { href: '/qr', label: 'All demo codes', nofollow: true },
               { href: '/menu', label: 'Your table', nofollow: true },
             ]}
           />

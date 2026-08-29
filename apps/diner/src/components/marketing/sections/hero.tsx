@@ -1,4 +1,4 @@
-import { DEMO_MENU_HREF, PRIMARY_CTA_HREF } from '@/lib/site'
+import { DEMO_MENU_HREF } from '@/lib/site'
 import { BoardMock } from '../board-mock'
 import { ArrowRight } from '../glyphs'
 import { PhoneMock } from '../phone-mock'
@@ -67,17 +67,17 @@ export function Hero() {
             style={{ animationDelay: '180ms' }}
           >
             <a
-              href={PRIMARY_CTA_HREF}
+              href="#book-demo"
               className="flex min-h-tap items-center justify-center rounded-card bg-accent px-6 text-[1.0625rem] font-semibold text-accent-ink transition-opacity active:opacity-80"
             >
-              Get your restaurant set up
+              Book a demo
             </a>
             <a
               href={hasDemo ? DEMO_MENU_HREF : '#how-it-works'}
               rel={hasDemo ? 'nofollow' : undefined}
               className="group flex min-h-tap items-center gap-1.5 px-1 text-[1.0625rem] font-medium text-ink"
             >
-              {hasDemo ? 'See a live menu' : 'See how it works'}
+              {hasDemo ? 'Try the live demo' : 'See how it works'}
               <ArrowRight
                 size={16}
                 className="transition-transform duration-150 group-hover:translate-x-0.5"

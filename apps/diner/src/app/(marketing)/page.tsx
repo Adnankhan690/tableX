@@ -6,8 +6,10 @@ import { Hero } from '@/components/marketing/sections/hero'
 import { HowItWorks } from '@/components/marketing/sections/how-it-works'
 import { LiveDemo } from '@/components/marketing/sections/live-demo'
 import { Payments } from '@/components/marketing/sections/payments'
+import { Pricing } from '@/components/marketing/sections/pricing'
 import { Reliability } from '@/components/marketing/sections/reliability'
 import { TheMenu } from '@/components/marketing/sections/the-menu'
+import { WhyItPays } from '@/components/marketing/sections/why-it-pays'
 import { YourFloor } from '@/components/marketing/sections/your-floor'
 import { SiteFooter } from '@/components/marketing/site-footer'
 import { SiteHeader } from '@/components/marketing/site-header'
@@ -21,8 +23,9 @@ import { SITE_URL } from '@/lib/site'
  * time-to-first-byte, which on a free tier is measured in tens of seconds.
  *
  * The section order is an argument, not a list: what it is (hero), what that means concretely
- * (capabilities), how it works, the screen it lives or dies on, then the audience switches to the
- * owner for reliability, payments and the floor, and finally the objections and the ask.
+ * (capabilities), what stops happening on the owner's floor, how it works, the screen it lives or
+ * dies on, then the mechanism for a buyer who wants it (reliability, payments, the floor), then
+ * try-it-yourself, the price, the objections, and the ask.
  */
 
 /**
@@ -68,12 +71,18 @@ export default function Page() {
       <main id="main">
         <Hero />
         <CapabilityStrip />
+        {/* The owner's reasons come before any of the mechanism sections: a prospect decides
+            whether this is for them long before they care how it is built. */}
+        <WhyItPays />
         <HowItWorks />
         <TheMenu />
         <Reliability />
         <Payments />
         <YourFloor />
         <LiveDemo />
+        {/* Price before the FAQ, because "what does it cost" is the question the FAQ would
+            otherwise be answering last. */}
+        <Pricing />
         <Faq />
         <FinalCta />
       </main>

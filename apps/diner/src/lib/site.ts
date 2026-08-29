@@ -64,14 +64,12 @@ if (process.env.NODE_ENV === 'production' && SITE_URL.startsWith('https://') && 
 }
 
 /**
- * The `mailto:` for every primary CTA, pre-filled with the three things we need to create a
- * restaurant. A blank compose window asks the reader to work out what to say; these three lines
- * are the whole onboarding intake (docs/DECISIONS.md D14).
+ * NOTE: the `mailto:` itself is NOT built here.
+ *
+ * It was, back when every CTA was a bare mail link. The demo form now composes its own from the
+ * four answers it collects (`sections/book-demo.tsx`), so a second copy here would be a second
+ * definition of the subject line and body -- and the one that is easier to find is the one that
+ * is not used. What stays here is the address and the build-time guard above it, because those
+ * are configuration; the message is not.
  */
-export const CONTACT_MAILTO = CONTACT_EMAIL
-  ? `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('tableX for my restaurant')}&body=${encodeURIComponent('Restaurant name:\nCity:\nNumber of tables:\n')}`
-  : ''
-
-/** Where a primary CTA points, and what it says, when there is no contact address configured. */
-export const PRIMARY_CTA_HREF = CONTACT_MAILTO || '#how-it-works'
 export const DEMO_MENU_HREF = DEMO_RESTAURANT_SLUG ? `/r/${DEMO_RESTAURANT_SLUG}` : ''

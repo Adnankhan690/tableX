@@ -1,5 +1,5 @@
 import { DEMO_MENU_HREF } from '@/lib/site'
-import { ArrowRight, MenuGlyph, QrPayGlyph } from '../glyphs'
+import { ArrowRight, MenuGlyph } from '../glyphs'
 import { Container, SectionHeader } from '../shell'
 
 /**
@@ -12,6 +12,13 @@ import { Container, SectionHeader } from '../shell'
  *
  * NEVER SHIP A DEAD QR OR A LINK TO A 404 ON A QR PRODUCT'S LANDING PAGE. Unset is the correct
  * state until a restaurant onboarded *as a demo* exists on production with a filled-in menu.
+ * `backend/seeds/demo_restaurant.sql` creates exactly that.
+ *
+ * IT LINKS ONE PLACE, AND THAT IS NOT AN OVERSIGHT. An earlier version also linked `/qr`, the
+ * diner app's code gallery. That page calls the PUBLIC restaurant directory and renders a card
+ * for every restaurant on the platform -- so linking it from a page addressed to strangers would
+ * publish the customer list, next to an invitation to scan into their tables. Anything added here
+ * must be scoped to the demo restaurant's own slug.
  */
 export function LiveDemo() {
   if (!DEMO_MENU_HREF) return null
@@ -26,18 +33,12 @@ export function LiveDemo() {
           lead="The fastest way to understand tableX is to be the diner. Open the demo menu on your phone and order something."
         />
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-10 max-w-[520px]">
           <DemoCard
             href={DEMO_MENU_HREF}
             Glyph={MenuGlyph}
             title="Open the demo menu"
             body="The real diner flow, on a real restaurant record: browse, add to the cart, place an order and watch it move."
-          />
-          <DemoCard
-            href="/qr"
-            Glyph={QrPayGlyph}
-            title="All demo table codes"
-            body="Server-generated codes, one per table. Point a phone at your screen and it opens that table."
           />
         </div>
       </Container>

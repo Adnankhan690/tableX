@@ -1,6 +1,7 @@
-import { CONTACT_MAILTO, DEMO_MENU_HREF } from '@/lib/site'
+import { DEMO_MENU_HREF } from '@/lib/site'
 import { ArrowRight } from '../glyphs'
 import { Container } from '../shell'
+import { BookDemoForm } from './book-demo'
 
 /**
  * The closing call to action, and the one centred block on a page that is otherwise
@@ -13,13 +14,12 @@ import { Container } from '../shell'
  * it publicly turns a deliberate trust boundary into a password prompt on the open internet.
  */
 export function FinalCta() {
-  const hasContact = CONTACT_MAILTO !== ''
   const hasDemo = DEMO_MENU_HREF !== ''
 
   return (
     <section
       aria-labelledby="cta-h"
-      id="get-set-up"
+      id="book-demo"
       className="border-t border-line py-16 md:py-24 lg:py-32"
     >
       <Container>
@@ -28,37 +28,40 @@ export function FinalCta() {
             id="cta-h"
             className="mx-auto max-w-[22ch] font-display text-[clamp(28px,3.2vw,42px)] font-semibold leading-[1.08] tracking-[-0.022em] text-ink"
           >
-            Getting set up is a conversation, not a signup form.
+            Book a demo. We set it up with you.
           </h2>
           <p className="mx-auto mt-4 max-w-[54ch] text-[1.0625rem] leading-[1.55] text-muted md:text-[1.1875rem]">
-            We create the restaurant, its first owner login and its floor of tables together, then
-            hand it over. Tell us the name of the place and how many tables it has.
+            Tell us where you are and we will walk your floor through it — the menu, the table cards
+            and the kitchen board — then hand it over running.
           </p>
 
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
-            <a
-              href={hasContact ? CONTACT_MAILTO : '#how-it-works'}
-              className="flex min-h-tap items-center justify-center rounded-card bg-accent px-6 text-[1.0625rem] font-semibold text-accent-ink transition-opacity active:opacity-80"
-            >
-              {hasContact ? 'Email us about your restaurant' : 'See how it works'}
-            </a>
-            {hasDemo ? (
+          {/*
+            The form itself, not a button that scrolls to one. This is the last thing on the page
+            and the only place a prospect can act; making them travel to another section to do it
+            is a step that only ever loses people.
+          */}
+          <div className="mx-auto mt-8 max-w-[560px]">
+            <BookDemoForm />
+          </div>
+
+          {hasDemo ? (
+            <div className="mt-8 border-t border-line pt-6">
               <a
                 href={DEMO_MENU_HREF}
                 rel="nofollow"
-                className="group flex min-h-tap items-center gap-1.5 px-1 text-[1.0625rem] font-medium text-ink"
+                className="group inline-flex min-h-tap items-center gap-1.5 text-[1.0625rem] font-medium text-ink"
               >
-                See a live menu
+                Not ready to talk? Open the demo menu
                 <ArrowRight
                   size={16}
                   className="transition-transform duration-150 group-hover:translate-x-0.5"
                 />
               </a>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <p className="mt-6 text-[0.8125rem] text-muted">
-            You will need a menu and a printer. Nothing else.
+            Free while we onboard our first restaurants. No card, no contract.
           </p>
         </div>
       </Container>

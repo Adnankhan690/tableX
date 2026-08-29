@@ -51,10 +51,10 @@ export function SiteHeader() {
             Staff sign in
           </a>
           <a
-            href="#get-set-up"
+            href="#book-demo"
             className="flex min-h-tap items-center rounded-card bg-accent px-4 text-[0.9375rem] font-semibold text-accent-ink transition-opacity active:opacity-80"
           >
-            Get set up
+            Book a demo
           </a>
         </div>
       </div>
