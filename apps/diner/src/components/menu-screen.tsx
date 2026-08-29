@@ -559,7 +559,18 @@ function DishRow({
         with the row divider: it hangs 12px below the photo, which is exactly the row's padding.
       */}
       <div className="relative mb-3 shrink-0 self-start">
-        <DishImage name={item.name} {...(item.image_url ? { url: item.image_url } : {})} />
+        {/*
+          96, not the 76 default. An overlaid control needs a photo big enough to still read as a
+          photo underneath it -- at 76 the button was wider than the image and covered a third of
+          it, which is worse than no photo at all. Passed here rather than changed in DishImage,
+          because the cart and order screens show the same component at thumbnail size with nothing
+          on top of it.
+        */}
+        <DishImage
+          name={item.name}
+          size={96}
+          {...(item.image_url ? { url: item.image_url } : {})}
+        />
         {/*
           `addable`, not `!unavailable`. The two differ when the restaurant itself is closed
           (DECISIONS.md D18) -- a sold-out dish and a shut kitchen both mean "cannot be ordered",
