@@ -18,16 +18,24 @@ pointing at the same repository with different root directories.
 ## Migrations are manual, and this is the thing that will bite you
 
 `preDeployCommand` is a paid Render feature and the API runs on the free plan, so **nothing
-applies migrations automatically**. The consequences are worth stating plainly, because none
-of them announce themselves:
+applies migrations automatically**. The consequence is worth stating plainly, because it does
+not look like a schema problem from the outside:
 
 - The server starts fine against a database with no tables. `config.Validate` checks
   configuration, not schema.
-- `/api/public/v1/health/ready` reports healthy, because it proves the *connection*, not the
-  schema.
-- The failure surfaces on the first real query, as a 500 that reads like an application bug.
+- `/api/public/v1/health/ready` then compares the live schema against the models and answers
+  **503**, naming the missing tables and columns in the logs.
+- `render.yaml` routes on that probe, so the instance is never put into rotation and requests
+  to `api.tabley.in` **hang rather than answer** — clients time out and browsers show the
+  fetch as `(canceled)`, which reads like a network or CORS fault and is neither.
+
+The blast radius is the whole API, not the new feature. One missing table takes orders, menu
+and payments down with it. This is not hypothetical: `019_create_demo_request` shipped in #41
+without being applied, and the entire API was dark until it was run by hand.
 
 So: run the migration yourself before the first deploy, and again after every schema change.
+Run it **before** the deploy goes out — the running binary does not care that an extra table
+exists, so migrating first makes the rollout seamless instead of a gap in service.
 
 ### Running a migration
 
@@ -50,15 +58,39 @@ docker run --rm \
 The three variables beyond `DATABASE_URL` are there because `migrate` loads configuration
 through the same `config.Load` the server uses, which validates the whole file. That is
 deliberate: a configuration that would not boot the server should not be allowed to migrate
-the database either.
+the database either. They are the only three: `TABLEX_ADMIN_BASE_URL`, `TABLEX_ALLOWED_ORIGINS`
+and the R2 block are server concerns the migrator never reads.
+
+**Keep the DSN off the command line.** Typed inline it lands in `~/.zsh_history` in plaintext,
+and it is the production database password. Put it in a file that is never committed and pass
+that instead:
+
+```bash
+echo 'DATABASE_URL=<Supabase session-mode pooler URL>' > /tmp/tablex-migrate.env
+docker run --rm --env-file /tmp/tablex-migrate.env \
+  -e TABLEX_ENV=production \
+  -e TABLEX_JWT_SECRET="$(openssl rand -hex 32)" \
+  -e TABLEX_DINER_BASE_URL="https://tabley.in" \
+  -e TABLEX_TRUSTED_PROXIES="10.0.0.0/8" \
+  --entrypoint /app/migrate tablex-api:local \
+  --config /app/config/production.yml
+rm /tmp/tablex-migrate.env
+```
+
+If it does leak, rotate it: Supabase → Settings → Database → Reset password, then update
+`DATABASE_URL` in the Render dashboard.
 
 Expect, on a fresh database:
 
 ```
 applied 001_create_restaurant
-... 19 lines ...
-applied 19 migration(s)
+... 20 lines ...
+applied 20 migration(s)
 ```
+
+Twenty, not nineteen: `014` is used twice (`014_add_menu_item_image_key` and
+`014_create_password_reset_code`). Both apply — the version recorded in `schema_migration` is
+the whole filename, not the number — and a lexical sort keeps their order stable.
 
 On a database that is only *behind*, it applies the gap and leaves the rest alone -- so after
 shipping the ratings work it prints the four it was missing:
@@ -249,7 +281,7 @@ down" rather than as a configuration error.
 ## First deploy, in order
 
 1. Create the Supabase project in `singapore`; copy the session-mode pooler URL.
-2. Run the migration (above). Confirm `applied 14 migration(s)`.
+2. Run the migration (above). Confirm `applied 20 migration(s)`.
 3. Apply the Blueprint on Render; fill in the six `sync: false` variables.
 4. Point `api.tabley.in` at the Render service; wait for TLS.
 5. Set the two `NEXT_PUBLIC_` variables on both Vercel projects and **redeploy both**.
