@@ -142,10 +142,25 @@ services:
       - key: TABLEX_LOG_FORMAT
         value: json
 
-      # VERIFY THIS ONCE DEPLOYED. Render terminates TLS at its edge and forwards over the
-      # private network, so the immediate peer is a private address and this range covers it.
-      # If it is wrong, Gin reads the wrong entry from X-Forwarded-For, the client IP becomes
-      # attacker-controlled, and the per-IP rate limiter silently stops limiting -- it fails
-      # open and looks healthy. Confirm against a real request's forwarded chain.
+      # VERIFIED against the live deployment on 2026-08-26. Render terminates TLS at its edge
+      # and forwards over the private network, so the immediate peer is a private address and
+      # this range covers it.
+      #
+      # Getting this wrong fails open and looks healthy: Gin would read the wrong entry from
+      # X-Forwarded-For, the client IP would become attacker-controlled, and the per-IP rate
+      # limiter would silently stop limiting. config.Validate can only require that the value
+      # is set, not that it is correct, so the check has to be empirical.
+      #
+      # How it was verified -- rerun this after any change to the CIDR or the hosting platform:
+      #
+      #   seq 1 700 | xargs -P 20 -I{} sh -c 'curl -s -o /dev/null -w "%{http_code}\n" \
+      #     -H "X-Forwarded-For: 203.0.113.$((RANDOM % 250 + 1))" \
+      #     https://api.tabley.in/api/public/v1/restaurants'
+      #
+      # 700 requests, each forging a different client IP, fired concurrently so they land
+      # inside one wall-clock minute -- the limiter's window is aligned to the minute, so a
+      # sequential run straddles boundaries and never reaches the threshold no matter how the
+      # proxies are configured. Any 429s mean the forged header was ignored and the limiter
+      # holds. All 200s would mean it is evadable.
       - key: TABLEX_TRUSTED_PROXIES
         value: 10.0.0.0/8
