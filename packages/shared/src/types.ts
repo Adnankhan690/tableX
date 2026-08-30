@@ -886,6 +886,17 @@ export interface ChangePasswordRequest {
   new_password: string
 }
 
+/**
+ * Changes the caller's own SIGN-IN email -- the address `/auth/login` checks.
+ *
+ * Not to be confused with `RestaurantSettings.email`, which is the business's contact address.
+ * The two are separate so that changing where invoices arrive cannot lock somebody out.
+ */
+export interface ChangeEmailRequest {
+  current_password: string
+  new_email: string
+}
+
 export interface StaffListResponse {
   staff: StaffMember[]
 }

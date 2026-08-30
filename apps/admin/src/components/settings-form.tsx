@@ -309,7 +309,20 @@ export function SettingsForm() {
                     />
                   )}
                 </Field>
-                <Field label="Email" optional error={fieldErrors.email}>
+                {/*
+                  "Contact email", never bare "Email", and the hint is not decoration.
+                  This field was briefly prefilled with the signed-in user's LOGIN address, and
+                  the obvious conclusion -- that editing it changes what you sign in with -- is
+                  wrong: it writes restaurant.email, and sign-in reads staff_user.email. The
+                  label and the hint are what stop that inference being drawn again. Changing
+                  your login lives on the Staff page.
+                */}
+                <Field
+                  label="Contact email"
+                  optional
+                  error={fieldErrors.email}
+                  hint="Not the address you sign in with."
+                >
                   {({ id, describedBy, invalid }) => (
                     <Input
                       id={id}

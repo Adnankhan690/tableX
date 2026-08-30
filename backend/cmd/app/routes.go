@@ -132,6 +132,9 @@ func (a *App) addAdminRoutes(engine *gin.Engine) {
 
 	admin.GET("/auth/me", a.controllers.Auth.Me)
 	admin.POST("/auth/change-password", a.controllers.Auth.ChangePassword)
+	// Every role, and deliberately NOT behind `owner`: this changes the caller's own sign-in
+	// address, not somebody else's. A floor staff member must be able to fix their own login.
+	admin.POST("/auth/change-email", a.controllers.Auth.ChangeEmail)
 
 	admin.GET("/staff", a.controllers.Auth.ListStaff)
 	admin.POST("/staff", owner, a.controllers.Auth.CreateStaff)

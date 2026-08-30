@@ -332,7 +332,7 @@ Roles: `owner` ⊃ `manager` ⊃ `staff`. Marked below where it differs.
 | | Role |
 | --- | --- |
 | `POST /auth/login` · `POST /auth/refresh` | — |
-| `GET /auth/me` · `POST /auth/change-password` | any |
+| `GET /auth/me` · `POST /auth/change-password` · `POST /auth/change-email` | any — each changes the caller's OWN account, so not owner-gated |
 | `GET /staff` | any |
 | `POST /staff` · `PATCH /staff/:uid` | **owner** |
 | `GET /settings` | any |
@@ -356,6 +356,21 @@ Roles: `owner` ⊃ `manager` ⊃ `staff`. Marked below where it differs.
 **Why availability is open to every role** while the rest of menu management is not: marking a
 dish sold out is a floor action taken mid-service. Routing it through a manager means diners keep
 ordering something the kitchen ran out of. Repricing stays restricted.
+
+### Two different emails ([D3](./DECISIONS.md))
+
+`staff_user.email` is an **identity**: it is what `POST /auth/login` resolves, and it is unique per
+restaurant. `restaurant.email` is the business's **contact address**, carried on `RestaurantSettings`
+and edited through `PATCH /settings`. They are separate columns on purpose — changing where invoices
+arrive must not be able to lock somebody out of the panel.
+
+Only `POST /auth/change-email` moves a login, and it requires the caller's current password. It also
+rejects an address already used by any staff member **at any restaurant**, which is stricter than the
+`(restaurant_id, email)` unique constraint: login resolves an address platform-wide and refuses when
+it finds more than one match, so an address free at this restaurant but taken at another would
+satisfy the database and still leave both accounts unable to sign in.
+
+Neither `change-email` nor `change-password` signs you out — the token carries the staff UID.
 
 ### Dish photos ([D15](./DECISIONS.md))
 

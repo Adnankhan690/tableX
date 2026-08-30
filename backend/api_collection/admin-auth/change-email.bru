@@ -1,0 +1,74 @@
+meta {
+  name: change-email
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/api/admin/v1/auth/change-email
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+    "current_password": "{{staff_password}}",
+    "new_email": "{{staff_email}}"
+  }
+}
+
+tests {
+  test("responds 200", function () {
+    expect(res.status).to.equal(200)
+  })
+
+  test("envelope reports success", function () {
+    expect(res.body.code).to.equal("00000")
+  })
+
+  test("returns the updated staff member, and never a password field", function () {
+    // The client caches this record to render "signed in as", so it has to come back.
+    expect(res.body.data).to.have.property("email")
+    expect(res.body.data).to.not.have.property("password_hash")
+    expect(res.body.data).to.not.have.property("password")
+  })
+}
+
+docs {
+  # Change your OWN sign-in email
+
+The address `/auth/login` checks. **Not** `restaurant.email`, which is the business's contact
+address and lives on `PATCH /settings` -- the two are kept apart so that changing where invoices
+arrive cannot lock somebody out of the panel.
+
+Every role, and deliberately not owner-only: this changes the caller's own login, not somebody
+else's. A floor staff member must be able to fix their own address.
+
+Set as a no-op here (new == current) so a full collection run does not invalidate `staff_email`
+for every request that follows.
+
+Things worth provoking:
+
+- a wrong `current_password` -> `TX_AUT_001`. Required even though the caller is already
+  authenticated, because an email is the other half of a credential: without it an unattended
+  tablet is enough to move a login to an attacker's address and then take the account over
+  through forgot-password.
+- `"new_email": "not-an-address"` -> 422. Shape-checked in the service so the error names the
+  problem, rather than arriving as gin's generic 400.
+- an address already used by ANOTHER staff member -> `TX_AUT_007`. Checked across every
+  restaurant, which is stricter than the `(restaurant_id, email)` unique constraint: login
+  resolves an address platform-wide and refuses when it finds more than one match, so an address
+  free at this restaurant but taken at another would satisfy the database and still leave BOTH
+  accounts unable to sign in.
+
+Changing the address does **not** sign you out, exactly as changing your password does not: the
+token carries the staff UID, not the email.
+}

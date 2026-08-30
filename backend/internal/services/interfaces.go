@@ -50,6 +50,10 @@ type ServiceAuthMethods interface {
 	UpdateStaff(ctx context.Context, actor *StaffPrincipal, uid string, req *types.RequestUpdateStaff) (*types.StaffMember, *response.ApplicationError)
 	ListStaff(ctx context.Context, actor *StaffPrincipal) (*types.ResponseStaffList, *response.ApplicationError)
 	ChangePassword(ctx context.Context, actor *StaffPrincipal, req *types.RequestChangePassword) *response.ApplicationError
+	// ChangeEmail returns the updated staff member so the caller can refresh the identity it
+	// has cached -- the panel keeps the signed-in staff record in local storage, and leaving a
+	// stale address there would show the old one until the next sign-in.
+	ChangeEmail(ctx context.Context, actor *StaffPrincipal, req *types.RequestChangeEmail) (*types.StaffMember, *response.ApplicationError)
 	Me(ctx context.Context, actor *StaffPrincipal) (*types.StaffMember, *response.ApplicationError)
 	ForgotPassword(ctx context.Context, email string) *response.ApplicationError
 	VerifyResetCode(ctx context.Context, email string, code string) *response.ApplicationError

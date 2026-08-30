@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strings"
 
 	"gorm.io/gorm"
@@ -13,15 +12,6 @@ import (
 	"tablex/internal/response"
 	"tablex/internal/types"
 )
-
-// Deliberately loose: one @, something either side, a dot in the domain.
-//
-// The strict grammar in RFC 5322 admits addresses no mail provider will ever issue and rejects
-// nothing a typo actually produces, so matching it would buy nothing here. This is optional contact
-// detail, not an identity or a login: the cost of accepting a slightly odd address is a bounced
-// email, and the cost of rejecting a valid one is a restaurant that cannot record its own address.
-// That asymmetry is what sets the strictness.
-var contactEmail = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
 type serviceRestaurant struct {
 	Access *ServiceAccess
@@ -83,7 +73,7 @@ func (s *serviceRestaurant) UpdateSettings(
 		email := strings.TrimSpace(*req.Email)
 		// Empty is not a malformed address, it is the absence of one -- the field is optional and
 		// clearing it is a legitimate edit. Same shape as the timezone check below.
-		if email != "" && !contactEmail.MatchString(email) {
+		if email != "" && !looksLikeEmail(email) {
 			return nil, response.ErrValidation.WithMessage(
 				"that does not look like an email address")
 		}
