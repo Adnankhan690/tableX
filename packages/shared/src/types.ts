@@ -122,6 +122,13 @@ export interface RestaurantSummary {
 /** The staff-only view, including the payout and tax configuration. */
 export interface RestaurantSettings extends RestaurantSummary {
   timezone: string
+  /**
+   * The restaurant's contact address.
+   *
+   * Here rather than on `RestaurantSummary` deliberately: the public directory is enumerable by
+   * anyone, so an address on the summary would be a scrapeable list of them.
+   */
+  email?: string
   gst_number?: string
   tax_bps: number
   service_charge_bps: number
@@ -137,6 +144,7 @@ export interface UpdateRestaurantRequest {
   logo_url?: string
   address?: string
   phone?: string
+  email?: string
   timezone?: string
   gst_number?: string
   /** Basis points: 500 = 5.00%. */

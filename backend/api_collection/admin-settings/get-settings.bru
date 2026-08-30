@@ -33,8 +33,12 @@ tests {
 docs {
   # Restaurant settings
 
-Returns `RestaurantSettings` -- the staff-only view, including `upi_vpa`, `gst_number` and the rate
-configuration that no public endpoint carries.
+Returns `RestaurantSettings` -- the staff-only view, including `upi_vpa`, `gst_number`, `email` and
+the rate configuration that no public endpoint carries.
+
+`email` is the restaurant's own contact address, and is staff-only for a reason: the public
+directory is enumerable by anyone, so carrying it on `RestaurantSummary` would publish a scrapeable
+list of addresses. It is also not `staff_user.email` -- that one is a login identity.
 
 `tax_bps` is basis points: 500 is 5.00%. The admin UI converts to and from percent at the edge.
 }

@@ -93,6 +93,7 @@ func toRestaurantSettings(r *models.Restaurant) *types.RestaurantSettings {
 	return &types.RestaurantSettings{
 		RestaurantSummary: toRestaurantSummary(r),
 		Timezone:          r.Timezone,
+		Email:             r.Email,
 		GSTNumber:         r.GSTNumber,
 		TaxBps:            r.TaxBps,
 		ServiceChargeBps:  r.ServiceChargeBps,

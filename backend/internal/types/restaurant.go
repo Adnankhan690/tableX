@@ -25,7 +25,11 @@ type RestaurantSummary struct {
 // RestaurantSettings is the full, staff-only view.
 type RestaurantSettings struct {
 	RestaurantSummary
-	Timezone         string `json:"timezone"`
+	Timezone string `json:"timezone"`
+	// Email is the restaurant's contact address. On this staff-only object rather than
+	// RestaurantSummary: the public directory is enumerable by anyone, and putting an address
+	// there would publish a scrapeable list of them.
+	Email            string `json:"email,omitempty"`
 	GSTNumber        string `json:"gst_number,omitempty"`
 	TaxBps           int    `json:"tax_bps"`
 	ServiceChargeBps int    `json:"service_charge_bps"`
@@ -42,8 +46,15 @@ type RequestUpdateRestaurant struct {
 	LogoURL     *string `json:"logo_url,omitempty"`
 	Address     *string `json:"address,omitempty"`
 	Phone       *string `json:"phone,omitempty" binding:"omitempty,max=20"`
-	Timezone    *string `json:"timezone,omitempty"`
-	GSTNumber   *string `json:"gst_number,omitempty" binding:"omitempty,max=20"`
+	// Length only. The SHAPE is checked in the service, deliberately: `binding:"omitempty,email"`
+	// looks like it would do the job and does not. On a *string, validator's `omitempty` tests the
+	// POINTER for nil, not the string for emptiness -- so a present-but-empty "email": "" reaches
+	// the `email` rule and is rejected, which makes clearing the field impossible. It also fails as
+	// a generic 400 "the request could not be understood", naming neither the field nor the
+	// problem. The service returns a 422 that says which field and why.
+	Email     *string `json:"email,omitempty" binding:"omitempty,max=254"`
+	Timezone  *string `json:"timezone,omitempty"`
+	GSTNumber *string `json:"gst_number,omitempty" binding:"omitempty,max=20"`
 	// Basis points, 0-10000. Rejecting out-of-range here stops a typo'd "5000" from
 	// charging every diner 50% tax.
 	TaxBps           *int    `json:"tax_bps,omitempty" binding:"omitempty,min=0,max=10000"`

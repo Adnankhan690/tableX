@@ -42,8 +42,14 @@ semi-structured need (verified provider payloads on `payment.raw_payload`) witho
 
 **`restaurant`** — the tenant root.
 `id`, `uid` (`rst_…`), `name`, `slug` (unique; appears in `/r/{slug}`), `description`, `logo_url`,
-`address`, `phone`, `currency`, `timezone`, `gst_number`, `tax_bps`, `service_charge_bps`,
-`upi_vpa`, `upi_payee_name`, `payment_provider`, `status`, timestamps.
+`address`, `phone`, `email`, `currency`, `timezone`, `gst_number`, `tax_bps`,
+`service_charge_bps`, `upi_vpa`, `upi_payee_name`, `payment_provider`, `accepting_orders`,
+`status`, timestamps.
+
+`email` is the business's contact address and is **not** `staff_user.email`: that one is a login
+identity, unique per person. Keeping them apart means changing where invoices arrive cannot lock
+somebody out of the panel. It is served only on the staff-only settings object, never on the
+public summary the enumerable directory is built from.
 
 `timezone` is load-bearing: the daily order-number counter and the dashboard's date windows are
 computed in the restaurant's zone, not UTC, because a 1am order belongs to the previous evening's

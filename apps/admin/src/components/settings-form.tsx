@@ -38,6 +38,22 @@ function percentToBps(raw: string): number | null {
 }
 
 /**
+ * Deliberately loose: one @, something either side, a dot in the domain.
+ *
+ * The same rule the service applies (see `contactEmail` in service_restaurant.go) -- the server is
+ * still the one that decides, and this exists only so a typo is caught next to the field that
+ * caused it rather than coming back as a banner after a failed save.
+ *
+ * Loose on purpose at BOTH ends. The strict RFC 5322 grammar admits addresses no provider will
+ * issue and rejects nothing a typo actually produces. This is optional contact detail, not a
+ * login: accepting a slightly odd address costs a bounced email, and rejecting a valid one costs a
+ * restaurant that cannot record its own address.
+ */
+function emailLooksValid(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+/**
  * The two payment providers, each with the fact an owner actually needs at the moment of
  * choosing (docs/DECISIONS.md D2): static UPI cannot confirm that money arrived. The longer
  * warning below the control stays -- this is the one-line version, at the point of decision.
@@ -68,7 +84,11 @@ export function SettingsForm() {
    * They used to be one banner string at the top of a 2,400px page: "GST must be between 0 and 30"
    * left the manager to work out which of eight numeric inputs it meant.
    */
-  const [fieldErrors, setFieldErrors] = useState<{ tax?: string; service?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string
+    tax?: string
+    service?: string
+  }>({})
   const [busy, setBusy] = useState(false)
 
   const [form, setForm] = useState({
@@ -76,6 +96,7 @@ export function SettingsForm() {
     description: '',
     address: '',
     phone: '',
+    email: '',
     gstNumber: '',
     taxPercent: '',
     servicePercent: '',
@@ -98,6 +119,7 @@ export function SettingsForm() {
             description: result.description ?? '',
             address: result.address ?? '',
             phone: result.phone ?? '',
+            email: result.email ?? '',
             gstNumber: result.gst_number ?? '',
             taxPercent: bpsToPercent(result.tax_bps),
             servicePercent: bpsToPercent(result.service_charge_bps),
@@ -119,7 +141,13 @@ export function SettingsForm() {
     const taxBps = percentToBps(form.taxPercent)
     const serviceBps = percentToBps(form.servicePercent)
 
-    const errors: { tax?: string; service?: string } = {}
+    const email = form.email.trim()
+
+    const errors: { email?: string; tax?: string; service?: string } = {}
+    // Empty is fine -- the field is optional, and clearing it is a legitimate edit.
+    if (email !== '' && !emailLooksValid(email)) {
+      errors.email = 'That does not look like an email address.'
+    }
     if (taxBps === null) {
       errors.tax = 'A percentage between 0 and 100, with at most two decimals.'
     }
@@ -127,8 +155,17 @@ export function SettingsForm() {
       errors.service = 'A percentage between 0 and 100.'
     }
     setFieldErrors(errors)
-    if (taxBps === null || serviceBps === null) {
-      setNotice({ tone: 'danger', text: 'Two fields need fixing before this can be saved.' })
+
+    if (taxBps === null || serviceBps === null || errors.email !== undefined) {
+      // Counted rather than hard-coded: it used to say "Two fields" whichever one was wrong.
+      const bad = Object.keys(errors).length
+      setNotice({
+        tone: 'danger',
+        text:
+          bad === 1
+            ? 'One field needs fixing before this can be saved.'
+            : `${bad} fields need fixing before this can be saved.`,
+      })
       return
     }
 
@@ -137,6 +174,7 @@ export function SettingsForm() {
       description: form.description.trim(),
       address: form.address.trim(),
       phone: form.phone.trim(),
+      email,
       gst_number: form.gstNumber.trim(),
       tax_bps: taxBps,
       service_charge_bps: serviceBps,
@@ -179,6 +217,7 @@ export function SettingsForm() {
       form.description !== (settings.description ?? '') ||
       form.address !== (settings.address ?? '') ||
       form.phone !== (settings.phone ?? '') ||
+      form.email !== (settings.email ?? '') ||
       form.gstNumber !== (settings.gst_number ?? '') ||
       form.upiVpa !== (settings.upi_vpa ?? '') ||
       form.upiPayeeName !== (settings.upi_payee_name ?? '') ||
@@ -267,6 +306,22 @@ export function SettingsForm() {
                       disabled={!canEdit}
                       inputMode="tel"
                       onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    />
+                  )}
+                </Field>
+                <Field label="Email" optional error={fieldErrors.email}>
+                  {({ id, describedBy, invalid }) => (
+                    <Input
+                      id={id}
+                      aria-describedby={describedBy}
+                      aria-invalid={invalid}
+                      type="email"
+                      value={form.email}
+                      disabled={!canEdit}
+                      inputMode="email"
+                      autoComplete="email"
+                      placeholder="hello@restaurant.com"
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
                     />
                   )}
                 </Field>

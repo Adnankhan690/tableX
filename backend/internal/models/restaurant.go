@@ -13,9 +13,12 @@ type Restaurant struct {
 	LogoURL     string `gorm:"type:text" json:"logo_url,omitempty"`
 	Address     string `gorm:"type:text" json:"address,omitempty"`
 	Phone       string `gorm:"size:20" json:"phone,omitempty"`
-	Currency    string `gorm:"size:8;not null;default:'INR'" json:"currency"`
-	Timezone    string `gorm:"size:64;not null;default:'Asia/Kolkata'" json:"timezone"`
-	GSTNumber   string `gorm:"column:gst_number;size:20" json:"gst_number,omitempty"`
+	// The restaurant's own contact address -- not StaffUser.Email, which is a login
+	// identity. Staff-only: it is on RestaurantSettings, never RestaurantSummary.
+	Email     string `gorm:"size:254" json:"email,omitempty"`
+	Currency  string `gorm:"size:8;not null;default:'INR'" json:"currency"`
+	Timezone  string `gorm:"size:64;not null;default:'Asia/Kolkata'" json:"timezone"`
+	GSTNumber string `gorm:"column:gst_number;size:20" json:"gst_number,omitempty"`
 
 	// Basis points, not a percentage float: 500 = 5.00%. Keeps every money computation in
 	// integer arithmetic (DECISIONS.md D7).
