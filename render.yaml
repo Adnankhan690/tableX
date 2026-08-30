@@ -40,8 +40,11 @@ services:
     # /health/ready checks the database. Routing traffic to an instance that cannot reach
     # Postgres just converts a deploy problem into 500s.
     #
-    # Note it only proves the connection, not the schema -- with migrations run by hand this
-    # will report healthy against an empty database.
+    # It proves the SCHEMA as well as the connection, and that has teeth here: because
+    # migrations are manual (see the plan note above), a deploy whose migration was forgotten
+    # fails this probe, takes no traffic, and leaves api.tabley.in answering nothing at all --
+    # every endpoint, not just the new one. Callers see a hang, not a 503. Run the migration
+    # BEFORE deploying and the window never opens; docs/DEPLOYMENT.md has the command.
     healthCheckPath: /api/public/v1/health/ready
 
     envVars:
