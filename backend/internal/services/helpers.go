@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -93,6 +94,7 @@ func toRestaurantSettings(r *models.Restaurant) *types.RestaurantSettings {
 	return &types.RestaurantSettings{
 		RestaurantSummary: toRestaurantSummary(r),
 		Timezone:          r.Timezone,
+		Email:             r.Email,
 		GSTNumber:         r.GSTNumber,
 		TaxBps:            r.TaxBps,
 		ServiceChargeBps:  r.ServiceChargeBps,
@@ -485,6 +487,24 @@ func toStaffMember(s *models.StaffUser) types.StaffMember {
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
+
+// Deliberately loose: one @, something either side, a dot in the domain.
+//
+// The strict grammar in RFC 5322 admits addresses no mail provider will ever issue and rejects
+// nothing a typo actually produces, so matching it would buy nothing. What this catches is the
+// class of mistake people make -- a missing @, a bare hostname, a stray space -- and it leaves
+// the question of whether an address actually receives mail to the only thing that can answer
+// it, which is sending some.
+//
+// Shared by the restaurant's contact address and a staff member's sign-in email on purpose. The
+// two fields mean very different things, but "is this shaped like an email" has one answer, and
+// two copies of this regexp would eventually disagree.
+var emailShape = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
+// looksLikeEmail reports whether value is shaped like an address. Callers decide what an EMPTY
+// value means -- for an optional contact field it is "cleared", for a sign-in email it is
+// invalid -- so this deliberately does not treat "" as a special case.
+func looksLikeEmail(value string) bool { return emailShape.MatchString(value) }
 
 // applyString stages a non-nil pointer field into a GORM update map.
 //

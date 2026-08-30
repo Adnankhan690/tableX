@@ -22,13 +22,18 @@ body:json {
   {
     "tax_bps": 500,
     "service_charge_bps": 0,
-    "upi_payee_name": "Spice Garden"
+    "upi_payee_name": "Spice Garden",
+    "email": "hello@spicegarden.test"
   }
 }
 
 tests {
   test("responds 200", function () {
     expect(res.status).to.equal(200)
+  })
+
+  test("the patched fields come back", function () {
+    expect(res.body.data.email).to.equal("hello@spicegarden.test")
   })
 }
 
@@ -43,6 +48,8 @@ Things worth provoking:
 - `"timezone": "Mars/Olympus"` -> 422. Validated on write rather than falling back at read time,
   because an unknown zone would silently roll the daily order counter over at the wrong hour and
   nobody would know why.
+- `"email": "not-an-address"` -> 422. Shape-validated on write. `""` is accepted, though: the
+  field is optional and clearing it is a legitimate edit, not a malformed one.
 - `"payment_provider": "stripe"` -> `TX_PAY_005`. Refused because accepting a provider this
   deployment cannot serve would leave the payment screen quietly falling back on every order while
   the owner believes their gateway is live.

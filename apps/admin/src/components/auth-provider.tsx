@@ -1,6 +1,7 @@
 'use client'
 
 import { isApiError } from '@tablex/api-client'
+import type { StaffMember } from '@tablex/shared'
 import { useRouter } from 'next/navigation'
 import {
   createContext,
@@ -23,6 +24,15 @@ interface AuthValue {
   token: string | null
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  /**
+   * Replaces the cached staff record after the signed-in user edits their own account.
+   *
+   * The session survives a sign-in email change -- the token carries the staff UID, not the
+   * address -- so there is no re-login to refresh this for us. Without it the sidebar and the
+   * account panel would keep showing the old address until the next sign-in, which reads as the
+   * change having silently failed.
+   */
+  applyStaff: (staff: StaffMember) => void
   /**
    * Awaits a fresh access token, refreshing if needed. Call this rather than reading `token`
    * before a request, so a long-idle tab does not fire with a dead token.
@@ -67,6 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       staff: result.staff,
       restaurant: result.restaurant,
     }
+    writeAuth(next)
+    setAuth(next)
+  }, [])
+
+  const applyStaff = useCallback((staff: StaffMember) => {
+    // Read back rather than closing over `auth`: a token refresh may have written a newer
+    // access token since this component last rendered, and rebuilding from stale state would
+    // put the old one back.
+    const current = readAuth()
+    if (current === null) return
+    const next: AdminAuth = { ...current, staff }
     writeAuth(next)
     setAuth(next)
   }, [])
@@ -117,9 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token: auth?.accessToken ?? null,
       login,
       logout: signOut,
+      applyStaff,
       getToken,
     }),
-    [auth, hydrated, login, signOut, getToken],
+    [auth, hydrated, login, signOut, applyStaff, getToken],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

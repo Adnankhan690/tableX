@@ -51,7 +51,7 @@ const ROLE_OPTIONS: readonly SelectOption<StaffRole>[] = ROLES.map((role) => ({
 
 export function StaffManager() {
   const auth = useRequireAuth()
-  const { getToken } = useAuth()
+  const { getToken, applyStaff } = useAuth()
 
   const [staff, setStaff] = useState<StaffMember[] | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -73,6 +73,12 @@ export function StaffManager() {
   })
   const [showAdd, setShowAdd] = useState(false)
   const [pw, setPw] = useState({ current: '', next: '' })
+  /**
+   * The sign-in email, which is a DIFFERENT field from the restaurant's contact email on the
+   * settings page. Editing that one never affected this one, and people reasonably assumed it
+   * did -- hence this panel, and the wording on both screens.
+   */
+  const [signIn, setSignIn] = useState({ email: '', password: '' })
 
   /**
    * A UI convenience only. The server enforces owner-only on these endpoints regardless of what
@@ -367,6 +373,86 @@ export function StaffManager() {
               </Button>
             </Card>
           ) : null}
+
+          <Card className="space-y-3">
+            <CardHeader
+              title="Your sign-in email"
+              description="The address you log in with. Not the restaurant's contact email on Settings."
+            />
+            <Field label="Currently" hint="Signed in as this address.">
+              {({ id, describedBy }) => (
+                <Input
+                  id={id}
+                  aria-describedby={describedBy}
+                  value={auth?.staff.email ?? ''}
+                  disabled
+                />
+              )}
+            </Field>
+            <Field label="New email">
+              {({ id }) => (
+                <Input
+                  id={id}
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@restaurant.com"
+                  value={signIn.email}
+                  onChange={(e) => setSignIn({ ...signIn, email: e.target.value })}
+                />
+              )}
+            </Field>
+            {/*
+              NOT "Current password": the password card below already owns that label, and two
+              identically-labelled inputs on one page are ambiguous to anyone navigating by
+              label -- a screen reader announces the same name twice, and clicking one label
+              can focus the other field.
+            */}
+            <Field
+              label="Confirm with your password"
+              hint="Proves it is you, not just this tablet."
+            >
+              {({ id, describedBy }) => (
+                <PasswordInput
+                  id={id}
+                  aria-describedby={describedBy}
+                  autoComplete="current-password"
+                  value={signIn.password}
+                  onChange={(e) => setSignIn({ ...signIn, password: e.target.value })}
+                />
+              )}
+            </Field>
+            <Button
+              block
+              disabled={signIn.email.trim() === '' || signIn.password === ''}
+              loading={pendingUid === 'sign-in-email'}
+              loadingLabel="Updating…"
+              onClick={() =>
+                run(
+                  'sign-in-email',
+                  (token) =>
+                    api
+                      .changeEmail(token, {
+                        current_password: signIn.password,
+                        new_email: signIn.email.trim(),
+                      })
+                      // The session outlives the change, so nothing else refreshes the cached
+                      // identity -- without this the panel keeps showing the old address.
+                      .then(applyStaff),
+                  'Could not change your sign-in email.',
+                  () => {
+                    setSignIn({ email: '', password: '' })
+                    setNotice({
+                      tone: 'success',
+                      text: 'Sign-in email changed. Use the new address next time you log in.',
+                    })
+                  },
+                )
+              }
+            >
+              Update sign-in email
+            </Button>
+          </Card>
 
           <Card className="space-y-3">
             <CardHeader title="Your password" description="Changing it does not sign you out." />

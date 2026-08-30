@@ -412,6 +412,75 @@ func (s *serviceAuth) ChangePassword(
 	return nil
 }
 
+func (s *serviceAuth) ChangeEmail(
+	ctx context.Context,
+	actor *StaffPrincipal,
+	req *types.RequestChangeEmail,
+) (*types.StaffMember, *response.ApplicationError) {
+	log := s.Access.Logger.With(ctx)
+
+	staff, appErr := s.loadStaff(ctx, actor.RestaurantID, actor.StaffUID)
+	if appErr != nil {
+		return nil, appErr
+	}
+
+	// The current password is required for the same reason ChangePassword requires it, and the
+	// stakes here are if anything higher: an email is the OTHER half of a credential. Without
+	// this, an unattended tablet is enough to move somebody's login to an address the attacker
+	// controls and then take the account over through the forgot-password flow.
+	if err := bcrypt.CompareHashAndPassword([]byte(staff.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+		return nil, response.ErrInvalidCredentials.WithMessage("your current password is incorrect")
+	}
+
+	// Normalised with the same function Login normalises with. If these ever diverged, an
+	// address stored as typed would simply never match at sign-in, and the account would be
+	// unreachable with no error to explain why.
+	email := normalizeEmail(req.NewEmail)
+	if !looksLikeEmail(email) {
+		return nil, response.ErrValidation.WithMessage("that does not look like an email address")
+	}
+
+	// Submitting the address already on file is a no-op, not a conflict -- otherwise the
+	// duplicate check below would report the caller's own row as taken.
+	if email == staff.Email {
+		member := toStaffMember(staff)
+		return &member, nil
+	}
+
+	// Checked across EVERY restaurant, which is deliberately stricter than the
+	// staff_user (restaurant_id, email) unique constraint.
+	//
+	// Login resolves an address across the whole platform and refuses when it finds more than
+	// one match, because there is no way to tell which restaurant was meant. So an address that
+	// is free HERE but already used at another restaurant would satisfy the database and still
+	// leave BOTH accounts unable to sign in. The constraint protects the table; this protects
+	// the ability to log in, and they are not the same thing.
+	matches, err := s.Access.Repositories.Staff.GetByEmailAnyRestaurant(ctx, email)
+	if err != nil {
+		log.Errorf("[ChangeEmail] duplicate check failed: %+v", err)
+		return nil, response.ErrInternal
+	}
+	for _, match := range matches {
+		if match.ID != staff.ID {
+			return nil, response.ErrEmailTaken
+		}
+	}
+
+	updated, err := s.Access.Repositories.Staff.UpdateFields(ctx, staff.ID, map[string]any{
+		"email": email,
+	})
+	if err != nil {
+		log.Errorf("[ChangeEmail] update failed: %+v", err)
+		return nil, response.ErrInternal
+	}
+
+	// staff_uid only. The addresses themselves are not logged: this line would otherwise write
+	// the old and new email of a real person into every log sink the deployment ships to.
+	log.Infof("[ChangeEmail] staff_uid=%s changed their sign-in email", staff.UID)
+	member := toStaffMember(updated)
+	return &member, nil
+}
+
 // loadStaff fetches a staff row scoped to the caller's restaurant.
 func (s *serviceAuth) loadStaff(
 	ctx context.Context,

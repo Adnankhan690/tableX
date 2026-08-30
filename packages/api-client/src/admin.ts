@@ -3,6 +3,7 @@ import type {
   AdminMenuItemView,
   AdminMenuResponse,
   BulkCreateTablesRequest,
+  ChangeEmailRequest,
   ChangePasswordRequest,
   ConfirmImageUploadRequest,
   ConfirmPaymentRequest,
@@ -99,6 +100,15 @@ export class AdminApi {
 
   changePassword(token: string, body: ChangePasswordRequest): Promise<void> {
     return this.http.request(`${ADMIN}/auth/change-password`, {
+      method: 'POST',
+      body,
+      auth: { kind: 'staff', token },
+    })
+  }
+
+  /** Returns the updated staff member, so the caller can refresh the identity it has cached. */
+  changeEmail(token: string, body: ChangeEmailRequest): Promise<StaffMember> {
+    return this.http.request(`${ADMIN}/auth/change-email`, {
       method: 'POST',
       body,
       auth: { kind: 'staff', token },

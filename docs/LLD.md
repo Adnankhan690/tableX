@@ -42,8 +42,14 @@ semi-structured need (verified provider payloads on `payment.raw_payload`) witho
 
 **`restaurant`** — the tenant root.
 `id`, `uid` (`rst_…`), `name`, `slug` (unique; appears in `/r/{slug}`), `description`, `logo_url`,
-`address`, `phone`, `currency`, `timezone`, `gst_number`, `tax_bps`, `service_charge_bps`,
-`upi_vpa`, `upi_payee_name`, `payment_provider`, `status`, timestamps.
+`address`, `phone`, `email`, `currency`, `timezone`, `gst_number`, `tax_bps`,
+`service_charge_bps`, `upi_vpa`, `upi_payee_name`, `payment_provider`, `accepting_orders`,
+`status`, timestamps.
+
+`email` is the business's contact address and is **not** `staff_user.email`: that one is a login
+identity, unique per person. Keeping them apart means changing where invoices arrive cannot lock
+somebody out of the panel. It is served only on the staff-only settings object, never on the
+public summary the enumerable directory is built from.
 
 `timezone` is load-bearing: the daily order-number counter and the dashboard's date windows are
 computed in the restaurant's zone, not UTC, because a 1am order belongs to the previous evening's
@@ -52,6 +58,12 @@ service ([D9](./DECISIONS.md)).
 **`staff_user`** — an admin login. `role` is `owner` / `manager` / `staff`; `password_hash` is
 bcrypt. Email is unique **per restaurant**, not globally, because the same person may staff two
 unrelated restaurants on the platform.
+
+That constraint is weaker than what login needs, and the gap matters. `Login` resolves an address
+across every restaurant and refuses when it finds more than one match, so an address that is free at
+one restaurant but taken at another satisfies the constraint and still leaves *both* accounts unable
+to sign in. `ChangeEmail` therefore checks platform-wide rather than per-tenant. `CreateStaff` does
+**not** — it still checks only within the restaurant, and can produce that state.
 
 **`restaurant_table`** — a physical table.
 `label` ("12", "Patio 2") is what is printed on the card. `qr_token` (VARCHAR(64), unique) is the

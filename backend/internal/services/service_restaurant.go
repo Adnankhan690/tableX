@@ -69,6 +69,17 @@ func (s *serviceRestaurant) UpdateSettings(
 	applyString(fields, "upi_vpa", req.UPIVPA)
 	applyString(fields, "upi_payee_name", req.UPIPayeeName)
 
+	if req.Email != nil {
+		email := strings.TrimSpace(*req.Email)
+		// Empty is not a malformed address, it is the absence of one -- the field is optional and
+		// clearing it is a legitimate edit. Same shape as the timezone check below.
+		if email != "" && !looksLikeEmail(email) {
+			return nil, response.ErrValidation.WithMessage(
+				"that does not look like an email address")
+		}
+		fields["email"] = email
+	}
+
 	if req.Timezone != nil {
 		tz := strings.TrimSpace(*req.Timezone)
 		// Validated here rather than on read. An unknown timezone would silently fall back to

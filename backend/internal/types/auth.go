@@ -56,6 +56,18 @@ type RequestUpdateStaff struct {
 	Status *string `json:"status,omitempty" binding:"omitempty,oneof=active inactive"`
 }
 
+// RequestChangeEmail changes the caller's OWN sign-in email -- the address /auth/login checks.
+//
+// Nothing to do with restaurant.email, which is the business's contact address and lives on the
+// settings endpoint. The two are kept apart so that changing where invoices arrive cannot lock
+// somebody out of the panel.
+type RequestChangeEmail struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	// Length only. The shape is checked in the service so a malformed address comes back as a
+	// 422 that names the problem, rather than gin's generic 400.
+	NewEmail string `json:"new_email" binding:"required,max=255"`
+}
+
 // RequestChangePassword changes the caller's own password.
 type RequestChangePassword struct {
 	CurrentPassword string `json:"current_password" binding:"required"`

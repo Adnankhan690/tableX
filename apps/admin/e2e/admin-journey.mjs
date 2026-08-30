@@ -297,6 +297,7 @@ ck(
   settingsText.slice(0, 200),
 )
 ck('UPI VPA field present', /UPI ID/.test(settingsText))
+ck('contact email field present', /Email/.test(settingsText))
 await page.screenshot({ path: `${SHOT}/a9-settings.png` })
 
 console.log('=== 13. Staff management is owner-gated ===')

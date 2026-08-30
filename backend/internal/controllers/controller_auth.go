@@ -70,6 +70,23 @@ func (c *ControllerAuth) ChangePassword(ctx *gin.Context) {
 	response.Send(ctx, nil, nil)
 }
 
+func (c *ControllerAuth) ChangeEmail(ctx *gin.Context) {
+	actor, appErr := staffPrincipal(ctx)
+	if appErr != nil {
+		response.Send(ctx, nil, appErr)
+		return
+	}
+
+	var req types.RequestChangeEmail
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		response.Send(ctx, nil, response.ErrInvalidRequest)
+		return
+	}
+
+	result, appErr := c.Access.Services.Auth.ChangeEmail(ctx.Request.Context(), actor, &req)
+	response.Send(ctx, result, appErr)
+}
+
 func (c *ControllerAuth) ListStaff(ctx *gin.Context) {
 	actor, appErr := staffPrincipal(ctx)
 	if appErr != nil {
